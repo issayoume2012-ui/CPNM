@@ -2122,6 +2122,62 @@ def generer_pdf_liste_eleves_classe(classe):
   return bytes(pdf.output())
 
 
+def generer_pdf_liste_absences(classe_filtre="Toutes"):
+  df_abs = (
+      st.session_state.absences_db
+      if "absences_db" in st.session_state
+      else pd.DataFrame()
+  )
+  if not df_abs.empty and classe_filtre != "Toutes" and "Classe" in df_abs.columns:
+    df_abs = df_abs[df_abs["Classe"] == classe_filtre]
+
+  pdf = FPDF()
+  try:
+    font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
+  except Exception:
+    font_family = "Arial"
+
+  pdf.add_page()
+  ajouter_entete_senegal_officiel(
+      pdf, f"REGISTRE OFFICIEL DES ABSENCES & RETARDS - {classe_filtre.upper()}"
+  )
+
+  pdf.set_font(font_family, "B", 9)
+  pdf.set_fill_color(14, 165, 233)
+  pdf.set_text_color(255, 255, 255)
+
+  col_widths = [25, 30, 50, 25, 60]
+  headers = ["Date", "Classe", "Élève", "Statut", "Motif / Remarque"]
+
+  for i, h in enumerate(headers):
+    pdf.cell(col_widths[i], 7, h, 1, 0, "C", True)
+  pdf.ln()
+
+  pdf.set_font(font_family, "", 8)
+  pdf.set_text_color(0, 0, 0)
+  fill = False
+  pdf.set_fill_color(240, 249, 255)
+
+  if not df_abs.empty:
+    for _, row in df_abs.iterrows():
+      pdf.cell(col_widths[0], 6, str(row.get("Date", ""))[:12], 1, 0, "C", fill)
+      pdf.cell(col_widths[1], 6, str(row.get("Classe", ""))[:15], 1, 0, "C", fill)
+      pdf.cell(col_widths[2], 6, str(row.get("Élève", ""))[:25], 1, 0, "L", fill)
+      pdf.cell(col_widths[3], 6, str(row.get("Statut", ""))[:15], 1, 0, "C", fill)
+      pdf.cell(col_widths[4], 6, str(row.get("Motif", ""))[:30], 1, 0, "L", fill)
+      pdf.ln()
+      fill = not fill
+  else:
+    pdf.cell(190, 6, "Aucune absence ou retard enregistré.", 1, 1, "C")
+
+  ajouter_bloc_signatures(
+      pdf,
+      prof_nom="Surveillant Général",
+      chef_nom="Chef d'Établissement",
+  )
+  return bytes(pdf.output())
+
+
 def generer_pdf_edt(classe, df_edt):
   pdf = FPDF(orientation="L", unit="mm", format="A4")
   try:
@@ -3656,9 +3712,10 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
       unsafe_allow_html=True,
   )
 
-  tr_bulletins, tr_listes, tr_cahier, tr_assistant = st.tabs([
+  tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_assistant = st.tabs([
       "📄 Édition & Téléchargement des Bulletins",
       "📋 Fiches Officielles de Classe (Tri Nom)",
+      "📉 Registre des Absences",
       "📑 Registre Général des Cahiers de Texte",
       "🤖 Assistant Pédagogique IA Mandela",
   ])
@@ -3742,6 +3799,34 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
         file_name=f"Liste_Eleves_{cls_fiche}.pdf",
         mime="application/pdf",
     )
+
+  with tr_absences:
+    st.markdown("### 📉 Registre des Absences et Retards & Téléchargement PDF")
+    cls_abs_sel = st.selectbox(
+        "Filtrer par classe",
+        ["Toutes"] + list(st.session_state.classes_db["Classe"].unique()),
+        key="abs_report_cls_sel",
+    )
+
+    df_abs_disp = (
+        st.session_state.absences_db
+        if "absences_db" in st.session_state
+        else pd.DataFrame()
+    )
+    if not df_abs_disp.empty and cls_abs_sel != "Toutes" and "Classe" in df_abs_disp.columns:
+      df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
+
+    if not df_abs_disp.empty:
+      st.dataframe(df_abs_disp, use_container_width=True)
+      pdf_abs_bytes = generer_pdf_liste_absences(cls_abs_sel)
+      st.download_button(
+          f"📥 Télécharger la Liste des Absences ({cls_abs_sel}) (PDF)",
+          data=pdf_abs_bytes,
+          file_name=f"Registre_Absences_{cls_abs_sel}.pdf",
+          mime="application/pdf",
+      )
+    else:
+      st.info("Aucune absence ou retard répertorié pour cette sélection.")
 
   with tr_cahier:
     st.markdown("### 📑 Registre des Cahiers de Texte")
