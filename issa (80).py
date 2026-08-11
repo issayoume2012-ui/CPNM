@@ -552,6 +552,7 @@ if "classes_db" not in st.session_state:
             data=[
                 ["CI", "Élémentaire", "Aissatou Sow"],
                 ["CP", "Élémentaire", "Aissatou Sow"],
+                ["CPA", "Élémentaire", "Aissatou Sow"],
                 ["CE1", "Élémentaire", "Ousmane Diop"],
                 ["CE2", "Élémentaire", "Ousmane Diop"],
                 ["CM1", "Élémentaire", "Marie Faye"],
@@ -740,13 +741,38 @@ synchroniser_listes_blanches()
 # 3. FONCTIONS MÉTIER & UTILITAIRES
 # ==========================================
 def obtenir_cycle_classe(classe_nom):
+    """Détermine le cycle (Élémentaire / Collège) de manière dynamique et sans ambiguïté."""
+    if not classe_nom:
+        return "Élémentaire"
+    
+    classe_str = str(classe_nom).strip()
+    
+    # 1. Vérification dans la base de données des classes
     if "classes_db" in st.session_state and not st.session_state.classes_db.empty and "Classe" in st.session_state.classes_db.columns:
-        res = st.session_state.classes_db[st.session_state.classes_db["Classe"] == classe_nom]
-        if not res.empty:
-            return str(res.iloc[0]["Cycle"])
-    if any(c in classe_nom for c in ["6ème", "5ème", "4ème", "3ème"]):
+        res = st.session_state.classes_db[st.session_state.classes_db["Classe"].str.strip().str.upper() == classe_str.upper()]
+        if not res.empty and pd.notna(res.iloc[0].get("Cycle")):
+            return str(res.iloc[0]["Cycle"]).strip()
+    
+    # 2. Analyse contextuelle basée sur la nomenclature des classes sénégalaises
+    classe_clean = classe_str.upper()
+    if any(c in classe_clean for c in ["6ÈME", "6EME", "5ÈME", "5EME", "4ÈME", "4EME", "3ÈME", "3EME", "COLLÈGE", "COLLEGE"]):
         return "Collège"
+    if any(classe_clean.startswith(prefix) for prefix in ["CI", "CP", "CE1", "CE2", "CM1", "CM2", "ÉLÉMENTAIRE", "ELEMENTAIRE"]):
+        return "Élémentaire"
+        
     return "Élémentaire"
+
+def est_cycle_elementaire(cycle_or_classe):
+    """Fonction helper universelle pour éliminer les incohérences d'encodage ou d'accentuation."""
+    if not cycle_or_classe:
+        return True
+    val = str(cycle_or_classe).strip().lower()
+    if "élément" in val or "element" in val:
+        return True
+    if "collèg" in val or "colleg" in val:
+        return False
+    # Si le paramètre transmis est un nom de classe au lieu d'un nom de cycle
+    return est_cycle_elementaire(obtenir_cycle_classe(cycle_or_classe))
 
 def obtenir_periodes_pour_classe(classe_nom):
     cycle = obtenir_cycle_classe(classe_nom)
@@ -756,13 +782,13 @@ def obtenir_periodes_pour_classe(classe_nom):
         col_periode = "Période" if "Période" in df_p.columns else ("Periode" if "Periode" in df_p.columns else None)
         
         if col_cycle and col_periode:
-            filtre = df_p[df_p[col_cycle] == cycle][col_periode].dropna().tolist()
+            filtre = df_p[df_p[col_cycle].apply(est_cycle_elementaire) == est_cycle_elementaire(cycle)][col_periode].dropna().tolist()
             if filtre:
                 return filtre
         elif col_periode:
             return df_p[col_periode].dropna().tolist()
             
-    if cycle == "Élémentaire":
+    if est_cycle_elementaire(cycle):
         return ["1er Trimestre", "2ème Trimestre", "3ème Trimestre"]
     else:
         return ["1er Semestre", "2ème Semestre"]
@@ -798,7 +824,7 @@ def obtenir_coefficient_matiere(classe, matiere):
     if "matieres_def" in st.session_state and not st.session_state.matieres_def.empty:
         m_def = st.session_state.matieres_def
         if "Cycle" in m_def.columns:
-            res = m_def[(m_def["Matière"] == matiere) & (m_def["Cycle"] == cycle_classe)]
+            res = m_def[(m_def["Matière"] == matiere) & (m_def["Cycle"].apply(est_cycle_elementaire) == est_cycle_elementaire(cycle_classe))]
         else:
             res = m_def[m_def["Matière"] == matiere]
         if not res.empty and "Coefficient" in m_def.columns and pd.notna(res.iloc[0].get("Coefficient")):
@@ -818,13 +844,13 @@ def obtenir_bareme_matiere(classe, matiere):
     if "matieres_def" in st.session_state and not st.session_state.matieres_def.empty:
         m_def = st.session_state.matieres_def
         if "Cycle" in m_def.columns:
-            res = m_def[(m_def["Matière"] == matiere) & (m_def["Cycle"] == cycle_classe)]
+            res = m_def[(m_def["Matière"] == matiere) & (m_def["Cycle"].apply(est_cycle_elementaire) == est_cycle_elementaire(cycle_classe))]
         else:
             res = m_def[m_def["Matière"] == matiere]
         if not res.empty and "Barème" in m_def.columns and pd.notna(res.iloc[0].get("Barème")):
             return float(res.iloc[0]["Barème"])
             
-    return 20.0 if cycle_classe == "Collège" else 50.0
+    return 50.0 if est_cycle_elementaire(cycle_classe) else 20.0
 
 def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     try:
@@ -889,6 +915,7 @@ def ajouter_bloc_signatures(pdf, prof_nom="Le Professeur", chef_nom="Le Chef d'�
 
 def calculer_bulletin_eleve(classe, eleve, periode):
     cycle_classe = obtenir_cycle_classe(classe)
+    is_elem = est_cycle_elementaire(cycle_classe)
     matieres_set = set()
     
     if "coefficients_db" in st.session_state and not st.session_state.coefficients_db.empty and "Classe" in st.session_state.coefficients_db.columns:
@@ -899,7 +926,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
     if "matieres_def" in st.session_state and not st.session_state.matieres_def.empty:
         m_def = st.session_state.matieres_def
         if "Cycle" in m_def.columns:
-            m_c_def = m_def[m_def["Cycle"] == cycle_classe]["Matière"].dropna().tolist()
+            m_c_def = m_def[m_def["Cycle"].apply(est_cycle_elementaire) == is_elem]["Matière"].dropna().tolist()
             matieres_set.update(m_c_def)
         else:
             matieres_set.update(m_def["Matière"].dropna().tolist())
@@ -921,7 +948,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         matieres_set.update(m_notes)
 
     if not matieres_set:
-        matieres_set = {"Mathématiques", "Français"} if cycle_classe == "Collège" else {"Lecture / Langage", "Calcul / Mathématiques"}
+        matieres_set = {"Lecture / Langage", "Calcul / Mathématiques"} if is_elem else {"Mathématiques", "Français"}
 
     liste_matieres = sorted(list(matieres_set))
 
@@ -945,7 +972,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
 
     for mat in liste_matieres:
         coef = coeffs_dict.get(mat, 1.0)
-        bareme_m = baremes_dict.get(mat, 20.0 if cycle_classe == "Collège" else 50.0)
+        bareme_m = baremes_dict.get(mat, 50.0 if is_elem else 20.0)
         
         note_row = notes_classe_periode[notes_classe_periode["Eleve"] == eleve] if not notes_classe_periode.empty and "Eleve" in notes_classe_periode.columns else pd.DataFrame()
         note_mat = note_row[note_row["Matière"] == mat] if not note_row.empty and "Matière" in note_row.columns else pd.DataFrame()
@@ -960,7 +987,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
             d2 = float(d2_val) if pd.notna(d2_val) else 0.0
             comp = float(comp_val) if pd.notna(comp_val) else 0.0
 
-        if cycle_classe == "Élémentaire":
+        if is_elem:
             moy_matiere = comp
             total_points_global += moy_matiere
             total_bareme_global += bareme_m
@@ -991,7 +1018,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
                 "Appreciation": obtenir_appreciation(moy_matiere, cycle_classe, 20.0)
             })
 
-    if cycle_classe == "Élémentaire":
+    if is_elem:
         moyenne_generale = round(total_points_global, 2)
     else:
         moyenne_generale = round(total_points_global / total_coefficients_global, 2) if total_coefficients_global > 0 else 0.0
@@ -1016,13 +1043,13 @@ def calculer_bulletin_eleve(classe, eleve, periode):
                 d2 = float(d2_val) if pd.notna(d2_val) else 0.0
                 comp = float(comp_val) if pd.notna(comp_val) else 0.0
                 
-                if cycle_classe == "Élémentaire":
+                if is_elem:
                     pts += comp
                 else:
                     m_mat = ((d1 + d2) / 2.0 + comp) / 2.0
                     pts += m_mat * coef
                     coefs += coef
-        if cycle_classe == "Élémentaire":
+        if is_elem:
             moyennes_classe[el] = round(pts, 2)
         else:
             moyennes_classe[el] = round(pts / coefs, 2) if coefs > 0 else 0.0
@@ -1058,8 +1085,8 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         "periode": periode,
         "lignes": lignes_bulletin,
         "total_points": round(total_points_global, 2),
-        "total_coefficients": total_coefficients_global if cycle_classe == "Collège" else "-",
-        "total_bareme": total_bareme_global if cycle_classe == "Élémentaire" else 20.0,
+        "total_coefficients": total_coefficients_global if not is_elem else "-",
+        "total_bareme": total_bareme_global if is_elem else 20.0,
         "moyenne_generale": moyenne_generale,
         "rang": rang,
         "effectif": len(tous_eleves),
@@ -1085,6 +1112,7 @@ def generer_pdf_bulletin(bul_data):
 
     pdf.add_page()
     cycle = bul_data.get("cycle", "Collège")
+    is_elem = est_cycle_elementaire(cycle)
     
     ajouter_entete_senegal_officiel(pdf, f"BULLETIN DE NOTES - {bul_data['periode'].upper()} ({cycle.upper()})")
 
@@ -1099,7 +1127,7 @@ def generer_pdf_bulletin(bul_data):
     pdf.set_fill_color(14, 165, 233)
     pdf.set_text_color(255, 255, 255)
     
-    if cycle == "Élémentaire":
+    if is_elem:
         col_widths = [95, 30, 35, 30]
         headers = ["Matière", "Barème", "Note obtenue", "Appréciation"]
     else:
@@ -1116,7 +1144,7 @@ def generer_pdf_bulletin(bul_data):
     pdf.set_fill_color(240, 249, 255)
 
     for lig in bul_data["lignes"]:
-        if cycle == "Élémentaire":
+        if is_elem:
             pdf.cell(col_widths[0], 6, str(lig["Matiere"])[:30], 1, 0, "L", fill)
             pdf.cell(col_widths[1], 6, f"/ {lig['Bareme']}", 1, 0, "C", fill)
             pdf.cell(col_widths[2], 6, str(lig["Composition"]), 1, 0, "C", fill)
@@ -1135,7 +1163,7 @@ def generer_pdf_bulletin(bul_data):
     pdf.ln(4)
     pdf.set_font(font_family, "B", 10)
     pdf.set_fill_color(224, 242, 254)
-    if cycle == "Élémentaire":
+    if is_elem:
         pdf.cell(0, 6, f"Total Général : {bul_data['moyenne_generale']} / {bul_data['total_bareme']}", 1, 1, "L", True)
     else:
         pdf.cell(0, 6, f"Moyenne Générale : {bul_data['moyenne_generale']} / 20", 1, 1, "L", True)
@@ -1482,6 +1510,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         classe_autorisee = st.session_state.prof_classe_autorisee
         matiere_principale = st.session_state.prof_matiere_principale
         cycle_actuel = obtenir_cycle_classe(classe_autorisee)
+        is_elem_prof = est_cycle_elementaire(cycle_actuel)
 
         st.markdown(
             f"""
@@ -1517,8 +1546,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         with t_notes:
             st.markdown("### 📝 Module de Saisie Synchronisée des Notes")
-            if cycle_actuel == "Élémentaire":
-                st.info(f"Élémentaire ({classe_autorisee}) : **Seule la Note de Composition** est enregistrée et affichée (pas de Devoirs).")
+            
+            # Correction explicite de la contradiction : adaptation dynamique au cycle réel
+            if is_elem_prof:
+                st.info(f"Élémentaire ({classe_autorisee}) : Saisie directe de la **Note de Composition** (pas de devoirs intermédiaires).")
             else:
                 st.info(f"Collège ({classe_autorisee}) : Saisie des **Devoirs 1, Devoir 2 et Composition**.")
 
@@ -1534,7 +1565,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     matieres_possibles = []
                     if "coefficients_db" in st.session_state and "Classe" in st.session_state.coefficients_db.columns:
                         matieres_possibles = st.session_state.coefficients_db[st.session_state.coefficients_db["Classe"] == classe_autorisee]["Matière"].tolist()
-                    mat_defs = st.session_state.matieres_def[st.session_state.matieres_def["Cycle"] == cycle_actuel]["Matière"].tolist() if "matieres_def" in st.session_state and "Cycle" in st.session_state.matieres_def.columns else []
+                    mat_defs = st.session_state.matieres_def[st.session_state.matieres_def["Cycle"].apply(est_cycle_elementaire) == is_elem_prof]["Matière"].tolist() if "matieres_def" in st.session_state and "Cycle" in st.session_state.matieres_def.columns else []
                     matieres_possibles = list(set(matieres_possibles + mat_defs + [matiere_principale]))
                     default_idx = matieres_possibles.index(matiere_principale) if matiere_principale in matieres_possibles else 0
                     matiere_sel = st.selectbox("Matière enseignée", matieres_possibles, index=default_idx, key="prof_mat_sel")
@@ -1569,7 +1600,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                                 d2_val = float(sub_n.iloc[0].get("Devoir2", 0.0)) if pd.notna(sub_n.iloc[0].get("Devoir2")) else 0.0
                                 comp_val = float(sub_n.iloc[0].get("Composition", 0.0)) if pd.notna(sub_n.iloc[0].get("Composition")) else 0.0
 
-                        if cycle_actuel == "Élémentaire":
+                        if is_elem_prof:
                             rows_notes.append({
                                 "Eleve": el,
                                 "Composition": comp_val,
@@ -1608,7 +1639,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         edited_notes["Période"] = periode_sel
                         edited_notes["BaremeNote"] = float(bareme_sel)
                         
-                        if cycle_actuel == "Élémentaire":
+                        if is_elem_prof:
                             edited_notes["Devoir1"] = 0.0
                             edited_notes["Devoir2"] = 0.0
 
@@ -1889,6 +1920,7 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
         eleve = st.session_state["parent_logged_eleve"]
         classe = st.session_state["parent_logged_classe"]
         cycle_par = obtenir_cycle_classe(classe)
+        is_elem_parent = est_cycle_elementaire(cycle_par)
         
         st.success(f"Connecté pour l'élève : **{eleve}** (Classe : {classe} - Cycle : {cycle_par})")
         if st.button("Se déconnecter de l'espace parent"):
@@ -1912,7 +1944,7 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
             bul_el = calculer_bulletin_eleve(classe, eleve, periode_consult)
             
             col_res1, col_res2, col_res3 = st.columns(3)
-            if cycle_par == "Élémentaire":
+            if is_elem_parent:
                 with col_res1: st.metric("Total Général", f"{bul_el['moyenne_generale']} / {bul_el['total_bareme']}")
             else:
                 with col_res1: st.metric("Moyenne Générale", f"{bul_el['moyenne_generale']} / 20")
@@ -1922,7 +1954,7 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
             st.markdown("#### Détail des Notes par Matière")
             df_notes_affiche = pd.DataFrame(bul_el["lignes"])
             if not df_notes_affiche.empty:
-                cols_to_show = ["Matiere", "Bareme", "Composition", "Appreciation"] if cycle_par == "Élémentaire" else ["Matiere", "Coefficient", "Devoir1", "Devoir2", "Composition", "MoyenneMatiere", "Appreciation"]
+                cols_to_show = ["Matiere", "Bareme", "Composition", "Appreciation"] if is_elem_parent else ["Matiere", "Coefficient", "Devoir1", "Devoir2", "Composition", "MoyenneMatiere", "Appreciation"]
                 cols_existantes = [c for c in cols_to_show if c in df_notes_affiche.columns]
                 st.dataframe(df_notes_affiche[cols_existantes], use_container_width=True)
             else:
@@ -2179,7 +2211,7 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     with t_rep_imp:
         st.subheader("🖨️ Fiches et Bulletins de Classe Officiels (PDF / ZIP)")
         
-        classes_liste = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A", "CP"]
+        classes_liste = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A", "CP", "CPA"]
         
         c_imp1, c_imp2 = st.columns(2)
         with c_imp1:
