@@ -299,6 +299,17 @@ SCEAU_SENEGAL_B64 = (
     "AAAAAElFTkSuQmCC"
 )
 
+def obtenir_logo_base64():
+    """Convertit le fichier nm.jpg local en Base64 pour un affichage HTML inline parfait."""
+    if os.path.exists("nm.jpg"):
+        try:
+            with open("nm.jpg", "rb") as f:
+                encoded = base64.b64encode(f.read()).decode("utf-8")
+                return f"data:image/jpeg;base64,{encoded}"
+        except Exception:
+            pass
+    return None
+
 def assistant_ia_repondre(question: str) -> str:
     q = question.lower()
     if "bulletin" in q or "note" in q:
@@ -306,7 +317,7 @@ def assistant_ia_repondre(question: str) -> str:
     elif "prof" in q or "enseignant" in q:
         return "Nos enseignants d'élite s'engagent au quotidien pour encadrer les notes, le cahier de texte, le travail à faire et le suivi personnalisé."
     elif "parent" in q or "élève" in q:
-        return "Les parents disposent d'un suivi pédagogique transparent en temps réel (notes, devoirs, pièces jointes et vie scolaire) pour accompagner la réussite de leurs enfants."
+        return "Les parents disposent d'un suivi pédagogique transparent en temps réel (travaux à faire, devoirs, pièces jointes, emploi du temps et vie scolaire) pour accompagner la réussite de leurs enfants."
     elif "admin" in q or "administrateur" in q:
         return "L'administration pilote l'établissement avec dévouement pour maintenir les plus hauts standards de qualité académique."
     return "École Président Nelson Mandela - Excellence, Discipline et Réussite au cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
@@ -400,13 +411,13 @@ st.markdown(
         background: linear-gradient(135deg, #FFFFFF 0%, #F0F9FF 100%);
         border: 4px solid #0EA5E9;
         border-radius: 22px;
-        padding: 8px;
+        padding: 6px;
         box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 135px;
-        height: 135px;
+        width: 130px;
+        height: 130px;
         flex-shrink: 0;
         animation: pulseGlow 3s infinite;
     }
@@ -1386,35 +1397,29 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
     return bytes(pdf.output())
 
 # ==========================================
-# 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL (AVEC LOGO CADRÉ)
+# 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL (FIXATION AFFICHAGE UNIFIÉ LOGO)
 # ==========================================
-st.markdown(
-    """
-    <div class="header-institutionnel">
-        <div class="header-inner">
-            <div class="logo-frame-container">
-    """,
-    unsafe_allow_html=True
-)
-
-if os.path.exists("nm.jpg"):
-    st.image("nm.jpg", width=120)
+logo_data_uri = obtenir_logo_base64()
+if logo_data_uri:
+    logo_element_html = f'<img src="{logo_data_uri}" alt="Logo Mandela" />'
 else:
-    st.markdown('<div class="emblem-box"><span style="font-size: 3.2rem;">🇸🇳</span></div>', unsafe_allow_html=True)
+    logo_element_html = '<div class="emblem-box"><span style="font-size: 3.2rem;">🇸🇳</span></div>'
 
-st.markdown(
-    """
-            </div>
-            <div class="header-text">
-                <div class="ministere-title">MINISTÈRE DE L'ÉDUCATION NATIONALE DU SÉNÉGAL</div>
-                <div class="ia-ief-sub">INSPECTION D'ACADÉMIE DE SAINT-LOUIS (IA) • INSPECTION DE L'ÉDUCATION ET DE LA FORMATION (IEF)</div>
-                <div class="ecole-title">🦁 ÉCOLE PRÉSIDENT NELSON MANDELA</div>
-            </div>
+header_complet_html = f"""
+<div class="header-institutionnel">
+    <div class="header-inner">
+        <div class="logo-frame-container">
+            {logo_element_html}
+        </div>
+        <div class="header-text">
+            <div class="ministere-title">MINISTÈRE DE L'ÉDUCATION NATIONALE DU SÉNÉGAL</div>
+            <div class="ia-ief-sub">INSPECTION D'ACADÉMIE DE SAINT-LOUIS (IA) • INSPECTION DE L'ÉDUCATION ET DE LA FORMATION (IEF)</div>
+            <div class="ecole-title">🦁 ÉCOLE PRÉSIDENT NELSON MANDELA</div>
         </div>
     </div>
-    """,
-    unsafe_allow_html=True
-)
+</div>
+"""
+st.markdown(header_complet_html, unsafe_allow_html=True)
 
 if st.session_state.espace_actif != "🏠 Accueil":
     col_ret1, col_ret2 = st.columns([1, 5])
@@ -1464,7 +1469,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">👨‍👩‍👧</h1>
                 <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Espace Parents</h3>
-                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Partenariat école-famille : consultation en temps réel des bulletins certifiés, des notes et réception des travaux à faire avec documents, photos et vidéos.</p>
+                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Partenariat école-famille : suivi des travaux à faire avec supports photos/vidéos, consultation des emplois du temps, vie scolaire et annonces officielles.</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1494,7 +1499,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">🏫</h1>
                 <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Rapports Globaux</h3>
-                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Tableaux de bord d'excellence, assistant pédagogique intelligent et production de documents officiels.</p>
+                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Tableaux de bord d'excellence, téléchargement des bulletins PDF officiels et assistant pédagogique intelligent.</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1691,7 +1696,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         key=f"editor_notes_{classe_autorisee}_{matiere_sel}_{periode_sel}"
                     )
 
-                    if st.button("💾 Enregistrer & Synchroniser les Notes avec l'Espace Parent", key="btn_save_edited_notes"):
+                    if st.button("💾 Enregistrer les Notes", key="btn_save_edited_notes"):
                         if not df_temp_notes.empty and "Classe" in df_temp_notes.columns:
                             cond_cls = (df_temp_notes["Classe"] == classe_autorisee)
                             cond_mat = (df_temp_notes["Matière"] == matiere_sel)
@@ -1712,7 +1717,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         st.session_state.notes_db = pd.concat([st.session_state.notes_db, edited_notes], ignore_index=True)
                         sauvegarder_donnees_externes("EDIT_NOTES_PROF")
                         enregistrer_log_action(prof_connecte, "EDIT_NOTES", f"Modifications enregistrées pour {matiere_sel} ({classe_autorisee})")
-                        st.success("✅ Notes sauvegardées et immédiatement synchronisées avec l'espace Parent !")
+                        st.success("✅ Notes sauvegardées avec succès !")
                         st.rerun()
                 else:
                     st.warning("⚠️ Aucun élève trouvé dans cette classe. Ajoutez d'abord des élèves dans l'Espace Administration.")
@@ -1944,7 +1949,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 st.success("Emploi du temps sauvegardé !")
 
 # ==========================================
-# ESPACE PARENTS / ÉLÈVES
+# ESPACE PARENTS / ÉLÈVES (RENOUVELÉ ET SANS NOTES/BULLETINS)
 # ==========================================
 elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", "👨‍👩‍👧 Espace Parents / Élèves"]:
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Portail Parent & Suivi Direct de l\'Élève</div>', unsafe_allow_html=True)
@@ -1985,7 +1990,6 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
         eleve = st.session_state["parent_logged_eleve"]
         classe = st.session_state["parent_logged_classe"]
         cycle_par = obtenir_cycle_classe(classe)
-        is_elem_parent = est_cycle_elementaire(cycle_par)
         
         st.success(f"Connecté pour l'élève : **{eleve}** (Classe : {classe} - Cycle : {cycle_par})")
         if st.button("Se déconnecter de l'espace parent"):
@@ -1994,40 +1998,13 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
 
         st.markdown("---")
 
-        t_par_notes, t_par_taf_new, t_par_conduite, t_par_edt, t_par_msgs = st.tabs([
-            "📊 Notes & Synthèse Synchronisée",
+        # LES ONGLETS DE L'ESPACE PARENTS SONT DÉSORMAIS EXCLUSIVEMENT AXÉS SUR LES DEVOIRS, LA VIE SCOLAIRE, L'EDT ET LES COMMUNICATIONS
+        t_par_taf_new, t_par_conduite, t_par_edt, t_par_msgs = st.tabs([
             "📚 Travail à Faire (Devoirs & Supports)",
             "⚠️ Conduite, Absences & Remarques",
             "📅 Emploi du Temps de la Classe",
             "💬 Messages & Annonces Officiels"
         ])
-
-        with t_par_notes:
-            st.subheader("📊 Consultation des Notes Saisies par les Enseignants (En Temps Réel)")
-            periodes_parent = obtenir_periodes_pour_classe(classe)
-            periode_consult = st.selectbox("Choisir la période", periodes_parent, key="par_per_sel")
-
-            # SYNCHRONISATION EN TEMPS RÉEL: On recalcule dynamiquement le bulletin à partir des dernières notes enregistrées
-            bul_el = calculer_bulletin_eleve(classe, eleve, periode_consult)
-            
-            col_res1, col_res2, col_res3 = st.columns(3)
-            if is_elem_parent:
-                with col_res1: st.metric("Total Général Obtenu", f"{bul_el['moyenne_generale']} / {bul_el['total_bareme']}")
-            else:
-                with col_res1: st.metric("Moyenne Générale", f"{bul_el['moyenne_generale']} / 20")
-            with col_res2: st.metric("Rang Provisoire / Définitif", bul_el['rang'])
-            with col_res3: st.metric("Appréciation du Conseil", bul_el['decision'])
-
-            st.markdown("#### Détail des Notes par Matière")
-            df_notes_affiche = pd.DataFrame(bul_el["lignes"])
-            if not df_notes_affiche.empty:
-                cols_to_show = ["Matiere", "Bareme", "Composition", "Appreciation"] if is_elem_parent else ["Matiere", "Coefficient", "Devoir1", "Devoir2", "Composition", "MoyenneMatiere", "Appreciation"]
-                cols_existantes = [c for c in cols_to_show if c in df_notes_affiche.columns]
-                st.dataframe(df_notes_affiche[cols_existantes], use_container_width=True)
-            else:
-                st.info("Aucune note enregistrée par l'enseignant pour cette période.")
-
-            st.info("ℹ️ Les téléchargements officiels de bulletins individuels PDF s'effectuent au niveau du secrétariat et de l'administration générale dans 'Rapports Globaux'.")
 
         with t_par_taf_new:
             st.subheader(f"📚 Travail à Faire & Supports de Cours — Classe de {classe}")
