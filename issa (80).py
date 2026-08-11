@@ -315,7 +315,7 @@ def assistant_ia_repondre(question: str) -> str:
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
 st.set_page_config(
-    page_title="Sénégal - Portail Éducatif National XXL (IA & IEF Saint-Louis)",
+    page_title="Sénégal - Portail Éducatif National Ecole President Nelson Mandela",
     page_icon="🇸🇳",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -1398,7 +1398,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
     st.markdown(
         """
         <div style="text-align: center; padding: 15px 0 35px 0;">
-            <h1 style="color: #0F172A; font-weight: 900; font-size: 2.9rem;">Portail Éducatif National • Excellence & Réussite</h1>
+            <h1 style="color: #0F172A; font-weight: 900; font-size: 2.9rem;">Portail Pédagodique • Eduquer-Instruire-Promouvoir les vertus africaines</h1>
             <p style="font-size: 1.3rem; color: #334155; max-width: 1000px; margin: 0 auto; font-weight: 500;">
                 Bâtir l'élite de demain sous la tutelle de l'IA Saint-Louis et l'IEF Saint-Louis. Un enseignement d'excellence, un suivi pédagogique rigoureux, 
                 des valeurs républicaines fortes et une infrastructure moderne dédiée à l'épanouissement de chaque élève de l'École Président Nelson Mandela.
