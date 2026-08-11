@@ -3338,10 +3338,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
     st.markdown("---")
 
-    ta_eleves, ta_profs, ta_classes, ta_coeff, ta_edt, ta_msg_admin, ta_sauv = (
+    ta_eleves, ta_profs, ta_parents_wl, ta_classes, ta_coeff, ta_edt, ta_msg_admin, ta_sauv = (
         st.tabs([
             "👨‍🎓 Gestion des Élèves",
             "👨‍🏫 Liste Blanche Enseignants",
+            "👨‍👩‍👧 Liste Blanche Parents",
             "🏫 Structure & Classes",
             "⚖️ Coefficients & Matières",
             "📅 Grille des Emplois du Temps",
@@ -3464,11 +3465,69 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_profs_admin",
         )
-        if st.button("💾 Sauvegarder la Liste Blanche"):
+        if st.button("💾 Sauvegarder la Liste Blanche Professeurs"):
           st.session_state.prof_credentials = edited_prof_cred
           sauvegarder_donnees_externes("MAJ_LISTE_PROFESSEURS")
           st.success("✅ Liste d'accès mise à jour !")
           st.rerun()
+
+    with ta_parents_wl:
+      st.markdown("### 👨‍👩‍👧 Gestion de la Liste Blanche des Parents")
+      st.info("Définissez ici les numéros de téléphone et emails autorisés à se connecter à l'Espace Parents pour suivre leurs enfants.")
+      
+      with st.form("form_add_parent_wl", clear_on_submit=True):
+        col_pw1, col_pw2, col_pw3 = st.columns(3)
+        with col_pw1:
+          p_tel = st.text_input("Téléphone ou Email du Parent", placeholder="+22177...")
+          p_annee = st.number_input("Année de Naissance Élève", min_value=2000, max_value=2025, value=2012)
+        with col_pw2:
+          p_prenom_el = st.text_input("Prénom Élève")
+          p_nom_el = st.text_input("Nom Élève")
+        with col_pw3:
+          cl_parent = st.selectbox(
+              "Classe de l'élève",
+              st.session_state.classes_db["Classe"].unique()
+              if "classes_db" in st.session_state
+              else ["6ème A"],
+              key="select_classe_parent_wl"
+          )
+
+        if st.form_submit_button("➕ Ajouter à la Liste Blanche des Parents"):
+          if p_tel and p_prenom_el and p_nom_el:
+            new_pw = {
+                "Téléphone": p_tel.strip(),
+                "Prénom Élève": p_prenom_el.strip(),
+                "Nom Élève": p_nom_el.strip(),
+                "Année Naissance": int(p_annee),
+                "Classe": cl_parent,
+            }
+            if "parents_white_list" not in st.session_state or st.session_state.parents_white_list.empty:
+              st.session_state.parents_white_list = pd.DataFrame([new_pw])
+            else:
+              st.session_state.parents_white_list = pd.concat(
+                  [st.session_state.parents_white_list, pd.DataFrame([new_pw])],
+                  ignore_index=True,
+              )
+            sauvegarder_donnees_externes("AJOUT_PARENT_WL")
+            st.success(f"✅ Parent de {p_prenom_el} {p_nom_el} ajouté avec succès !")
+            st.rerun()
+
+      st.markdown("---")
+      st.markdown("#### Liste Blanche Actuelle des Parents")
+      if "parents_white_list" in st.session_state and not st.session_state.parents_white_list.empty:
+        edited_parents_wl = st.data_editor(
+            st.session_state.parents_white_list,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_parents_wl_admin",
+        )
+        if st.button("💾 Sauvegarder la Liste Blanche des Parents"):
+          st.session_state.parents_white_list = edited_parents_wl
+          sauvegarder_donnees_externes("MAJ_PARENTS_WL")
+          st.success("✅ Liste blanche des parents mise à jour avec succès !")
+          st.rerun()
+      else:
+        st.info("Aucun parent dans la liste blanche pour le moment.")
 
     with ta_classes:
       st.markdown("### 🏫 Structure des Classes & Périodes")
