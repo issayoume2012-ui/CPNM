@@ -315,7 +315,7 @@ def assistant_ia_repondre(question: str) -> str:
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
 st.set_page_config(
-    page_title="Sénégal - Portail Éducatif National Ecole President Nelson Mandela",
+    page_title="Sénégal - Portail Éducatif National École Président Nelson Mandela",
     page_icon="🇸🇳",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -348,22 +348,22 @@ st.markdown(
 
     .header-institutionnel {
         background: linear-gradient(135deg, #0EA5E9 0%, #2563EB 50%, #1D4ED8 100%);
-        padding: 8px;
+        padding: 10px;
         border-radius: 32px;
         box-shadow: 0 25px 50px rgba(14, 165, 233, 0.3);
-        margin-bottom: 40px;
+        margin-bottom: 35px;
         animation: fadeInSlide 0.8s ease-out;
     }
 
     .header-inner {
         background: rgba(255, 255, 255, 0.99);
         backdrop-filter: blur(20px);
-        padding: 32px 40px;
-        border-radius: 28px;
+        padding: 25px 35px;
+        border-radius: 26px;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 30px;
+        gap: 25px;
     }
 
     .header-text {
@@ -373,27 +373,49 @@ st.markdown(
 
     .ministere-title {
         color: #0F172A;
-        font-size: clamp(1.3rem, 2.8vw, 2.1rem);
+        font-size: clamp(1.2rem, 2.5vw, 1.9rem);
         font-weight: 900;
         text-transform: uppercase;
-        letter-spacing: 1.5px;
+        letter-spacing: 1.2px;
         margin: 0;
     }
 
     .ia-ief-sub {
         color: #1E3A8A;
-        font-size: clamp(0.95rem, 1.9vw, 1.3rem);
+        font-size: clamp(0.9rem, 1.8vw, 1.2rem);
         font-weight: 700;
-        margin: 8px 0;
+        margin: 6px 0;
         letter-spacing: 0.5px;
     }
 
     .ecole-title {
         color: #0EA5E9;
-        font-size: clamp(1.5rem, 3vw, 2.5rem);
+        font-size: clamp(1.4rem, 2.8vw, 2.3rem);
         font-weight: 900;
-        margin: 10px 0 0 0;
+        margin: 8px 0 0 0;
         text-transform: uppercase;
+    }
+
+    .logo-frame-container {
+        background: linear-gradient(135deg, #FFFFFF 0%, #F0F9FF 100%);
+        border: 4px solid #0EA5E9;
+        border-radius: 22px;
+        padding: 8px;
+        box-shadow: 0 12px 28px rgba(14, 165, 233, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 135px;
+        height: 135px;
+        flex-shrink: 0;
+        animation: pulseGlow 3s infinite;
+    }
+
+    .logo-frame-container img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+        border-radius: 14px;
     }
 
     .emblem-box {
@@ -717,7 +739,6 @@ if "travail_a_faire_db" not in st.session_state:
             ]
         )
 
-# NOUVEAU : BASE DE DONNÉES DE MESSAGERIE ADMIN/PROF -> PARENTS
 if "messages_parents_db" not in st.session_state:
     if "messages_parents_db" in saved_data:
         st.session_state.messages_parents_db = pd.DataFrame(saved_data["messages_parents_db"])
@@ -899,7 +920,9 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
         font_family = "Arial"
 
     try:
-        if SCEAU_SENEGAL_B64:
+        if os.path.exists("nm.jpg"):
+            pdf.image("nm.jpg", x=12, y=8, w=22)
+        elif SCEAU_SENEGAL_B64:
             img_data = base64.b64decode(SCEAU_SENEGAL_B64)
             img_bytes = io.BytesIO(img_data)
             pdf.image(img_bytes, x=15, y=8, w=22)
@@ -1363,14 +1386,24 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
     return bytes(pdf.output())
 
 # ==========================================
-# 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL
+# 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL (AVEC LOGO CADRÉ)
 # ==========================================
 st.markdown(
     """
     <div class="header-institutionnel">
         <div class="header-inner">
-            <div class="emblem-box">
-                <span style="font-size: 3.2rem;">🇸🇳</span>
+            <div class="logo-frame-container">
+    """,
+    unsafe_allow_html=True
+)
+
+if os.path.exists("nm.jpg"):
+    st.image("nm.jpg", width=120)
+else:
+    st.markdown('<div class="emblem-box"><span style="font-size: 3.2rem;">🇸🇳</span></div>', unsafe_allow_html=True)
+
+st.markdown(
+    """
             </div>
             <div class="header-text">
                 <div class="ministere-title">MINISTÈRE DE L'ÉDUCATION NATIONALE DU SÉNÉGAL</div>
@@ -1398,8 +1431,8 @@ if st.session_state.espace_actif == "🏠 Accueil":
     st.markdown(
         """
         <div style="text-align: center; padding: 15px 0 35px 0;">
-            <h1 style="color: #0F172A; font-weight: 900; font-size: 2.9rem;">Eduquer-Instruire-Promouvoir les vertus africaines</h1>
-            <p style="font-size: 1.3rem; color: #334155; max-width: 1000px; margin: 0 auto; font-weight: 500;">
+            <h1 style="color: #0F172A; font-weight: 900; font-size: 2.8rem;">Éduquer • Instruire • Promouvoir les Vertus Africaines</h1>
+            <p style="font-size: 1.25rem; color: #334155; max-width: 1000px; margin: 0 auto; font-weight: 500;">
                 Bâtir l'élite de demain sous la tutelle de l'IA Saint-Louis et l'IEF Saint-Louis. Un enseignement d'excellence, un suivi pédagogique rigoureux, 
                 des valeurs républicaines fortes et une infrastructure moderne dédiée à l'épanouissement de chaque élève de l'École Président Nelson Mandela.
             </p>
@@ -1609,7 +1642,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     bareme_defaut = int(obtenir_bareme_matiere(classe_autorisee, matiere_sel))
                     bareme_sel = st.number_input("Barème de notation", min_value=5, max_value=100, value=bareme_defaut, key="prof_bar_sel")
 
-                # SYNCHRONISATION ÉLÈVES: Récupérer TOUS les élèves enregistrés et triés par NOM DE FAMILLE
                 df_eleves_classe = pd.DataFrame()
                 if "eleves_db" in st.session_state and "Classe" in st.session_state.eleves_db.columns:
                     df_eleves_classe = trier_eleves_par_nom(st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee])
@@ -1963,7 +1995,7 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
         st.markdown("---")
 
         t_par_notes, t_par_taf_new, t_par_conduite, t_par_edt, t_par_msgs = st.tabs([
-            "📊 Notes & Bulletin",
+            "📊 Notes & Synthèse Synchronisée",
             "📚 Travail à Faire (Devoirs & Supports)",
             "⚠️ Conduite, Absences & Remarques",
             "📅 Emploi du Temps de la Classe",
@@ -1971,19 +2003,20 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
         ])
 
         with t_par_notes:
-            st.subheader("📊 Consultation Synchronisée des Notes & Bulletin")
+            st.subheader("📊 Consultation des Notes Saisies par les Enseignants (En Temps Réel)")
             periodes_parent = obtenir_periodes_pour_classe(classe)
             periode_consult = st.selectbox("Choisir la période", periodes_parent, key="par_per_sel")
 
+            # SYNCHRONISATION EN TEMPS RÉEL: On recalcule dynamiquement le bulletin à partir des dernières notes enregistrées
             bul_el = calculer_bulletin_eleve(classe, eleve, periode_consult)
             
             col_res1, col_res2, col_res3 = st.columns(3)
             if is_elem_parent:
-                with col_res1: st.metric("Total Général", f"{bul_el['moyenne_generale']} / {bul_el['total_bareme']}")
+                with col_res1: st.metric("Total Général Obtenu", f"{bul_el['moyenne_generale']} / {bul_el['total_bareme']}")
             else:
                 with col_res1: st.metric("Moyenne Générale", f"{bul_el['moyenne_generale']} / 20")
-            with col_res2: st.metric("Rang", bul_el['rang'])
-            with col_res3: st.metric("Décision", bul_el['decision'])
+            with col_res2: st.metric("Rang Provisoire / Définitif", bul_el['rang'])
+            with col_res3: st.metric("Appréciation du Conseil", bul_el['decision'])
 
             st.markdown("#### Détail des Notes par Matière")
             df_notes_affiche = pd.DataFrame(bul_el["lignes"])
@@ -1992,18 +2025,9 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
                 cols_existantes = [c for c in cols_to_show if c in df_notes_affiche.columns]
                 st.dataframe(df_notes_affiche[cols_existantes], use_container_width=True)
             else:
-                st.info("Aucune note enregistrée pour cette période.")
+                st.info("Aucune note enregistrée par l'enseignant pour cette période.")
 
-            st.markdown("---")
-            st.markdown("#### 📄 Téléchargement Officiel du Bulletin")
-            pdf_bulletin_eleve = generer_pdf_bulletin(bul_el)
-            st.download_button(
-                f"📥 Télécharger le Bulletin PDF de {eleve} ({periode_consult})",
-                data=pdf_bulletin_eleve,
-                file_name=f"Bulletin_{eleve.replace(' ', '_')}_{classe}_{periode_consult.replace(' ', '_')}.pdf",
-                mime="application/pdf",
-                key=f"btn_dl_bulletin_{eleve}_{periode_consult}"
-            )
+            st.info("ℹ️ Les téléchargements officiels de bulletins individuels PDF s'effectuent au niveau du secrétariat et de l'administration générale dans 'Rapports Globaux'.")
 
         with t_par_taf_new:
             st.subheader(f"📚 Travail à Faire & Supports de Cours — Classe de {classe}")
@@ -2322,14 +2346,14 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Tableau de Bord Global, Impression Officielle & IA</div>', unsafe_allow_html=True)
 
     t_rep_imp, t_rep_edt, t_rep_ct, t_rep_ia = st.tabs([
-        "🖨️ Fiches Officielles & Bulletins PDF",
+        "🖨️ Fiches Officielles & Bulletins PDF (Individuels / Classe)",
         "📅 Emplois du Temps Globaux (11h00-11h30 Récréation)",
         "📖 Registre du Cahier de Textes",
         "🤖 Assistant IA Saint-Louis"
     ])
 
     with t_rep_imp:
-        st.subheader("🖨️ Fiches et Bulletins de Classe Officiels (PDF / ZIP)")
+        st.subheader("🖨️ Fiches Officielles & Impression des Bulletins PDF")
         
         classes_liste = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A", "CP", "CPA"]
         
@@ -2339,6 +2363,8 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
         with c_imp2:
             per_gen = st.selectbox("Période", obtenir_periodes_pour_classe(cls_gen), key="rep_per_gen")
 
+        st.markdown("---")
+        st.markdown("### 📥 1. Téléchargements d'Ensemble pour la Classe")
         col_b1, col_b2 = st.columns(2)
         with col_b1:
             pdf_fiche = generer_pdf_liste_eleves_classe(cls_gen)
@@ -2346,17 +2372,55 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
                 f"📄 Télécharger la Fiche de Classe PDF ({cls_gen})",
                 data=pdf_fiche,
                 file_name=f"Fiche_Officielle_Classe_{cls_gen}.pdf",
-                mime="application/pdf"
+                mime="application/pdf",
+                key="btn_dl_fiche_cls_gen"
             )
 
         with col_b2:
             zip_bulletins = generer_zip_bulletins_classe(cls_gen, per_gen)
             st.download_button(
-                f"📦 Télécharger Tous les Bulletins ZIP ({cls_gen} - {per_gen})",
+                f"📦 Télécharger Tous les Bulletins ZIP de la Classe ({cls_gen} - {per_gen})",
                 data=zip_bulletins,
                 file_name=f"Bulletins_{cls_gen}_{per_gen.replace(' ', '_')}.zip",
-                mime="application/zip"
+                mime="application/zip",
+                key="btn_dl_zip_cls_gen"
             )
+
+        st.markdown("---")
+        st.markdown("### 👨‍🎓 2. Téléchargement Individuel du Bulletin / Notes par Élève")
+        st.info("Sélectionnez un élève précis pour générer et télécharger immédiatement son bulletin officiel individuel en PDF.")
+
+        # Récupérer la liste des élèves pour la classe sélectionnée
+        df_el_rep = pd.DataFrame()
+        if "eleves_db" in st.session_state and not st.session_state.eleves_db.empty and "Classe" in st.session_state.eleves_db.columns:
+            df_el_rep = trier_eleves_par_nom(st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_gen])
+
+        liste_eleves_rep = df_el_rep["Nom Complet"].tolist() if not df_el_rep.empty and "Nom Complet" in df_el_rep.columns else []
+
+        if liste_eleves_rep:
+            c_ind1, c_ind2 = st.columns([2, 1])
+            with c_ind1:
+                eleve_sel_rep = st.selectbox("Sélectionner l'élève", liste_eleves_rep, key="rep_eleve_sel_ind")
+            
+            with c_ind2:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                bul_data_ind = calculer_bulletin_eleve(cls_gen, eleve_sel_rep, per_gen)
+                pdf_ind_bytes = generer_pdf_bulletin(bul_data_ind)
+                st.download_button(
+                    f"📄 Télécharger le Bulletin PDF ({eleve_sel_rep})",
+                    data=pdf_ind_bytes,
+                    file_name=f"Bulletin_{eleve_sel_rep.replace(' ', '_')}_{cls_gen}_{per_gen.replace(' ', '_')}.pdf",
+                    mime="application/pdf",
+                    key=f"btn_dl_ind_{eleve_sel_rep}_{per_gen}"
+                )
+            
+            # Aperçu du bulletin
+            with st.expander(f"👁️ Aperçu de la synthèse des notes pour {eleve_sel_rep} ({per_gen})"):
+                st.write(f"**Classe :** {cls_gen} | **Cycle :** {bul_data_ind['cycle']} | **Rang :** {bul_data_ind['rang']}")
+                st.write(f"**Moyenne générale / Total :** {bul_data_ind['moyenne_generale']} | **Décision :** {bul_data_ind['decision']}")
+                st.dataframe(pd.DataFrame(bul_data_ind["lignes"]), use_container_width=True)
+        else:
+            st.warning("⚠️ Aucun élève trouvé pour cette classe.")
 
     with t_rep_edt:
         st.subheader("📅 Consultation & Édition des Emplois du Temps (Récréation 11h00-11h30)")
