@@ -52,8 +52,7 @@ def hacher_mot_de_passe(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verifier_mot_de_passe(password: str, hashed: str) -> bool:
-    """Vérifie un mot de passe par rapport à son hachage sécurisé bcrypt.
-    Intègre une sécurité anti-blocage (fallback) si le mot de passe a été exceptionnellement stocké en clair lors d'une synchronisation."""
+    """Vérifie un mot de passe par rapport à son hachage sécurisé bcrypt."""
     if not password or not hashed:
         return False
     if password == hashed:
@@ -109,7 +108,7 @@ def charger_donnees_externes():
                 "prof_white_list", "admin_white_list", "parents_white_list", 
                 "eleves_db", "notes_db", "classes_db", "matieres_def", 
                 "coefficients_db", "periodes_db", "viescolaire_db", 
-                "cahier_textes", "absences_db"
+                "cahier_textes", "absences_db", "travail_a_faire_db"
             ]
             for table in tables_a_charger:
                 res = supabase_client.table(table).select("*").execute()
@@ -167,7 +166,7 @@ def synchroniser_listes_blanches():
         ])
 
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_DONNEES"):
-    """Enregistrement immédiat dans le fichier local JSON et Supabase via sauvegarder_donnees_externes() puis mise à jour de la session."""
+    """Enregistrement immédiat dans le fichier local JSON et Supabase."""
     synchroniser_listes_blanches()
 
     if "eleves_db" in st.session_state and not st.session_state.eleves_db.empty:
@@ -207,7 +206,6 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_DONNEES"):
         "Volume Données": f"Élèves: {len(st.session_state.get('eleves_db', []))}, Notes: {len(st.session_state.get('notes_db', []))}"
     })
 
-    # Dictionnaire préparé pour la sauvegarde
     backup_dict = {}
     tables_mapping = {
         "notes_db": st.session_state.get("notes_db"),
@@ -216,6 +214,7 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_DONNEES"):
         "viescolaire_db": st.session_state.get("viescolaire_db"),
         "cahier_textes": st.session_state.get("cahier_textes"),
         "absences_db": st.session_state.get("absences_db"),
+        "travail_a_faire_db": st.session_state.get("travail_a_faire_db"),
         "prof_white_list": st.session_state.get("prof_white_list"),
         "admin_white_list": st.session_state.get("admin_white_list"),
         "parents_white_list": st.session_state.get("parents_white_list"),
@@ -230,21 +229,20 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_DONNEES"):
         if isinstance(t_df, pd.DataFrame):
             backup_dict[t_name] = nettoyer_donnees_pour_json(t_df.to_dict(orient="records"))
 
-    # Sauvegarde physique locale dans un fichier JSON pour garanties à 100%
     try:
         with open(LOCAL_DB_FILE, "w", encoding="utf-8") as f:
             json.dump(backup_dict, f, ensure_ascii=False, indent=4)
     except Exception:
         pass
 
-    # Synchronisation Supabase en tâche secondaire
     if supabase_client:
         try:
             for t_name, payload in backup_dict.items():
                 if payload and t_name in [
                     "notes_db", "eleves_db", "classes_db", "viescolaire_db", 
-                    "cahier_textes", "absences_db", "prof_white_list", 
-                    "admin_white_list", "parents_white_list", "coefficients_db", "periodes_db"
+                    "cahier_textes", "absences_db", "travail_a_faire_db", 
+                    "prof_white_list", "admin_white_list", "parents_white_list", 
+                    "coefficients_db", "periodes_db"
                 ]:
                     supabase_client.table(t_name).upsert(payload).execute()
         except Exception:
@@ -290,15 +288,15 @@ def assistant_ia_repondre(question: str) -> str:
     if "bulletin" in q or "note" in q:
         return "Les bulletins d'excellence sont générés automatiquement au format PDF standardisé sous l'autorité de l'IA Saint-Louis et IEF Saint-Louis, garantissant rigueur et équité pour chaque élève."
     elif "prof" in q or "enseignant" in q:
-        return "Nos enseignants d'élite s'engagent au quotidien pour encadrer les notes, le cahier de texte et le suivi personnalisé."
+        return "Nos enseignants d'élite s'engagent au quotidien pour encadrer les notes, le cahier de texte, le travail à faire et le suivi personnalisé."
     elif "parent" in q or "élève" in q:
-        return "Les parents disposent d'un suivi pédagogique transparent en temps réel pour accompagner la réussite de leurs enfants."
+        return "Les parents disposent d'un suivi pédagogique transparent en temps réel (notes, devoirs, pièces jointes et vie scolaire) pour accompagner la réussite de leurs enfants."
     elif "admin" in q or "administrateur" in q:
         return "L'administration pilote l'établissement avec dévouement pour maintenir les plus hauts standards de qualité académique."
     return "École Président Nelson Mandela - Excellence, Discipline et Réussite au cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
 
 # ==========================================
-# 1. CONFIGURATION DE LA PAGE & DESIGN XXL ULTRA VISIBLE & NOUVELLES COULEURS
+# 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
 st.set_page_config(
     page_title="Sénégal - Portail Éducatif National XXL (IA & IEF Saint-Louis)",
@@ -452,6 +450,16 @@ st.markdown(
         box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.25) !important;
     }
 
+    .work-card {
+        background: #FFFFFF;
+        border: 2px solid #BAE6FD;
+        border-left: 6px solid #0EA5E9;
+        border-radius: 18px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
+    }
+
     h1, h2, h3, h4, h5, h6, label, p, span {
         color: #0F172A !important;
     }
@@ -469,7 +477,7 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INITIALISATION EXHAUSTIVE DES DONNÉES & SYNCHRONISATION SESSION
+# 2. INITIALISATION EXHAUSTIVE DES DONNÉES
 # ==========================================
 if "espace_actif" not in st.session_state:
     st.session_state.espace_actif = "🏠 Accueil"
@@ -570,7 +578,6 @@ if "eleves_db" not in st.session_state:
             ]
         )
 
-# Garantir la présence de toutes les colonnes requises dans eleves_db
 for col_req in ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]:
     if col_req not in st.session_state.eleves_db.columns:
         st.session_state.eleves_db[col_req] = ""
@@ -668,6 +675,22 @@ if "viescolaire_db" not in st.session_state:
             ]
         )
 
+# NOUVEAU MODULE TRAVAIL À FAIRE INTERCONNECTÉ PROF -> PARENT
+if "travail_a_faire_db" not in st.session_state:
+    if "travail_a_faire_db" in saved_data:
+        st.session_state.travail_a_faire_db = pd.DataFrame(saved_data["travail_a_faire_db"])
+    else:
+        st.session_state.travail_a_faire_db = pd.DataFrame(
+            columns=["ID", "Professeur", "DatePublication", "DateRendu", "Classe", "Matière", "Titre", "Consignes", "LienUrl", "LienVideo", "FichierNom", "FichierB64", "FichierType"],
+            data=[
+                [
+                    "TAF-001", "Ibrahima Diallo", "2026-08-10", "2026-08-15", "6ème A", "Mathématiques",
+                    "Exercices d'Algèbre p.45", "Faire les exercices 1 à 5 sur le cahier d'exercices. Réviser la règle des signes.",
+                    "https://khanacademy.org", "https://www.youtube.com/watch?v=dQw4w9WgXcQ", None, None, None
+                ]
+            ]
+        )
+
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 
 HEURES_LIST = [
@@ -716,7 +739,7 @@ if "absences_db" not in st.session_state:
 synchroniser_listes_blanches()
 
 # ==========================================
-# 3. FONCTIONS MÉTIER & UTILITAIRES (BULLETINS, COULEURS AMÉLIORÉES & EXPORTS)
+# 3. FONCTIONS MÉTIER & UTILITAIRES
 # ==========================================
 def obtenir_cycle_classe(classe_nom):
     if "classes_db" in st.session_state and not st.session_state.classes_db.empty and "Classe" in st.session_state.classes_db.columns:
@@ -1154,7 +1177,6 @@ def generer_zip_bulletins_classe(classe, periode):
     return zip_buffer.getvalue()
 
 def generer_pdf_liste_eleves_classe(classe):
-    # CORRECTION KEYERROR: Verification et sécurisation de la structure de st.session_state.eleves_db
     if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
         df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
     else:
@@ -1277,13 +1299,6 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
 
     return bytes(pdf.output())
 
-def export_table_excel(df, filename="export_donnees.xlsx"):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=True, sheet_name='Donnees')
-    processed_data = output.getvalue()
-    return processed_data
-
 # ==========================================
 # 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL
 # ==========================================
@@ -1314,7 +1329,7 @@ if st.session_state.espace_actif != "🏠 Accueil":
     st.markdown("---")
 
 # ==========================================
-# 5. ACCUEIL ET REDIRECTION SÉLECTIVE (DESIGN XXL)
+# 5. ACCUEIL ET REDIRECTION SÉLECTIVE
 # ==========================================
 if st.session_state.espace_actif == "🏠 Accueil":
     st.markdown(
@@ -1338,7 +1353,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">👨‍🏫</h1>
                 <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Espace Professeurs</h3>
-                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Encadrement d'excellence : saisie rigoureuse des notes, suivi des présences et cahier de texte harmonisé.</p>
+                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Encadrement d'excellence : saisie rigoureuse des notes, suivi des présences, cahier de texte et assignation des travaux à faire avec pièces jointes.</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1353,7 +1368,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">👨‍👩‍👧</h1>
                 <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Espace Parents</h3>
-                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Partenariat école-famille : consultation en temps réel des bulletins certifiés et de la progression de l'enfant.</p>
+                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Partenariat école-famille : consultation en temps réel des bulletins certifiés, des notes et réception des travaux à faire avec documents, photos et vidéos.</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -1493,8 +1508,9 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         st.markdown("---")
         
-        t_notes, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
-            "📝 Saisie des Notes", 
+        t_notes, t_taf_prof, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
+            "📝 Saisie des Notes",
+            "📌 Assigner Travail à Faire",
             "📋 Feuille d'Appel", 
             "⚠️ Conduite & Vie Scolaire", 
             "📑 Cahier de Texte",
@@ -1502,8 +1518,8 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         ])
 
         with t_notes:
-            st.markdown("### 📝 Module Harmonisé de Saisie des Notes")
-            st.info(f"Saisie des notes pour votre classe assignée : **{classe_autorisee}** ({cycle_actuel}).")
+            st.markdown("### 📝 Module Harmonisé de Saisie et Suppression des Notes")
+            st.info(f"Saisie et gestion des notes pour la classe assignée : **{classe_autorisee}** ({cycle_actuel}).")
 
             periodes_possibles = obtenir_periodes_pour_classe(classe_autorisee)
             
@@ -1639,11 +1655,146 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             sauvegarder_donnees_externes("SAISIE_NOTES_PROF")
                             enregistrer_log_action(prof_connecte, "SAISIE_NOTES", f"Saisie & Synchronisation réussie pour {matiere_sel} ({classe_autorisee})")
                             st.success("✅ Enregistrement, synchronisation et mise à jour de la session réussis avec succès !")
+
+                    # MODULE DE SUPPRESSION DES NOTES (AJOUT)
+                    st.markdown("---")
+                    st.markdown("#### 🗑️ Suppression ciblée de notes")
+                    c_del_n1, c_del_n2 = st.columns([3, 1])
+                    with c_del_n1:
+                        el_suppr_note = st.selectbox("Élève dont vous souhaitez supprimer la note pour cette matière/période", ["-- Tous les élèves --"] + eleves_classe, key="sb_del_note_el")
+                    with c_del_n2:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("🗑️ Supprimer Note(s)"):
+                            df_temp = st.session_state.notes_db
+                            if not df_temp.empty and "Classe" in df_temp.columns and "Matière" in df_temp.columns:
+                                cond_cls = (df_temp["Classe"] == classe_autorisee)
+                                cond_mat = (df_temp["Matière"] == matiere_sel)
+                                cond_per = (df_temp["Periode"] == periode_sel) | (df_temp["Période"] == periode_sel) if "Periode" in df_temp.columns else True
+                                
+                                if el_suppr_note == "-- Tous les élèves --":
+                                    mask = ~(cond_cls & cond_mat & cond_per)
+                                else:
+                                    mask = ~(cond_cls & cond_mat & cond_per & (df_temp["Eleve"] == el_suppr_note))
+                                
+                                st.session_state.notes_db = df_temp[mask].reset_index(drop=True)
+                                sauvegarder_donnees_externes("SUPPRESSION_NOTES")
+                                enregistrer_log_action(prof_connecte, "SUPPRESSION_NOTES", f"Note supprimée pour {el_suppr_note} en {matiere_sel}")
+                                st.success("Note(s) supprimée(s) avec succès !")
+                                st.rerun()
+
                 else:
                     st.warning("Aucun élève enregistré dans cette classe.")
 
+        # NOUVEAU MODULE COMPLET : TRAVAIL À FAIRE INTERCONNECTÉ AVEC LE PARENT (AVEC SUPPRESSION ET EXPORT)
+        with t_taf_prof:
+            st.markdown("### 📌 Assigner du Travail à Faire & Supports Pédagogiques (Documents, Photos, Vidéos, Liens)")
+            st.info(f"Les travaux assignés ici pour la classe de **{classe_autorisee}** seront immédiatement transmis et visualisables dans l'Espace Parents avec options d'export et téléchargement.")
+
+            with st.form("form_taf_prof", clear_on_submit=True):
+                col_taf1, col_taf2, col_taf3 = st.columns(3)
+                with col_taf1:
+                    titre_taf = st.text_input("Titre du devoir / travail")
+                with col_taf2:
+                    mat_taf = st.selectbox("Matière concernée", [matiere_principale] + [m for m in st.session_state.matieres_def["Matière"].unique() if m != matiere_principale])
+                with col_taf3:
+                    date_rendu_taf = st.date_input("Date de rendu souhaitée", value=datetime.today())
+
+                consignes_taf = st.text_area("Consignes détaillées pour les élèves et parents")
+
+                st.markdown("#### 📎 Pièces Jointes & Liens (Multimédia & Export)")
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    lien_url_taf = st.text_input("Lien Web / Ressource utile (URL)", placeholder="https://...")
+                    lien_video_taf = st.text_input("Lien Vidéo (YouTube / MP4)", placeholder="https://www.youtube.com/watch?v=...")
+                with col_m2:
+                    fichier_joint = st.file_uploader("Déposer un document ou une photo/image (PDF, PNG, JPG, DOCX)", type=["pdf", "png", "jpg", "jpeg", "docx", "txt"])
+
+                btn_publier_taf = st.form_submit_button("🚀 Publier et Transmettre aux Parents")
+
+                if btn_publier_taf:
+                    if titre_taf and consignes_taf:
+                        taf_id = f"TAF-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        f_nom, f_b64, f_type = None, None, None
+
+                        if fichier_joint is not None:
+                            f_nom = fichier_joint.name
+                            f_bytes = fichier_joint.read()
+                            f_b64 = base64.b64encode(f_bytes).decode('utf-8')
+                            f_type = fichier_joint.type
+
+                        nouveau_taf = {
+                            "ID": taf_id,
+                            "Professeur": prof_connecte,
+                            "DatePublication": str(datetime.now().strftime('%Y-%m-%d')),
+                            "DateRendu": str(date_rendu_taf),
+                            "Classe": classe_autorisee,
+                            "Matière": mat_taf,
+                            "Titre": titre_taf,
+                            "Consignes": consignes_taf,
+                            "LienUrl": lien_url_taf if lien_url_taf else None,
+                            "LienVideo": lien_video_taf if lien_video_taf else None,
+                            "FichierNom": f_nom,
+                            "FichierB64": f_b64,
+                            "FichierType": f_type
+                        }
+
+                        if "travail_a_faire_db" not in st.session_state or st.session_state.travail_a_faire_db.empty:
+                            st.session_state.travail_a_faire_db = pd.DataFrame([nouveau_taf])
+                        else:
+                            st.session_state.travail_a_faire_db = pd.concat([st.session_state.travail_a_faire_db, pd.DataFrame([nouveau_taf])], ignore_index=True)
+
+                        sauvegarder_donnees_externes("PUBLICATION_TRAVAIL_A_FAIRE")
+                        enregistrer_log_action(prof_connecte, "TRAVAIL_A_FAIRE", f"Nouveau devoir assigné : {titre_taf} ({classe_autorisee})")
+                        st.success("✅ Travail à faire publié, sauvegardé et transmis instantanément aux parents !")
+                        st.rerun()
+                    else:
+                        st.error("Veuillez renseigner au moins le titre et les consignes du devoir.")
+
+            st.markdown("---")
+            st.markdown(f"#### 📚 Travaux assignés actuellement pour la classe {classe_autorisee}")
+
+            df_taf_cls = pd.DataFrame()
+            if "travail_a_faire_db" in st.session_state and not st.session_state.travail_a_faire_db.empty and "Classe" in st.session_state.travail_a_faire_db.columns:
+                df_taf_cls = st.session_state.travail_a_faire_db[st.session_state.travail_a_faire_db["Classe"] == classe_autorisee]
+
+            if not df_taf_cls.empty:
+                for idx_taf, row_taf in df_taf_cls.iterrows():
+                    with st.expander(f"📌 {row_taf.get('Matière')} : {row_taf.get('Titre')} (À rendre pour le : {row_taf.get('DateRendu')})", expanded=False):
+                        st.write(f"**Publié le :** {row_taf.get('DatePublication')} par **{row_taf.get('Professeur')}**")
+                        st.write(f"**Consignes :** {row_taf.get('Consignes')}")
+                        
+                        if row_taf.get("LienUrl"):
+                            st.markdown(f"🔗 **Lien Web :** [{row_taf.get('LienUrl')}]({row_taf.get('LienUrl')})")
+                        if row_taf.get("LienVideo"):
+                            st.markdown(f"🎥 **Vidéo :** [{row_taf.get('LienVideo')}]({row_taf.get('LienVideo')})")
+                        
+                        if row_taf.get("FichierNom") and row_taf.get("FichierB64"):
+                            st.write(f"📎 **Document/Photo joint :** {row_taf.get('FichierNom')}")
+                            try:
+                                bytes_f = base64.b64decode(row_taf.get("FichierB64"))
+                                st.download_button(
+                                    f"⬇️ Exporter / Télécharger {row_taf.get('FichierNom')}",
+                                    data=bytes_f,
+                                    file_name=row_taf.get("FichierNom"),
+                                    key=f"dl_prof_taf_{idx_taf}"
+                                )
+                            except Exception:
+                                pass
+
+                        col_sup_taf1, col_sup_taf2 = st.columns([4, 1])
+                        with col_sup_taf2:
+                            if st.button("🗑️ Supprimer ce devoir", key=f"btn_del_taf_prof_{idx_taf}"):
+                                taf_id_del = row_taf.get("ID")
+                                st.session_state.travail_a_faire_db = st.session_state.travail_a_faire_db[st.session_state.travail_a_faire_db["ID"] != taf_id_del].reset_index(drop=True)
+                                sauvegarder_donnees_externes("SUPPRESSION_TRAVAIL_A_FAIRE")
+                                enregistrer_log_action(prof_connecte, "SUPPRESSION_TAF", f"Devoir {taf_id_del} supprimé")
+                                st.success("Devoir supprimé avec succès !")
+                                st.rerun()
+            else:
+                st.info("Aucun travail à faire assigné pour le moment dans cette classe.")
+
         with t_appel:
-            st.markdown("### 📋 Feuille d'Appel & Suivi des Présences")
+            st.markdown("### 📋 Feuille d'Appel & Suivi des Présences (Saisie & Suppression)")
             st.info(f"Classe concernée : **{classe_autorisee}**")
             
             if not st.session_state.eleves_db.empty and "Classe" in st.session_state.eleves_db.columns:
@@ -1691,11 +1842,24 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             sauvegarder_donnees_externes("SAISIE_APPEL_PROF")
                             enregistrer_log_action(prof_connecte, "APPEL", f"Appel validé pour {classe_autorisee} à la date du {date_jour}")
                             st.success("✅ Appel enregistré, validé par l'enseignant et synchronisé avec succès !")
+
+                    # SUPPRESSION DES ABSENCES DU JOUR (AJOUT)
+                    st.markdown("---")
+                    st.markdown("#### 🗑️ Annuler / Supprimer un enregistrement d'appel")
+                    if st.button("🗑️ Supprimer l'appel enregistré pour cette date", key="btn_del_appel_date"):
+                        df_abs = st.session_state.absences_db
+                        if not df_abs.empty and "Classe" in df_abs.columns and "Date" in df_abs.columns:
+                            cond_del = (df_abs["Classe"] == classe_autorisee) & (df_abs["Date"] == str(date_jour))
+                            st.session_state.absences_db = df_abs[~cond_del].reset_index(drop=True)
+                            sauvegarder_donnees_externes("SUPPRESSION_APPEL")
+                            enregistrer_log_action(prof_connecte, "SUPPRESSION_APPEL", f"Appel supprimé pour {classe_autorisee} à la date du {date_jour}")
+                            st.success("Enregistrement d'appel supprimé pour cette date !")
+                            st.rerun()
                 else:
                     st.warning("Aucun élève trouvé pour cette classe.")
 
         with t_cond:
-            st.markdown("### ⚠️ Suivi de la Vie Scolaire & Discipline")
+            st.markdown("### ⚠️ Suivi de la Vie Scolaire & Discipline (Saisie & Suppression)")
             st.info(f"Évaluation du comportement et de l'assiduité pour la classe : **{classe_autorisee}**")
             
             df_eleves_vs = pd.DataFrame()
@@ -1762,12 +1926,27 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             sauvegarder_donnees_externes("SAISIE_VIE_SCOLAIRE_PROF")
                             enregistrer_log_action(prof_connecte, "VIE_SCOLAIRE", f"Suivi mis à jour pour l'élève {el_vs}")
                             st.success("✅ Suivi de vie scolaire enregistré et synchronisé avec succès !")
+
+                # SUPPRESSION DE FICHE VIE SCOLAIRE (AJOUT)
+                st.markdown("---")
+                st.markdown("#### 🗑️ Supprimer le bilan de vie scolaire d'un élève")
+                if st.button(f"🗑️ Supprimer la fiche de vie scolaire de {el_vs} ({periode_vs})", key="btn_del_vs_el"):
+                    df_vs = st.session_state.viescolaire_db
+                    if not df_vs.empty and "Classe" in df_vs.columns and "Eleve" in df_vs.columns:
+                        cond_cls = (df_vs["Classe"] == classe_autorisee)
+                        cond_el = (df_vs["Eleve"] == el_vs)
+                        cond_per = (df_vs["Periode"] == periode_vs) | (df_vs["Période"] == periode_vs) if "Periode" in df_vs.columns else True
+                        st.session_state.viescolaire_db = df_vs[~(cond_cls & cond_el & cond_per)].reset_index(drop=True)
+                        sauvegarder_donnees_externes("SUPPRESSION_VIE_SCOLAIRE")
+                        enregistrer_log_action(prof_connecte, "SUPPRESSION_VIE_SCOLAIRE", f"Fiche supprimée pour {el_vs}")
+                        st.success("Bilan de vie scolaire supprimé !")
+                        st.rerun()
             else:
                 st.warning("Aucun élève disponible pour cette classe.")
 
         with t_cahier:
-            st.markdown("### 📑 Cahier de Texte & Rapports Pédagogiques")
-            st.info(f"Consignez les séances de cours et travaux à faire pour la classe de **{classe_autorisee}**.")
+            st.markdown("### 📑 Cahier de Texte (Publication & Suppression)")
+            st.info(f"Consignez les séances de cours dispensées pour la classe de **{classe_autorisee}**.")
 
             with st.form("form_cahier_harmonise"):
                 col_ct1, col_ct2 = st.columns(2)
@@ -1777,10 +1956,9 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     date_ct = st.date_input("Date de la séance", value=datetime.today(), key="prof_date_ct")
 
                 contenu = st.text_area("Contenu détaillé de la séance / Leçon du jour", key="prof_cont_ct")
-                travail = st.text_area("Travail à faire pour la prochaine séance", key="prof_trav_ct")
 
                 st.markdown("<br>", unsafe_allow_html=True)
-                if st.form_submit_button("📢 Publier et Synchroniser le Cahier de Texte"):
+                if st.form_submit_button("📢 Publier et Synchroniser la leçon au Cahier de Texte"):
                     if mat_ct and contenu:
                         new_ct = pd.DataFrame([{
                             "Professeur": prof_connecte, 
@@ -1788,7 +1966,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             "Classe": classe_autorisee, 
                             "Matière": mat_ct, 
                             "Contenu": contenu, 
-                            "Travail à faire": travail
+                            "Travail à faire": "Voir onglet 'Travail à Faire'"
                         }])
                         st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, new_ct], ignore_index=True)
                         
@@ -1799,13 +1977,26 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         st.error("Veuillez renseigner au moins la matière et le contenu de la séance.")
 
             st.markdown("---")
-            st.markdown("#### 📜 Historique des Publications de la Classe")
+            st.markdown("#### 📜 Historique & Suppression des Publications")
             df_ct_classe = pd.DataFrame()
             if "cahier_textes" in st.session_state and not st.session_state.cahier_textes.empty and "Classe" in st.session_state.cahier_textes.columns:
                 df_ct_classe = st.session_state.cahier_textes[st.session_state.cahier_textes["Classe"] == classe_autorisee]
             
             if not df_ct_classe.empty:
-                st.dataframe(df_ct_classe[["Date", "Professeur", "Matière", "Contenu", "Travail à faire"]], use_container_width=True)
+                st.dataframe(df_ct_classe[["Date", "Professeur", "Matière", "Contenu"]], use_container_width=True)
+                
+                col_del_ct1, col_del_ct2 = st.columns([3, 1])
+                with col_del_ct1:
+                    idx_del_ct = st.selectbox("Sélectionner une publication à supprimer", range(len(df_ct_classe)), format_func=lambda x: f"{df_ct_classe.iloc[x].get('Date')} - {df_ct_classe.iloc[x].get('Matière')} : {df_ct_classe.iloc[x].get('Contenu')[:30]}...", key="sb_del_ct")
+                with col_del_ct2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Supprimer Leçon"):
+                        row_to_del = df_ct_classe.iloc[idx_del_ct]
+                        cond = (st.session_state.cahier_textes["Classe"] == classe_autorisee) & (st.session_state.cahier_textes["Date"] == row_to_del["Date"]) & (st.session_state.cahier_textes["Contenu"] == row_to_del["Contenu"])
+                        st.session_state.cahier_textes = st.session_state.cahier_textes[~cond].reset_index(drop=True)
+                        sauvegarder_donnees_externes("SUPPRESSION_CAHIER_TEXTE")
+                        st.success("Publication supprimée !")
+                        st.rerun()
             else:
                 st.info("Aucune entrée dans le cahier de texte pour cette classe.")
 
@@ -1815,8 +2006,11 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.dataframe(df_edt_prof, use_container_width=True)
             st.info("ℹ️ Le créneau de 11h00 à 11h30 est officiellement réservé à la récréation pour le bien-être des élèves et des enseignants.")
 
+# ==========================================
+# ESPACE PARENTS / ÉLÈVES (NOUVELLE CONFIGURATION)
+# ==========================================
 elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", "👨‍👩‍👧 Espace Parents / Élèves"]:
-    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Portail Parent & Suivi de l\'Élève</div>', unsafe_allow_html=True)
+    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Portail Parent & Suivi Direct de l\'Élève</div>', unsafe_allow_html=True)
 
     if "parent_logged_eleve" not in st.session_state:
         st.session_state["parent_logged_eleve"] = ""
@@ -1856,16 +2050,17 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
         cycle_par = obtenir_cycle_classe(classe)
         
         st.success(f"Connecté pour l'élève : **{eleve}** (Classe : {classe} - Cycle : {cycle_par})")
-        if st.button("Se déconnecter"):
+        if st.button("Se déconnecter de l'espace parent"):
             st.session_state["parent_logged_eleve"] = ""
             st.rerun()
 
         st.markdown("---")
 
-        t_par_notes, t_par_conduite, t_par_cahier, t_par_edt = st.tabs([
+        # LES ONGLETS SONT MISE À JOUR : SUPPRESSION DE CAHIER DE TEXTE / ANCIEN TRAVAIL À FAIRE, ET CREATION DU NOUVEAU TRAVAIL À FAIRE MULTIMÉDIA CONNECTÉ
+        t_par_notes, t_par_taf_new, t_par_conduite, t_par_edt = st.tabs([
             "📊 Notes & Bulletin",
+            "📚 Travail à Faire (Devoirs & Supports)",
             "⚠️ Conduite, Absences & Remarques",
-            "📖 Travail à faire & Cahier de Texte",
             "📅 Emploi du Temps de la Classe (Récréation 11h00-11h30)"
         ])
 
@@ -1893,6 +2088,69 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
                 st.dataframe(df_notes_affiche[cols_existantes], use_container_width=True)
             else:
                 st.info("Aucune note enregistrée pour cette période.")
+
+        # NOUVEAU MODULE ESPACE PARENT : TRAVAIL À FAIRE CONNECTÉ AVEC EXPORT & TÉLÉCHARGEMENT
+        with t_par_taf_new:
+            st.subheader(f"📚 Travail à Faire & Supports de Cours — Classe de {classe}")
+            st.info("Consultez les devoirs assignés par l'équipe enseignante, visualisez les photos/vidéos et téléchargez/exportez les pièces jointes.")
+
+            df_taf_p = pd.DataFrame()
+            if "travail_a_faire_db" in st.session_state and not st.session_state.travail_a_faire_db.empty and "Classe" in st.session_state.travail_a_faire_db.columns:
+                df_taf_p = st.session_state.travail_a_faire_db[st.session_state.travail_a_faire_db["Classe"] == classe]
+
+            if not df_taf_p.empty:
+                for idx_p, row_p in df_taf_p.iterrows():
+                    st.markdown(
+                        f"""
+                        <div class="work-card">
+                            <h3 style="margin:0; color:#0EA5E9;">📖 {row_p.get('Matière')} : {row_p.get('Titre')}</h3>
+                            <p style="margin:5px 0; font-size:0.95rem; color:#475569;">
+                                📅 <b>Publié le :</b> {row_p.get('DatePublication')} par <b>{row_p.get('Professeur')}</b> | ⏳ <b>À rendre pour le :</b> <span style="color:#D97706; font-weight:800;">{row_p.get('DateRendu')}</span>
+                            </p>
+                            <hr style="margin:10px 0;">
+                            <p style="font-size:1.05rem; font-weight:600; color:#0F172A;"><b>Consignes :</b> {row_p.get('Consignes')}</p>
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+
+                    c_m1, c_m2 = st.columns(2)
+                    with c_m1:
+                        if row_p.get("LienUrl"):
+                            st.markdown(f"🔗 **Lien Web / Support :** [{row_p.get('LienUrl')}]({row_p.get('LienUrl')})")
+                        if row_p.get("LienVideo"):
+                            st.markdown(f"🎥 **Lien Vidéo :** [{row_p.get('LienVideo')}]({row_p.get('LienVideo')})")
+                            if "youtube.com" in str(row_p.get("LienVideo")) or "youtu.be" in str(row_p.get("LienVideo")):
+                                try:
+                                    st.video(row_p.get("LienVideo"))
+                                except Exception:
+                                    pass
+
+                    with c_m2:
+                        if row_p.get("FichierNom") and row_p.get("FichierB64"):
+                            st.markdown(f"📎 **Pièce jointe / Support :** `{row_p.get('FichierNom')}`")
+                            try:
+                                file_bytes = base64.b64decode(row_p.get("FichierB64"))
+                                f_type = row_p.get("FichierType", "")
+                                
+                                # Affichage direct si c'est une photo/image
+                                if "image" in str(f_type).lower() or any(ext in str(row_p.get("FichierNom")).lower() for ext in [".png", ".jpg", ".jpeg"]):
+                                    st.image(file_bytes, caption=f"Photo jointe : {row_p.get('FichierNom')}", use_column_width=True)
+                                
+                                # Bouton d'export/téléchargement
+                                st.download_button(
+                                    f"⬇️ Exporter / Télécharger {row_p.get('FichierNom')}",
+                                    data=file_bytes,
+                                    file_name=row_p.get("FichierNom"),
+                                    mime=f_type if f_type else "application/octet-stream",
+                                    key=f"dl_parent_taf_{idx_p}"
+                                )
+                            except Exception:
+                                st.error("Erreur de lecture de la pièce jointe.")
+                    
+                    st.markdown("<hr style='border-top: 1px dashed #CBD5E1; margin: 20px 0;'>", unsafe_allow_html=True)
+            else:
+                st.info("Aucun travail à faire actuellement assigné pour cette classe.")
 
         with t_par_conduite:
             st.subheader("⚠️ Conduite, Absences & Remarques des Professeurs")
@@ -1925,23 +2183,14 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
             else:
                 st.info("Aucune observation ou bilan de vie scolaire disponible pour le moment.")
 
-        with t_par_cahier:
-            st.subheader("📖 Cahier de Texte & Travail à Faire")
-            df_ct_parent = pd.DataFrame()
-            if "cahier_textes" in st.session_state and not st.session_state.cahier_textes.empty and "Classe" in st.session_state.cahier_textes.columns:
-                df_ct_parent = st.session_state.cahier_textes[st.session_state.cahier_textes["Classe"] == classe]
-
-            if not df_ct_parent.empty:
-                st.markdown("#### 📚 Leçons et Travaux à Rendre")
-                st.dataframe(df_ct_parent[["Date", "Matière", "Professeur", "Contenu", "Travail à faire"]], use_container_width=True)
-            else:
-                st.info("Aucun devoir ou cours renseigné dans le cahier de texte pour le moment.")
-
         with t_par_edt:
             st.subheader(f"📅 Emploi du Temps officiel de la classe {classe} (Incl. Récréation 11h00-11h30)")
             df_edt_parent = get_or_create_edt(classe)
             st.dataframe(df_edt_parent, use_container_width=True)
 
+# ==========================================
+# 7. ESPACE ADMINISTRATION (AVEC SUPPRESSIONS COMPLETES)
+# ==========================================
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Administration Générale & Gestion des Accès</div>', unsafe_allow_html=True)
 
@@ -1983,7 +2232,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             "💾 Sauvegarde & Synchronisation"
         ])
 
-        # CORRECTION DE L'AJOUT ÉLÈVE ET DE LA GESTION DE LA BASE ÉLÈVES
         with t_adm_eleves:
             st.subheader("🎒 Gestion des Élèves de l'Établissement")
             
@@ -1992,14 +2240,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.markdown("#### ➕ Ajouter un Nouvel Élève")
             with st.form("form_ajout_eleve_admin", clear_on_submit=True):
                 col_e1, col_e2, col_e3, col_e4 = st.columns(4)
-                with col_e1:
-                    prenom_n = st.text_input("Prénom de l'Élève")
-                with col_e2:
-                    nom_n = st.text_input("Nom de l'Élève")
-                with col_e3:
-                    date_n = st.date_input("Date de Naissance", value=datetime(2012, 1, 1))
-                with col_e4:
-                    cls_n = st.selectbox("Classe de l'Élève", classes_liste)
+                with col_e1: prenom_n = st.text_input("Prénom de l'Élève")
+                with col_e2: nom_n = st.text_input("Nom de l'Élève")
+                with col_e3: date_n = st.date_input("Date de Naissance", value=datetime(2012, 1, 1))
+                with col_e4: cls_n = st.selectbox("Classe de l'Élève", classes_liste)
 
                 btn_add_eleve = st.form_submit_button("➕ Ajouter l'Élève à la Base de Données")
 
@@ -2015,16 +2259,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                             "Photo": None
                         }
                         
-                        # Réinitialisation propre du dataframe si vide
                         if st.session_state.eleves_db.empty:
                             st.session_state.eleves_db = pd.DataFrame([nouveau_rec])
                         else:
-                            st.session_state.eleves_db = pd.concat([
-                                st.session_state.eleves_db, 
-                                pd.DataFrame([nouveau_rec])
-                            ], ignore_index=True)
+                            st.session_state.eleves_db = pd.concat([st.session_state.eleves_db, pd.DataFrame([nouveau_rec])], ignore_index=True)
 
-                        # Garantir la structure exacte après concaténation
                         for col_req in ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]:
                             if col_req not in st.session_state.eleves_db.columns:
                                 st.session_state.eleves_db[col_req] = ""
@@ -2037,7 +2276,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                         st.error("Veuillez renseigner au moins le prénom et le nom de l'élève.")
 
             st.markdown("---")
-            st.markdown("#### 📋 Liste globale des élèves enregistrés")
+            st.markdown("#### 📋 Liste globale et Suppression d'élèves")
             if not st.session_state.eleves_db.empty:
                 st.dataframe(st.session_state.eleves_db[["Nom Complet", "Prénom", "Nom", "Classe", "Date de Naissance"]], use_container_width=True)
                 
@@ -2049,7 +2288,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                     if st.button("🗑️ Supprimer Élève"):
                         st.session_state.eleves_db = st.session_state.eleves_db[st.session_state.eleves_db["Nom Complet"] != el_suppr].reset_index(drop=True)
                         sauvegarder_donnees_externes("SUPPRESSION_ELEVE")
-                        st.success(f"Élève {el_suppr} supprimé !")
+                        st.success(f"Élève {el_suppr} supprimé avec succès !")
                         st.rerun()
             else:
                 st.info("Aucun élève enregistré pour le moment.")
@@ -2081,6 +2320,19 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
             st.dataframe(st.session_state.prof_credentials[["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée"]], use_container_width=True)
 
+            # SUPPRESSION PROFESSEUR (AJOUT)
+            if not st.session_state.prof_credentials.empty:
+                col_dp1, col_dp2 = st.columns([3, 1])
+                with col_dp1:
+                    prof_to_del = st.selectbox("Sélectionner un enseignant à supprimer", st.session_state.prof_credentials["Email"].tolist(), key="sb_del_prof")
+                with col_dp2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Supprimer Professeur"):
+                        st.session_state.prof_credentials = st.session_state.prof_credentials[st.session_state.prof_credentials["Email"] != prof_to_del].reset_index(drop=True)
+                        sauvegarder_donnees_externes("SUPPRESSION_PROF")
+                        st.success(f"Enseignant {prof_to_del} supprimé !")
+                        st.rerun()
+
         with t_adm_parents:
             st.subheader("👨‍👩‍👧 Liste Blanche & Accès des Parents d'Élèves")
             with st.form("form_add_parent"):
@@ -2106,6 +2358,19 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
             st.dataframe(st.session_state.parents_white_list, use_container_width=True)
 
+            # SUPPRESSION ACCÈS PARENT (AJOUT)
+            if not st.session_state.parents_white_list.empty:
+                col_dpar1, col_dpar2 = st.columns([3, 1])
+                with col_dpar1:
+                    parent_to_del = st.selectbox("Sélectionner un accès parent à supprimer", range(len(st.session_state.parents_white_list)), format_func=lambda x: f"{st.session_state.parents_white_list.iloc[x].get('Téléphone')} - Élève: {st.session_state.parents_white_list.iloc[x].get('Prénom Élève')} {st.session_state.parents_white_list.iloc[x].get('Nom Élève')}", key="sb_del_parent")
+                with col_dpar2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Supprimer Accès Parent"):
+                        st.session_state.parents_white_list = st.session_state.parents_white_list.drop(parent_to_del).reset_index(drop=True)
+                        sauvegarder_donnees_externes("SUPPRESSION_PARENT")
+                        st.success("Accès parent supprimé !")
+                        st.rerun()
+
         with t_adm_classes:
             st.subheader("🏫 Configuration des Classes et Cycles")
             with st.form("form_add_classe"):
@@ -2123,6 +2388,19 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                         st.rerun()
 
             st.dataframe(st.session_state.classes_db, use_container_width=True)
+
+            # SUPPRESSION CLASSE (AJOUT)
+            if not st.session_state.classes_db.empty:
+                col_dc1, col_dc2 = st.columns([3, 1])
+                with col_dc1:
+                    cls_to_del = st.selectbox("Sélectionner une classe à supprimer", st.session_state.classes_db["Classe"].tolist(), key="sb_del_classe")
+                with col_dc2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Supprimer Classe"):
+                        st.session_state.classes_db = st.session_state.classes_db[st.session_state.classes_db["Classe"] != cls_to_del].reset_index(drop=True)
+                        sauvegarder_donnees_externes("SUPPRESSION_CLASSE")
+                        st.success(f"Classe {cls_to_del} supprimée !")
+                        st.rerun()
 
         with t_adm_matieres:
             st.subheader("📚 Paramétrage des Matières, Coefficients & Barèmes")
@@ -2143,6 +2421,19 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
             st.dataframe(st.session_state.matieres_def, use_container_width=True)
 
+            # SUPPRESSION MATIÈRE (AJOUT)
+            if not st.session_state.matieres_def.empty:
+                col_dm1, col_dm2 = st.columns([3, 1])
+                with col_dm1:
+                    mat_to_del = st.selectbox("Sélectionner une matière à supprimer", st.session_state.matieres_def["Matière"].tolist(), key="sb_del_matiere")
+                with col_dm2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    if st.button("🗑️ Supprimer Matière"):
+                        st.session_state.matieres_def = st.session_state.matieres_def[st.session_state.matieres_def["Matière"] != mat_to_del].reset_index(drop=True)
+                        sauvegarder_donnees_externes("SUPPRESSION_MATIERE")
+                        st.success(f"Matière {mat_to_del} supprimée !")
+                        st.rerun()
+
         with t_adm_backup:
             st.subheader("💾 Centre de Sauvegarde et Persistance Globale")
             st.info("La sauvegarde enregistre automatiquement toutes les données localement dans `database_backup.json` et sur la base Supabase.")
@@ -2155,13 +2446,16 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             if "supabase_backup_history" in st.session_state:
                 st.dataframe(pd.DataFrame(st.session_state.supabase_backup_history), use_container_width=True)
 
+# ==========================================
+# 8. ADMINISTRATION XXL & RAPPORTS
+# ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Tableau de Bord Global, Impression Officielle & IA</div>', unsafe_allow_html=True)
 
     t_rep_imp, t_rep_edt, t_rep_ct, t_rep_ia = st.tabs([
         "🖨️ Fiches Officielles & Bulletins PDF",
         "📅 Emplois du Temps Globaux (11h00-11h30 Récréation)",
-        "📖 Cahier de Textes Général",
+        "📖 Registre du Cahier de Textes",
         "🤖 Assistant IA Saint-Louis"
     ])
 
@@ -2178,7 +2472,6 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
 
         col_b1, col_b2 = st.columns(2)
         with col_b1:
-            # Génération sécurisée de la liste PDF sans KeyError
             pdf_fiche = generer_pdf_liste_eleves_classe(cls_gen)
             st.download_button(
                 f"📄 Télécharger la Fiche de Classe PDF ({cls_gen})",
@@ -2218,7 +2511,7 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
         )
 
     with t_rep_ct:
-        st.subheader("📖 Cahier de Textes Général & Inspection Pédagogique")
+        st.subheader("📖 Registre Général du Cahier de Textes")
         if "cahier_textes" in st.session_state and not st.session_state.cahier_textes.empty:
             st.dataframe(st.session_state.cahier_textes, use_container_width=True)
             
