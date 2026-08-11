@@ -658,7 +658,7 @@ if isinstance(st.session_state.notes_db, pd.DataFrame):
 if "Periode" not in st.session_state.notes_db.columns and "Période" in st.session_state.notes_db.columns:
     st.session_state.notes_db["Periode"] = st.session_state.notes_db["Période"]
 elif "Période" not in st.session_state.notes_db.columns and "Periode" in st.session_state.notes_db.columns:
-    st.session_state.notes_db["Période"] = st.session_state.notes_db["Periode"]
+    st.session_state.notes_db["Periode"] = st.session_state.notes_db["Periode"]
 elif "Periode" not in st.session_state.notes_db.columns and "Période" not in st.session_state.notes_db.columns:
     st.session_state.notes_db["Periode"] = "1er Semestre"
     st.session_state.notes_db["Période"] = "1er Semestre"
@@ -675,7 +675,6 @@ if "viescolaire_db" not in st.session_state:
             ]
         )
 
-# NOUVEAU MODULE TRAVAIL À FAIRE INTERCONNECTÉ PROF -> PARENT
 if "travail_a_faire_db" not in st.session_state:
     if "travail_a_faire_db" in saved_data:
         st.session_state.travail_a_faire_db = pd.DataFrame(saved_data["travail_a_faire_db"])
@@ -1509,7 +1508,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         st.markdown("---")
         
         t_notes, t_taf_prof, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
-            "📝 Saisie des Notes",
+            "📝 Saisie & Édition des Notes",
             "📌 Assigner Travail à Faire",
             "📋 Feuille d'Appel", 
             "⚠️ Conduite & Vie Scolaire", 
@@ -1518,8 +1517,8 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         ])
 
         with t_notes:
-            st.markdown("### 📝 Module Harmonisé de Saisie et Suppression des Notes")
-            st.info(f"Saisie et gestion des notes pour la classe assignée : **{classe_autorisee}** ({cycle_actuel}).")
+            st.markdown("### 📝 Module Interactif de Modification / Ajout / Suppression des Notes")
+            st.info(f"Édition directe du tableau des notes pour votre classe assignée : **{classe_autorisee}** ({cycle_actuel}). Vous pouvez ajouter, modifier ou supprimer des lignes directement dans le tableau ci-dessous.")
 
             periodes_possibles = obtenir_periodes_pour_classe(classe_autorisee)
             
@@ -1539,156 +1538,44 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     matiere_sel = st.selectbox("Matière enseignée", matieres_possibles, index=default_idx, key="prof_mat_sel")
                 with col_sp3:
                     bareme_defaut = int(obtenir_bareme_matiere(classe_autorisee, matiere_sel))
-                    if cycle_actuel == "Élémentaire":
-                        bareme_sel = st.number_input("Barème de notation (10 à 60)", min_value=10, max_value=60, value=bareme_defaut if 10 <= bareme_defaut <= 60 else 50, key="prof_bar_sel")
-                    else:
-                        bareme_sel = st.number_input("Barème de notation", min_value=5, max_value=100, value=bareme_defaut, key="prof_bar_sel")
+                    bareme_sel = st.number_input("Barème de notation", min_value=5, max_value=100, value=bareme_defaut, key="prof_bar_sel")
 
-                df_eleves_classe = pd.DataFrame()
-                if "eleves_db" in st.session_state and "Classe" in st.session_state.eleves_db.columns:
-                    df_eleves_classe = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee]
-                    if "Nom Complet" in df_eleves_classe.columns:
-                        df_eleves_classe = df_eleves_classe.sort_values(by="Nom Complet", ascending=True)
+                df_temp_notes = st.session_state.notes_db if "notes_db" in st.session_state else pd.DataFrame()
                 
-                eleves_classe = df_eleves_classe["Nom Complet"].tolist() if not df_eleves_classe.empty and "Nom Complet" in df_eleves_classe.columns else []
+                cond_cls = (df_temp_notes["Classe"] == classe_autorisee) if not df_temp_notes.empty and "Classe" in df_temp_notes.columns else pd.Series(False, index=df_temp_notes.index)
+                cond_mat = (df_temp_notes["Matière"] == matiere_sel) if not df_temp_notes.empty and "Matière" in df_temp_notes.columns else pd.Series(False, index=df_temp_notes.index)
+                cond_per = ((df_temp_notes["Periode"] == periode_sel) | (df_temp_notes["Période"] == periode_sel)) if not df_temp_notes.empty and "Periode" in df_temp_notes.columns else pd.Series(False, index=df_temp_notes.index)
 
-                if eleves_classe:
-                    coef_actuel = obtenir_coefficient_matiere(classe_autorisee, matiere_sel)
-                    if cycle_actuel == "Élémentaire":
-                        st.markdown(f"#### Grille de notation : {matiere_sel} ({periode_sel}) — Barème sur **{bareme_sel}** (Élémentaire)")
-                    else:
-                        st.markdown(f"#### Grille de notation : {matiere_sel} ({periode_sel}) — Barème sur **{bareme_sel}** — Coefficient : **{coef_actuel}**")
+                sub_notes_df = df_temp_notes[cond_cls & cond_mat & cond_per].copy() if not df_temp_notes.empty else pd.DataFrame(columns=["Classe", "Matière", "Periode", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
+
+                st.markdown("#### ✏️ Tableau Éditable des Notes (Ajouter / Modifier / Supprimer des lignes)")
+                edited_notes = st.data_editor(
+                    sub_notes_df,
+                    num_rows="dynamic",
+                    use_container_width=True,
+                    key=f"editor_notes_{classe_autorisee}_{matiere_sel}_{periode_sel}"
+                )
+
+                if st.button("💾 Enregistrer & Synchroniser le Tableau des Notes", key="btn_save_edited_notes"):
+                    # Supprimer les anciennes entrées correspondantes
+                    mask_keep = ~(cond_cls & cond_mat & cond_per) if not df_temp_notes.empty else pd.Series(True, index=df_temp_notes.index)
+                    st.session_state.notes_db = df_temp_notes[mask_keep].reset_index(drop=True)
                     
-                    notes_actuelles = pd.DataFrame()
-                    if not st.session_state.notes_db.empty and "Classe" in st.session_state.notes_db.columns:
-                        df_temp = st.session_state.notes_db
-                        cond_cls = (df_temp["Classe"] == classe_autorisee)
-                        cond_mat = (df_temp["Matière"] == matiere_sel) if "Matière" in df_temp.columns else True
-                        
-                        if "Periode" in df_temp.columns and "Période" in df_temp.columns:
-                            cond_per = (df_temp["Periode"] == periode_sel) | (df_temp["Période"] == periode_sel)
-                        elif "Periode" in df_temp.columns:
-                            cond_per = (df_temp["Periode"] == periode_sel)
-                        else:
-                            cond_per = (df_temp["Période"] == periode_sel)
+                    edited_notes["Classe"] = classe_autorisee
+                    edited_notes["Matière"] = matiere_sel
+                    edited_notes["Periode"] = periode_sel
+                    edited_notes["Période"] = periode_sel
+                    edited_notes["BaremeNote"] = float(bareme_sel)
 
-                        notes_actuelles = df_temp[cond_cls & cond_mat & cond_per]
+                    st.session_state.notes_db = pd.concat([st.session_state.notes_db, edited_notes], ignore_index=True)
+                    sauvegarder_donnees_externes("EDIT_NOTES_PROF")
+                    enregistrer_log_action(prof_connecte, "EDIT_NOTES", f"Modifications enregistrées pour {matiere_sel} ({classe_autorisee})")
+                    st.success("✅ Tableau des notes modifié, synchronisé et sauvegardé avec succès !")
+                    st.rerun()
 
-                    with st.form("form_saisie_notes_harmonise"):
-                        saisie_data = []
-                        
-                        if cycle_actuel == "Élémentaire":
-                            h_col1, h_col2 = st.columns([4, 5])
-                            with h_col1: st.markdown("**Élève**")
-                            with h_col2: st.markdown(f"**Note obtenue (sur {bareme_sel})**")
-                        else:
-                            h_col1, h_col2, h_col3, h_col4 = st.columns([3, 2, 2, 2])
-                            with h_col1: st.markdown("**Élève**")
-                            with h_col2: st.markdown(f"**Devoir 1 (sur {bareme_sel})**")
-                            with h_col3: st.markdown(f"**Devoir 2 (sur {bareme_sel})**")
-                            with h_col4: st.markdown(f"**Composition (sur {bareme_sel})**")
-                        st.markdown("<hr style='margin: 5px 0 15px 0;'>", unsafe_allow_html=True)
-
-                        for idx_el, el in enumerate(eleves_classe):
-                            ex_row = notes_actuelles[notes_actuelles["Eleve"] == el] if not notes_actuelles.empty and "Eleve" in notes_actuelles.columns else pd.DataFrame()
-                            d1_val = float(ex_row.iloc[0]["Devoir1"]) if not ex_row.empty and "Devoir1" in ex_row.columns and pd.notna(ex_row.iloc[0]["Devoir1"]) else 0.0
-                            d2_val = float(ex_row.iloc[0]["Devoir2"]) if not ex_row.empty and "Devoir2" in ex_row.columns and pd.notna(ex_row.iloc[0]["Devoir2"]) else 0.0
-                            comp_val = float(ex_row.iloc[0]["Composition"]) if not ex_row.empty and "Composition" in ex_row.columns and pd.notna(ex_row.iloc[0]["Composition"]) else 0.0
-
-                            if cycle_actuel == "Élémentaire":
-                                col_e1, col_e2 = st.columns([4, 5])
-                                with col_e1:
-                                    st.write(f"👤 {el}")
-                                with col_e2:
-                                    ncomp = st.number_input(f"Comp {el}", 0.0, float(bareme_sel), comp_val, key=f"comp_{classe_autorisee}_{matiere_sel}_{periode_sel}_{idx_el}", label_visibility="collapsed")
-                                nd1, nd2 = 0.0, 0.0
-                            else:
-                                col_e1, col_e2, col_e3, col_e4 = st.columns([3, 2, 2, 2])
-                                with col_e1:
-                                    st.write(f"👤 {el}")
-                                with col_e2:
-                                    nd1 = st.number_input(f"D1 {el}", 0.0, float(bareme_sel), d1_val, key=f"d1_{classe_autorisee}_{matiere_sel}_{periode_sel}_{idx_el}", label_visibility="collapsed")
-                                with col_e3:
-                                    nd2 = st.number_input(f"D2 {el}", 0.0, float(bareme_sel), d2_val, key=f"d2_{classe_autorisee}_{matiere_sel}_{periode_sel}_{idx_el}", label_visibility="collapsed")
-                                with col_e4:
-                                    ncomp = st.number_input(f"Comp {el}", 0.0, float(bareme_sel), comp_val, key=f"comp_{classe_autorisee}_{matiere_sel}_{periode_sel}_{idx_el}", label_visibility="collapsed")
-
-                            saisie_data.append({
-                                "Classe": classe_autorisee,
-                                "Matière": matiere_sel,
-                                "Periode": periode_sel,
-                                "Période": periode_sel,
-                                "Eleve": el,
-                                "Devoir1": nd1 if cycle_actuel == "Collège" else 0.0,
-                                "Devoir2": nd2 if cycle_actuel == "Collège" else 0.0,
-                                "Composition": ncomp,
-                                "BaremeNote": float(bareme_sel)
-                            })
-
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        btn_sync = st.form_submit_button("🔄 Enregistrer et Synchroniser les Notes")
-
-                        if btn_sync:
-                            st.session_state.notes_db = st.session_state.notes_db.reset_index(drop=True)
-
-                            df_temp = st.session_state.notes_db
-                            if "Classe" in df_temp.columns and "Matière" in df_temp.columns:
-                                cond_cls = (df_temp["Classe"] == classe_autorisee)
-                                cond_mat = (df_temp["Matière"] == matiere_sel)
-                                
-                                if "Periode" in df_temp.columns and "Période" in df_temp.columns:
-                                    cond_per = (df_temp["Periode"] == periode_sel) | (df_temp["Période"] == periode_sel)
-                                elif "Periode" in df_temp.columns:
-                                    cond_per = (df_temp["Periode"] == periode_sel)
-                                else:
-                                    cond_per = (df_temp["Période"] == periode_sel)
-
-                                mask_to_keep = ~(cond_cls & cond_mat & cond_per)
-                                st.session_state.notes_db = st.session_state.notes_db[mask_to_keep].reset_index(drop=True)
-
-                            new_notes_df = pd.DataFrame(saisie_data)
-                            st.session_state.notes_db = pd.concat([st.session_state.notes_db, new_notes_df], ignore_index=True)
-
-                            st.session_state.notes_db["Periode"] = st.session_state.notes_db["Periode"].fillna(periode_sel)
-                            st.session_state.notes_db["Période"] = st.session_state.notes_db["Periode"]
-
-                            sauvegarder_donnees_externes("SAISIE_NOTES_PROF")
-                            enregistrer_log_action(prof_connecte, "SAISIE_NOTES", f"Saisie & Synchronisation réussie pour {matiere_sel} ({classe_autorisee})")
-                            st.success("✅ Enregistrement, synchronisation et mise à jour de la session réussis avec succès !")
-
-                    # MODULE DE SUPPRESSION DES NOTES (AJOUT)
-                    st.markdown("---")
-                    st.markdown("#### 🗑️ Suppression ciblée de notes")
-                    c_del_n1, c_del_n2 = st.columns([3, 1])
-                    with c_del_n1:
-                        el_suppr_note = st.selectbox("Élève dont vous souhaitez supprimer la note pour cette matière/période", ["-- Tous les élèves --"] + eleves_classe, key="sb_del_note_el")
-                    with c_del_n2:
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("🗑️ Supprimer Note(s)"):
-                            df_temp = st.session_state.notes_db
-                            if not df_temp.empty and "Classe" in df_temp.columns and "Matière" in df_temp.columns:
-                                cond_cls = (df_temp["Classe"] == classe_autorisee)
-                                cond_mat = (df_temp["Matière"] == matiere_sel)
-                                cond_per = (df_temp["Periode"] == periode_sel) | (df_temp["Période"] == periode_sel) if "Periode" in df_temp.columns else True
-                                
-                                if el_suppr_note == "-- Tous les élèves --":
-                                    mask = ~(cond_cls & cond_mat & cond_per)
-                                else:
-                                    mask = ~(cond_cls & cond_mat & cond_per & (df_temp["Eleve"] == el_suppr_note))
-                                
-                                st.session_state.notes_db = df_temp[mask].reset_index(drop=True)
-                                sauvegarder_donnees_externes("SUPPRESSION_NOTES")
-                                enregistrer_log_action(prof_connecte, "SUPPRESSION_NOTES", f"Note supprimée pour {el_suppr_note} en {matiere_sel}")
-                                st.success("Note(s) supprimée(s) avec succès !")
-                                st.rerun()
-
-                else:
-                    st.warning("Aucun élève enregistré dans cette classe.")
-
-        # NOUVEAU MODULE COMPLET : TRAVAIL À FAIRE INTERCONNECTÉ AVEC LE PARENT (AVEC SUPPRESSION ET EXPORT)
         with t_taf_prof:
-            st.markdown("### 📌 Assigner du Travail à Faire & Supports Pédagogiques (Documents, Photos, Vidéos, Liens)")
-            st.info(f"Les travaux assignés ici pour la classe de **{classe_autorisee}** seront immédiatement transmis et visualisables dans l'Espace Parents avec options d'export et téléchargement.")
+            st.markdown("### 📌 Assigner & Gérer le Travail à Faire")
+            st.info(f"Les travaux assignés ici pour la classe de **{classe_autorisee}** seront immédiatement transmis et visualisables dans l'Espace Parents.")
 
             with st.form("form_taf_prof", clear_on_submit=True):
                 col_taf1, col_taf2, col_taf3 = st.columns(3)
@@ -1751,263 +1638,112 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         st.error("Veuillez renseigner au moins le titre et les consignes du devoir.")
 
             st.markdown("---")
-            st.markdown(f"#### 📚 Travaux assignés actuellement pour la classe {classe_autorisee}")
-
+            st.markdown(f"#### ✏️ Gestion Directe des Devoirs ({classe_autorisee}) — Ajouter / Modifier / Supprimer")
+            
             df_taf_cls = pd.DataFrame()
             if "travail_a_faire_db" in st.session_state and not st.session_state.travail_a_faire_db.empty and "Classe" in st.session_state.travail_a_faire_db.columns:
                 df_taf_cls = st.session_state.travail_a_faire_db[st.session_state.travail_a_faire_db["Classe"] == classe_autorisee]
 
-            if not df_taf_cls.empty:
-                for idx_taf, row_taf in df_taf_cls.iterrows():
-                    with st.expander(f"📌 {row_taf.get('Matière')} : {row_taf.get('Titre')} (À rendre pour le : {row_taf.get('DateRendu')})", expanded=False):
-                        st.write(f"**Publié le :** {row_taf.get('DatePublication')} par **{row_taf.get('Professeur')}**")
-                        st.write(f"**Consignes :** {row_taf.get('Consignes')}")
-                        
-                        if row_taf.get("LienUrl"):
-                            st.markdown(f"🔗 **Lien Web :** [{row_taf.get('LienUrl')}]({row_taf.get('LienUrl')})")
-                        if row_taf.get("LienVideo"):
-                            st.markdown(f"🎥 **Vidéo :** [{row_taf.get('LienVideo')}]({row_taf.get('LienVideo')})")
-                        
-                        if row_taf.get("FichierNom") and row_taf.get("FichierB64"):
-                            st.write(f"📎 **Document/Photo joint :** {row_taf.get('FichierNom')}")
-                            try:
-                                bytes_f = base64.b64decode(row_taf.get("FichierB64"))
-                                st.download_button(
-                                    f"⬇️ Exporter / Télécharger {row_taf.get('FichierNom')}",
-                                    data=bytes_f,
-                                    file_name=row_taf.get("FichierNom"),
-                                    key=f"dl_prof_taf_{idx_taf}"
-                                )
-                            except Exception:
-                                pass
+            edited_taf = st.data_editor(
+                df_taf_cls,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_taf_prof"
+            )
 
-                        col_sup_taf1, col_sup_taf2 = st.columns([4, 1])
-                        with col_sup_taf2:
-                            if st.button("🗑️ Supprimer ce devoir", key=f"btn_del_taf_prof_{idx_taf}"):
-                                taf_id_del = row_taf.get("ID")
-                                st.session_state.travail_a_faire_db = st.session_state.travail_a_faire_db[st.session_state.travail_a_faire_db["ID"] != taf_id_del].reset_index(drop=True)
-                                sauvegarder_donnees_externes("SUPPRESSION_TRAVAIL_A_FAIRE")
-                                enregistrer_log_action(prof_connecte, "SUPPRESSION_TAF", f"Devoir {taf_id_del} supprimé")
-                                st.success("Devoir supprimé avec succès !")
-                                st.rerun()
-            else:
-                st.info("Aucun travail à faire assigné pour le moment dans cette classe.")
+            if st.button("💾 Enregistrer les Modifications du Tableau des Devoirs", key="btn_save_taf_editor"):
+                df_other_taf = st.session_state.travail_a_faire_db[st.session_state.travail_a_faire_db["Classe"] != classe_autorisee] if "Classe" in st.session_state.travail_a_faire_db.columns else pd.DataFrame()
+                edited_taf["Classe"] = classe_autorisee
+                st.session_state.travail_a_faire_db = pd.concat([df_other_taf, edited_taf], ignore_index=True)
+                sauvegarder_donnees_externes("EDIT_TAF_TABLE")
+                st.success("✅ Tableau des travaux à faire mis à jour et synchronisé !")
+                st.rerun()
 
         with t_appel:
-            st.markdown("### 📋 Feuille d'Appel & Suivi des Présences (Saisie & Suppression)")
+            st.markdown("### 📋 Feuille d'Appel & Registre Interactif (Édition Directe)")
             st.info(f"Classe concernée : **{classe_autorisee}**")
             
-            if not st.session_state.eleves_db.empty and "Classe" in st.session_state.eleves_db.columns:
-                col_ap1, col_ap2 = st.columns([2, 2])
-                with col_ap1:
-                    date_jour = st.date_input("Date du jour", value=datetime.today())
-                
-                df_eleves_cibles = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee]
-                if "Nom Complet" in df_eleves_cibles.columns:
-                    df_eleves_cibles = df_eleves_cibles.sort_values(by="Nom Complet", ascending=True)
-                eleves_cibles = df_eleves_cibles["Nom Complet"].tolist() if "Nom Complet" in df_eleves_cibles.columns else []
+            date_jour = st.date_input("Date sélectionnée", value=datetime.today())
+            df_abs_cur = st.session_state.absences_db if "absences_db" in st.session_state else pd.DataFrame()
+            
+            cond_abs_cls = (df_abs_cur["Classe"] == classe_autorisee) & (df_abs_cur["Date"] == str(date_jour)) if not df_abs_cur.empty and "Classe" in df_abs_cur.columns else pd.Series(False, index=df_abs_cur.index)
+            sub_abs = df_abs_cur[cond_abs_cls].copy() if not df_abs_cur.empty else pd.DataFrame(columns=["Date", "Classe", "Élève", "Statut", "Motif"])
 
-                if eleves_cibles:
-                    st.markdown("#### Pointage des Élèves (Triés par ordre alphabétique)")
-                    with st.form("form_appel_harmonise"):
-                        res_appel = {}
-                        for idx_el, el in enumerate(eleves_cibles):
-                            c1, c2 = st.columns([3, 3])
-                            with c1: 
-                                st.write(f"👤 {el}")
-                            with c2: 
-                                res_appel[el] = st.radio("Statut", ["Présent", "Absent", "Retard"], key=f"st_{classe_autorisee}_{idx_el}", horizontal=True, label_visibility="collapsed")
-                        
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.form_submit_button("✅ Valider et Synchroniser l'Appel"):
-                            nouveaux_abs = []
-                            for el in eleves_cibles:
-                                nouveaux_abs.append({
-                                    "Date": str(date_jour), 
-                                    "Classe": classe_autorisee, 
-                                    "Élève": el, 
-                                    "Statut": res_appel[el], 
-                                    "Motif": "Absence enregistrée" if res_appel[el] == "Absent" else ("Retard" if res_appel[el] == "Retard" else "Présent"),
-                                    "ValideParProf": True,
-                                    "Professeur": prof_connecte
-                                })
-                            
-                            df_abs = st.session_state.absences_db
-                            if not df_abs.empty and "Classe" in df_abs.columns and "Date" in df_abs.columns:
-                                cond_del = (df_abs["Classe"] == classe_autorisee) & (df_abs["Date"] == str(date_jour))
-                                st.session_state.absences_db = df_abs[~cond_del].reset_index(drop=True)
+            st.markdown("#### ✏️ Tableau Éditable des Absences (Ajouter / Modifier / Supprimer)")
+            edited_abs = st.data_editor(
+                sub_abs,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_abs_{classe_autorisee}_{date_jour}"
+            )
 
-                            st.session_state.absences_db = pd.concat([st.session_state.absences_db, pd.DataFrame(nouveaux_abs)], ignore_index=True)
-                            
-                            sauvegarder_donnees_externes("SAISIE_APPEL_PROF")
-                            enregistrer_log_action(prof_connecte, "APPEL", f"Appel validé pour {classe_autorisee} à la date du {date_jour}")
-                            st.success("✅ Appel enregistré, validé par l'enseignant et synchronisé avec succès !")
-
-                    # SUPPRESSION DES ABSENCES DU JOUR (AJOUT)
-                    st.markdown("---")
-                    st.markdown("#### 🗑️ Annuler / Supprimer un enregistrement d'appel")
-                    if st.button("🗑️ Supprimer l'appel enregistré pour cette date", key="btn_del_appel_date"):
-                        df_abs = st.session_state.absences_db
-                        if not df_abs.empty and "Classe" in df_abs.columns and "Date" in df_abs.columns:
-                            cond_del = (df_abs["Classe"] == classe_autorisee) & (df_abs["Date"] == str(date_jour))
-                            st.session_state.absences_db = df_abs[~cond_del].reset_index(drop=True)
-                            sauvegarder_donnees_externes("SUPPRESSION_APPEL")
-                            enregistrer_log_action(prof_connecte, "SUPPRESSION_APPEL", f"Appel supprimé pour {classe_autorisee} à la date du {date_jour}")
-                            st.success("Enregistrement d'appel supprimé pour cette date !")
-                            st.rerun()
-                else:
-                    st.warning("Aucun élève trouvé pour cette classe.")
+            if st.button("💾 Enregistrer le Registre d'Appel Modifié"):
+                mask_keep_abs = ~cond_abs_cls if not df_abs_cur.empty else pd.Series(True, index=df_abs_cur.index)
+                edited_abs["Classe"] = classe_autorisee
+                edited_abs["Date"] = str(date_jour)
+                st.session_state.absences_db = pd.concat([df_abs_cur[mask_keep_abs], edited_abs], ignore_index=True)
+                sauvegarder_donnees_externes("EDIT_APPEL")
+                st.success("✅ Registre des absences modifié et synchronisé !")
+                st.rerun()
 
         with t_cond:
-            st.markdown("### ⚠️ Suivi de la Vie Scolaire & Discipline (Saisie & Suppression)")
-            st.info(f"Évaluation du comportement et de l'assiduité pour la classe : **{classe_autorisee}**")
+            st.markdown("### ⚠️ Vie Scolaire (Édition Directe / Suppression / Ajout)")
+            st.info(f"Évaluation du comportement pour la classe : **{classe_autorisee}**")
             
-            df_eleves_vs = pd.DataFrame()
-            if "eleves_db" in st.session_state and "Classe" in st.session_state.eleves_db.columns:
-                df_eleves_vs = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee]
-                if "Nom Complet" in df_eleves_vs.columns:
-                    df_eleves_vs = df_eleves_vs.sort_values(by="Nom Complet", ascending=True)
-            
-            eleves_vs = df_eleves_vs["Nom Complet"].tolist() if "Nom Complet" in df_eleves_vs.columns else []
-            
-            if eleves_vs:
-                periodes_vs_possibles = obtenir_periodes_pour_classe(classe_autorisee)
-                
-                col_vs_1, col_vs_2 = st.columns(2)
-                with col_vs_1:
-                    periode_vs = st.selectbox("Période de vie scolaire", periodes_vs_possibles, key="vs_per_prof")
-                with col_vs_2:
-                    el_vs = st.selectbox("Sélectionner l'élève", eleves_vs, key="vs_el_prof")
+            df_vs_cur = st.session_state.viescolaire_db if "viescolaire_db" in st.session_state else pd.DataFrame()
+            cond_vs_cls = (df_vs_cur["Classe"] == classe_autorisee) if not df_vs_cur.empty and "Classe" in df_vs_cur.columns else pd.Series(False, index=df_vs_cur.index)
+            sub_vs = df_vs_cur[cond_vs_cls].copy() if not df_vs_cur.empty else pd.DataFrame(columns=["Classe", "Periode", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil"])
 
-                with st.form("form_viescolaire_prof_harmonise"):
-                    c_vs1, c_vs2, c_vs3, c_vs4 = st.columns(4)
-                    with c_vs1: abs_j = st.number_input("Absences justifiées", 0, 50, 0, key="prof_abs_j")
-                    with c_vs2: abs_nj = st.number_input("Absences non justifiées", 0, 50, 0, key="prof_abs_nj")
-                    with c_vs3: ret = st.number_input("Retards", 0, 50, 0, key="prof_ret")
-                    with c_vs4: hp = st.number_input("Heures perdues", 0, 100, 0, key="prof_hp")
+            edited_vs = st.data_editor(
+                sub_vs,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_vs_{classe_autorisee}"
+            )
 
-                    obs = st.text_area("Observations personnalisées sur l'élève", key="prof_obs_vs")
-                    decision = st.selectbox("Proposition de décision / Sanction", [
-                        "Félicitations", "Tableau d'honneur", "Encouragements", "Avertissement travail", "Avertissement conduite", "Blâme"
-                    ], key="prof_dec_vs")
-
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.form_submit_button("🔄 Enregistrer et Synchroniser la Vie Scolaire"):
-                        if el_vs:
-                            st.session_state.viescolaire_db = st.session_state.viescolaire_db.reset_index(drop=True)
-                            df_vs = st.session_state.viescolaire_db
-                            
-                            if "Classe" in df_vs.columns and "Eleve" in df_vs.columns:
-                                cond_cls = (df_vs["Classe"] == classe_autorisee)
-                                cond_el = (df_vs["Eleve"] == el_vs)
-                                if "Periode" in df_vs.columns and "Période" in df_vs.columns:
-                                    cond_per = (df_vs["Periode"] == periode_vs) | (df_vs["Période"] == periode_vs)
-                                elif "Periode" in df_vs.columns:
-                                    cond_per = (df_vs["Periode"] == periode_vs)
-                                else:
-                                    cond_per = (df_vs["Période"] == periode_vs)
-
-                                st.session_state.viescolaire_db = df_vs[~(cond_cls & cond_el & cond_per)].reset_index(drop=True)
-                            
-                            new_vs = pd.DataFrame([{
-                                "Classe": classe_autorisee, 
-                                "Periode": periode_vs, 
-                                "Période": periode_vs,
-                                "Eleve": el_vs,
-                                "AbsencesJustifiees": abs_j, 
-                                "AbsencesNonJustifiees": abs_nj,
-                                "Retards": ret, 
-                                "HeuresPerdues": hp, 
-                                "Observations": obs, 
-                                "DecisionConseil": decision
-                            }])
-                            st.session_state.viescolaire_db = pd.concat([st.session_state.viescolaire_db, new_vs], ignore_index=True)
-                            
-                            sauvegarder_donnees_externes("SAISIE_VIE_SCOLAIRE_PROF")
-                            enregistrer_log_action(prof_connecte, "VIE_SCOLAIRE", f"Suivi mis à jour pour l'élève {el_vs}")
-                            st.success("✅ Suivi de vie scolaire enregistré et synchronisé avec succès !")
-
-                # SUPPRESSION DE FICHE VIE SCOLAIRE (AJOUT)
-                st.markdown("---")
-                st.markdown("#### 🗑️ Supprimer le bilan de vie scolaire d'un élève")
-                if st.button(f"🗑️ Supprimer la fiche de vie scolaire de {el_vs} ({periode_vs})", key="btn_del_vs_el"):
-                    df_vs = st.session_state.viescolaire_db
-                    if not df_vs.empty and "Classe" in df_vs.columns and "Eleve" in df_vs.columns:
-                        cond_cls = (df_vs["Classe"] == classe_autorisee)
-                        cond_el = (df_vs["Eleve"] == el_vs)
-                        cond_per = (df_vs["Periode"] == periode_vs) | (df_vs["Période"] == periode_vs) if "Periode" in df_vs.columns else True
-                        st.session_state.viescolaire_db = df_vs[~(cond_cls & cond_el & cond_per)].reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_VIE_SCOLAIRE")
-                        enregistrer_log_action(prof_connecte, "SUPPRESSION_VIE_SCOLAIRE", f"Fiche supprimée pour {el_vs}")
-                        st.success("Bilan de vie scolaire supprimé !")
-                        st.rerun()
-            else:
-                st.warning("Aucun élève disponible pour cette classe.")
+            if st.button("💾 Enregistrer les Modifications Vie Scolaire"):
+                mask_keep_vs = ~cond_vs_cls if not df_vs_cur.empty else pd.Series(True, index=df_vs_cur.index)
+                edited_vs["Classe"] = classe_autorisee
+                st.session_state.viescolaire_db = pd.concat([df_vs_cur[mask_keep_vs], edited_vs], ignore_index=True)
+                sauvegarder_donnees_externes("EDIT_VIE_SCOLAIRE")
+                st.success("✅ Suivi de vie scolaire mis à jour avec succès !")
+                st.rerun()
 
         with t_cahier:
-            st.markdown("### 📑 Cahier de Texte (Publication & Suppression)")
-            st.info(f"Consignez les séances de cours dispensées pour la classe de **{classe_autorisee}**.")
+            st.markdown("### 📑 Cahier de Texte (Édition Directe des Leçons)")
+            st.info(f"Gestion et modification directe des séances de cours pour **{classe_autorisee}**.")
 
-            with st.form("form_cahier_harmonise"):
-                col_ct1, col_ct2 = st.columns(2)
-                with col_ct1:
-                    mat_ct = st.text_input("Matière enseignée", value=matiere_principale, key="prof_mat_ct")
-                with col_ct2:
-                    date_ct = st.date_input("Date de la séance", value=datetime.today(), key="prof_date_ct")
+            df_ct_cur = st.session_state.cahier_textes if "cahier_textes" in st.session_state else pd.DataFrame()
+            cond_ct_cls = (df_ct_cur["Classe"] == classe_autorisee) if not df_ct_cur.empty and "Classe" in df_ct_cur.columns else pd.Series(False, index=df_ct_cur.index)
+            sub_ct = df_ct_cur[cond_ct_cls].copy() if not df_ct_cur.empty else pd.DataFrame(columns=["Professeur", "Date", "Classe", "Matière", "Contenu", "Travail à faire"])
 
-                contenu = st.text_area("Contenu détaillé de la séance / Leçon du jour", key="prof_cont_ct")
+            edited_ct = st.data_editor(
+                sub_ct,
+                num_rows="dynamic",
+                use_container_width=True,
+                key=f"editor_ct_{classe_autorisee}"
+            )
 
-                st.markdown("<br>", unsafe_allow_html=True)
-                if st.form_submit_button("📢 Publier et Synchroniser la leçon au Cahier de Texte"):
-                    if mat_ct and contenu:
-                        new_ct = pd.DataFrame([{
-                            "Professeur": prof_connecte, 
-                            "Date": str(date_ct), 
-                            "Classe": classe_autorisee, 
-                            "Matière": mat_ct, 
-                            "Contenu": contenu, 
-                            "Travail à faire": "Voir onglet 'Travail à Faire'"
-                        }])
-                        st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, new_ct], ignore_index=True)
-                        
-                        sauvegarder_donnees_externes("CAHIER_TEXTE_PROF")
-                        enregistrer_log_action(prof_connecte, "CAHIER_TEXTE", f"Leçon publiée pour la matière {mat_ct}")
-                        st.success("✅ Leçon publiée et synchronisée avec succès !")
-                    else:
-                        st.error("Veuillez renseigner au moins la matière et le contenu de la séance.")
-
-            st.markdown("---")
-            st.markdown("#### 📜 Historique & Suppression des Publications")
-            df_ct_classe = pd.DataFrame()
-            if "cahier_textes" in st.session_state and not st.session_state.cahier_textes.empty and "Classe" in st.session_state.cahier_textes.columns:
-                df_ct_classe = st.session_state.cahier_textes[st.session_state.cahier_textes["Classe"] == classe_autorisee]
-            
-            if not df_ct_classe.empty:
-                st.dataframe(df_ct_classe[["Date", "Professeur", "Matière", "Contenu"]], use_container_width=True)
-                
-                col_del_ct1, col_del_ct2 = st.columns([3, 1])
-                with col_del_ct1:
-                    idx_del_ct = st.selectbox("Sélectionner une publication à supprimer", range(len(df_ct_classe)), format_func=lambda x: f"{df_ct_classe.iloc[x].get('Date')} - {df_ct_classe.iloc[x].get('Matière')} : {df_ct_classe.iloc[x].get('Contenu')[:30]}...", key="sb_del_ct")
-                with col_del_ct2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Supprimer Leçon"):
-                        row_to_del = df_ct_classe.iloc[idx_del_ct]
-                        cond = (st.session_state.cahier_textes["Classe"] == classe_autorisee) & (st.session_state.cahier_textes["Date"] == row_to_del["Date"]) & (st.session_state.cahier_textes["Contenu"] == row_to_del["Contenu"])
-                        st.session_state.cahier_textes = st.session_state.cahier_textes[~cond].reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_CAHIER_TEXTE")
-                        st.success("Publication supprimée !")
-                        st.rerun()
-            else:
-                st.info("Aucune entrée dans le cahier de texte pour cette classe.")
+            if st.button("💾 Enregistrer les Modifications du Cahier de Texte"):
+                mask_keep_ct = ~cond_ct_cls if not df_ct_cur.empty else pd.Series(True, index=df_ct_cur.index)
+                edited_ct["Classe"] = classe_autorisee
+                st.session_state.cahier_textes = pd.concat([df_ct_cur[mask_keep_ct], edited_ct], ignore_index=True)
+                sauvegarder_donnees_externes("EDIT_CAHIER_TEXTE")
+                st.success("✅ Registre du cahier de texte mis à jour et synchronisé !")
+                st.rerun()
 
         with t_edt_prof:
-            st.markdown(f"### 📅 Emploi du Temps de votre Classe ({classe_autorisee}) - Avec Récréation 11h00-11h30")
+            st.markdown(f"### 📅 Emploi du Temps de votre Classe ({classe_autorisee})")
             df_edt_prof = get_or_create_edt(classe_autorisee)
-            st.dataframe(df_edt_prof, use_container_width=True)
-            st.info("ℹ️ Le créneau de 11h00 à 11h30 est officiellement réservé à la récréation pour le bien-être des élèves et des enseignants.")
+            edited_edt_p = st.data_editor(df_edt_prof, use_container_width=True, key=f"editor_edt_p_{classe_autorisee}")
+
+            if st.button("💾 Enregistrer cet Emploi du Temps"):
+                st.session_state.edt_grid_db[classe_autorisee] = edited_edt_p
+                sauvegarder_donnees_externes("EDITION_EDT")
+                st.success("Emploi du temps sauvegardé !")
 
 # ==========================================
-# ESPACE PARENTS / ÉLÈVES (NOUVELLE CONFIGURATION)
+# ESPACE PARENTS / ÉLÈVES
 # ==========================================
 elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", "👨‍👩‍👧 Espace Parents / Élèves"]:
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Portail Parent & Suivi Direct de l\'Élève</div>', unsafe_allow_html=True)
@@ -2056,7 +1792,6 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
 
         st.markdown("---")
 
-        # LES ONGLETS SONT MISE À JOUR : SUPPRESSION DE CAHIER DE TEXTE / ANCIEN TRAVAIL À FAIRE, ET CREATION DU NOUVEAU TRAVAIL À FAIRE MULTIMÉDIA CONNECTÉ
         t_par_notes, t_par_taf_new, t_par_conduite, t_par_edt = st.tabs([
             "📊 Notes & Bulletin",
             "📚 Travail à Faire (Devoirs & Supports)",
@@ -2066,7 +1801,6 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
 
         with t_par_notes:
             st.subheader("📊 Consultation des Notes")
-            
             periodes_parent = obtenir_periodes_pour_classe(classe)
             periode_consult = st.selectbox("Choisir la période", periodes_parent, key="par_per_sel")
 
@@ -2089,7 +1823,6 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
             else:
                 st.info("Aucune note enregistrée pour cette période.")
 
-        # NOUVEAU MODULE ESPACE PARENT : TRAVAIL À FAIRE CONNECTÉ AVEC EXPORT & TÉLÉCHARGEMENT
         with t_par_taf_new:
             st.subheader(f"📚 Travail à Faire & Supports de Cours — Classe de {classe}")
             st.info("Consultez les devoirs assignés par l'équipe enseignante, visualisez les photos/vidéos et téléchargez/exportez les pièces jointes.")
@@ -2133,11 +1866,9 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
                                 file_bytes = base64.b64decode(row_p.get("FichierB64"))
                                 f_type = row_p.get("FichierType", "")
                                 
-                                # Affichage direct si c'est une photo/image
                                 if "image" in str(f_type).lower() or any(ext in str(row_p.get("FichierNom")).lower() for ext in [".png", ".jpg", ".jpeg"]):
                                     st.image(file_bytes, caption=f"Photo jointe : {row_p.get('FichierNom')}", use_column_width=True)
                                 
-                                # Bouton d'export/téléchargement
                                 st.download_button(
                                     f"⬇️ Exporter / Télécharger {row_p.get('FichierNom')}",
                                     data=file_bytes,
@@ -2189,10 +1920,10 @@ elif st.session_state.espace_actif in ["👨‍🦱 Espace Parents / Élèves", 
             st.dataframe(df_edt_parent, use_container_width=True)
 
 # ==========================================
-# 7. ESPACE ADMINISTRATION (AVEC SUPPRESSIONS COMPLETES)
+# 7. ESPACE ADMINISTRATION (ÉDITION GLOBALE DES TABLEAUX)
 # ==========================================
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
-    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Administration Générale & Gestion des Accès</div>', unsafe_allow_html=True)
+    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Administration Générale & Édition Dynamique des Tables</div>', unsafe_allow_html=True)
 
     if not st.session_state.authenticated_admin:
         with st.form("form_adm_secu"):
@@ -2224,7 +1955,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
         st.markdown("---")
         t_adm_eleves, t_adm_profs, t_adm_parents, t_adm_classes, t_adm_matieres, t_adm_backup = st.tabs([
-            "🎒 Gestion Élèves",
+            "🎒 Édition Élèves",
             "👨‍🏫 Liste Blanche Professeurs",
             "👨‍👩‍👧 Liste Blanche Parents",
             "🏫 Classes & Cycles",
@@ -2233,206 +1964,85 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         ])
 
         with t_adm_eleves:
-            st.subheader("🎒 Gestion des Élèves de l'Établissement")
+            st.subheader("🎒 Base de Données Élèves (Ajouter / Modifier / Supprimer)")
+            st.info("Vous pouvez modifier directement les cellules du tableau, ajouter des lignes ou sélectionner des lignes pour les supprimer.")
             
-            classes_liste = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["CI", "CP", "CE1", "CE2", "CM1", "CM2", "6ème A", "5ème A", "4ème A", "3ème A"]
+            edited_eleves = st.data_editor(
+                st.session_state.eleves_db,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_eleves_admin"
+            )
 
-            st.markdown("#### ➕ Ajouter un Nouvel Élève")
-            with st.form("form_ajout_eleve_admin", clear_on_submit=True):
-                col_e1, col_e2, col_e3, col_e4 = st.columns(4)
-                with col_e1: prenom_n = st.text_input("Prénom de l'Élève")
-                with col_e2: nom_n = st.text_input("Nom de l'Élève")
-                with col_e3: date_n = st.date_input("Date de Naissance", value=datetime(2012, 1, 1))
-                with col_e4: cls_n = st.selectbox("Classe de l'Élève", classes_liste)
-
-                btn_add_eleve = st.form_submit_button("➕ Ajouter l'Élève à la Base de Données")
-
-                if btn_add_eleve:
-                    if prenom_n.strip() and nom_n.strip():
-                        nom_complet_n = f"{prenom_n.strip()} {nom_n.strip()}"
-                        nouveau_rec = {
-                            "Nom Complet": nom_complet_n,
-                            "Prénom": prenom_n.strip(),
-                            "Nom": nom_n.strip(),
-                            "Date de Naissance": str(date_n),
-                            "Classe": cls_n,
-                            "Photo": None
-                        }
-                        
-                        if st.session_state.eleves_db.empty:
-                            st.session_state.eleves_db = pd.DataFrame([nouveau_rec])
-                        else:
-                            st.session_state.eleves_db = pd.concat([st.session_state.eleves_db, pd.DataFrame([nouveau_rec])], ignore_index=True)
-
-                        for col_req in ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]:
-                            if col_req not in st.session_state.eleves_db.columns:
-                                st.session_state.eleves_db[col_req] = ""
-
-                        st.session_state.eleves_db = st.session_state.eleves_db.sort_values(by="Nom Complet", ascending=True).reset_index(drop=True)
-                        sauvegarder_donnees_externes("AJOUT_ELEVE")
-                        st.success(f"✅ L'élève **{nom_complet_n}** a été ajouté avec succès à la classe **{cls_n}** !")
-                        st.rerun()
-                    else:
-                        st.error("Veuillez renseigner au moins le prénom et le nom de l'élève.")
-
-            st.markdown("---")
-            st.markdown("#### 📋 Liste globale et Suppression d'élèves")
-            if not st.session_state.eleves_db.empty:
-                st.dataframe(st.session_state.eleves_db[["Nom Complet", "Prénom", "Nom", "Classe", "Date de Naissance"]], use_container_width=True)
-                
-                col_del_el1, col_del_el2 = st.columns([3, 1])
-                with col_del_el1:
-                    el_suppr = st.selectbox("Sélectionner un élève à supprimer", st.session_state.eleves_db["Nom Complet"].tolist(), key="sb_del_el")
-                with col_del_el2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Supprimer Élève"):
-                        st.session_state.eleves_db = st.session_state.eleves_db[st.session_state.eleves_db["Nom Complet"] != el_suppr].reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_ELEVE")
-                        st.success(f"Élève {el_suppr} supprimé avec succès !")
-                        st.rerun()
-            else:
-                st.info("Aucun élève enregistré pour le moment.")
+            if st.button("💾 Enregistrer le Tableau des Élèves"):
+                st.session_state.eleves_db = edited_eleves
+                sauvegarder_donnees_externes("EDIT_ELEVES_ADMIN")
+                st.success("✅ Base de données des élèves enregistrée et synchronisée !")
+                st.rerun()
 
         with t_adm_profs:
-            st.subheader("👨‍🏫 Liste Blanche & Accès des Professeurs")
-            with st.form("form_add_prof"):
-                cp1, cp2, cp3 = st.columns(3)
-                with cp1: p_nom = st.text_input("Nom du Professeur")
-                with cp2: p_prenom = st.text_input("Prénom")
-                with cp3: p_email = st.text_input("Email Professionnel")
+            st.subheader("👨‍🏫 Liste Blanche & Identifiants Enseignants (Ajouter / Modifier / Supprimer)")
+            
+            edited_profs = st.data_editor(
+                st.session_state.prof_credentials,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_profs_admin"
+            )
 
-                cp4, cp5, cp6 = st.columns(3)
-                with cp4: p_pass_new = st.text_input("Mot de passe", type="password")
-                with cp5: p_mat = st.text_input("Matière Principale", value="Mathématiques")
-                with cp6: p_cls = st.selectbox("Classe Attribuée", classes_liste)
-
-                if st.form_submit_button("➕ Enregistrer le Professeur"):
-                    if p_email and p_nom:
-                        h_pass = hacher_mot_de_passe(p_pass_new)
-                        new_p = {
-                            "Nom": p_nom, "Prénom": p_prenom, "Email": p_email,
-                            "Mot de passe": h_pass, "Matière Principale": p_mat, "Classe Attribuée": p_cls
-                        }
-                        st.session_state.prof_credentials = pd.concat([st.session_state.prof_credentials, pd.DataFrame([new_p])], ignore_index=True)
-                        sauvegarder_donnees_externes("AJOUT_PROF")
-                        st.success("Professeur ajouté avec succès !")
-                        st.rerun()
-
-            st.dataframe(st.session_state.prof_credentials[["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée"]], use_container_width=True)
-
-            # SUPPRESSION PROFESSEUR (AJOUT)
-            if not st.session_state.prof_credentials.empty:
-                col_dp1, col_dp2 = st.columns([3, 1])
-                with col_dp1:
-                    prof_to_del = st.selectbox("Sélectionner un enseignant à supprimer", st.session_state.prof_credentials["Email"].tolist(), key="sb_del_prof")
-                with col_dp2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Supprimer Professeur"):
-                        st.session_state.prof_credentials = st.session_state.prof_credentials[st.session_state.prof_credentials["Email"] != prof_to_del].reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_PROF")
-                        st.success(f"Enseignant {prof_to_del} supprimé !")
-                        st.rerun()
+            if st.button("💾 Enregistrer la Liste des Professeurs"):
+                st.session_state.prof_credentials = edited_profs
+                sauvegarder_donnees_externes("EDIT_PROFS_ADMIN")
+                st.success("✅ Liste blanche des professeurs enregistrée et synchronisée !")
+                st.rerun()
 
         with t_adm_parents:
-            st.subheader("👨‍👩‍👧 Liste Blanche & Accès des Parents d'Élèves")
-            with st.form("form_add_parent"):
-                cpar1, cpar2, cpar3 = st.columns(3)
-                with cpar1: par_tel = st.text_input("Numéro de Téléphone ou Email")
-                with cpar2: par_p_el = st.text_input("Prénom Élève")
-                with cpar3: par_n_el = st.text_input("Nom Élève")
+            st.subheader("👨‍👩‍👧 Liste Blanche Parents (Ajouter / Modifier / Supprimer)")
+            
+            edited_parents = st.data_editor(
+                st.session_state.parents_white_list,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_parents_admin"
+            )
 
-                cpar4, cpar5 = st.columns(2)
-                with cpar4: par_an = st.number_input("Année Naissance Élève", 2005, 2025, 2012)
-                with cpar5: par_cls = st.selectbox("Classe Élève Parent", classes_liste, key="par_cls_add")
-
-                if st.form_submit_button("➕ Ajouter à la Liste Blanche Parent"):
-                    if par_tel and par_p_el and par_n_el:
-                        new_par = {
-                            "Téléphone": par_tel, "Prénom Élève": par_p_el,
-                            "Nom Élève": par_n_el, "Année Naissance": par_an, "Classe": par_cls
-                        }
-                        st.session_state.parents_white_list = pd.concat([st.session_state.parents_white_list, pd.DataFrame([new_par])], ignore_index=True)
-                        sauvegarder_donnees_externes("AJOUT_PARENT")
-                        st.success("Accès Parent enregistré !")
-                        st.rerun()
-
-            st.dataframe(st.session_state.parents_white_list, use_container_width=True)
-
-            # SUPPRESSION ACCÈS PARENT (AJOUT)
-            if not st.session_state.parents_white_list.empty:
-                col_dpar1, col_dpar2 = st.columns([3, 1])
-                with col_dpar1:
-                    parent_to_del = st.selectbox("Sélectionner un accès parent à supprimer", range(len(st.session_state.parents_white_list)), format_func=lambda x: f"{st.session_state.parents_white_list.iloc[x].get('Téléphone')} - Élève: {st.session_state.parents_white_list.iloc[x].get('Prénom Élève')} {st.session_state.parents_white_list.iloc[x].get('Nom Élève')}", key="sb_del_parent")
-                with col_dpar2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Supprimer Accès Parent"):
-                        st.session_state.parents_white_list = st.session_state.parents_white_list.drop(parent_to_del).reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_PARENT")
-                        st.success("Accès parent supprimé !")
-                        st.rerun()
+            if st.button("💾 Enregistrer la Liste Blanche Parents"):
+                st.session_state.parents_white_list = edited_parents
+                sauvegarder_donnees_externes("EDIT_PARENTS_ADMIN")
+                st.success("✅ Liste blanche parents enregistrée et synchronisée !")
+                st.rerun()
 
         with t_adm_classes:
-            st.subheader("🏫 Configuration des Classes et Cycles")
-            with st.form("form_add_classe"):
-                c_c1, c_c2, c_c3 = st.columns(3)
-                with c_c1: nom_c = st.text_input("Nom de la Classe (ex: 6ème B)")
-                with c_c2: cycle_c = st.selectbox("Cycle", ["Élémentaire", "Collège"])
-                with c_c3: prof_c = st.text_input("Professeur Responsable", value="Ibrahima Diallo")
+            st.subheader("🏫 Configuration des Classes et Cycles (Ajouter / Modifier / Supprimer)")
+            
+            edited_classes = st.data_editor(
+                st.session_state.classes_db,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_classes_admin"
+            )
 
-                if st.form_submit_button("➕ Créer la Classe"):
-                    if nom_c:
-                        new_c = {"Classe": nom_c, "Cycle": cycle_c, "Professeur Responsable": prof_c}
-                        st.session_state.classes_db = pd.concat([st.session_state.classes_db, pd.DataFrame([new_c])], ignore_index=True)
-                        sauvegarder_donnees_externes("CREATION_CLASSE")
-                        st.success("Classe créée !")
-                        st.rerun()
-
-            st.dataframe(st.session_state.classes_db, use_container_width=True)
-
-            # SUPPRESSION CLASSE (AJOUT)
-            if not st.session_state.classes_db.empty:
-                col_dc1, col_dc2 = st.columns([3, 1])
-                with col_dc1:
-                    cls_to_del = st.selectbox("Sélectionner une classe à supprimer", st.session_state.classes_db["Classe"].tolist(), key="sb_del_classe")
-                with col_dc2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Supprimer Classe"):
-                        st.session_state.classes_db = st.session_state.classes_db[st.session_state.classes_db["Classe"] != cls_to_del].reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_CLASSE")
-                        st.success(f"Classe {cls_to_del} supprimée !")
-                        st.rerun()
+            if st.button("💾 Enregistrer la Liste des Classes"):
+                st.session_state.classes_db = edited_classes
+                sauvegarder_donnees_externes("EDIT_CLASSES_ADMIN")
+                st.success("✅ Liste des classes enregistrée et synchronisée !")
+                st.rerun()
 
         with t_adm_matieres:
-            st.subheader("📚 Paramétrage des Matières, Coefficients & Barèmes")
-            with st.form("form_add_matiere"):
-                cm1, cm2, cm3, cm4 = st.columns(4)
-                with cm1: m_nom = st.text_input("Nom de la Matière")
-                with cm2: m_cyc = st.selectbox("Cycle Concerné", ["Collège", "Élémentaire"])
-                with cm3: m_coef = st.number_input("Coefficient", 1, 10, 2)
-                with cm4: m_bar = st.number_input("Barème de base", 10, 100, 20)
+            st.subheader("📚 Paramétrage des Matières & Coefficients (Ajouter / Modifier / Supprimer)")
+            
+            edited_matieres = st.data_editor(
+                st.session_state.matieres_def,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_matieres_admin"
+            )
 
-                if st.form_submit_button("➕ Ajouter la Matière"):
-                    if m_nom:
-                        new_m = {"Matière": m_nom, "Cycle": m_cyc, "Coefficient": m_coef, "Barème": m_bar}
-                        st.session_state.matieres_def = pd.concat([st.session_state.matieres_def, pd.DataFrame([new_m])], ignore_index=True)
-                        sauvegarder_donnees_externes("AJOUT_MATIERE")
-                        st.success("Matière configurée !")
-                        st.rerun()
-
-            st.dataframe(st.session_state.matieres_def, use_container_width=True)
-
-            # SUPPRESSION MATIÈRE (AJOUT)
-            if not st.session_state.matieres_def.empty:
-                col_dm1, col_dm2 = st.columns([3, 1])
-                with col_dm1:
-                    mat_to_del = st.selectbox("Sélectionner une matière à supprimer", st.session_state.matieres_def["Matière"].tolist(), key="sb_del_matiere")
-                with col_dm2:
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    if st.button("🗑️ Supprimer Matière"):
-                        st.session_state.matieres_def = st.session_state.matieres_def[st.session_state.matieres_def["Matière"] != mat_to_del].reset_index(drop=True)
-                        sauvegarder_donnees_externes("SUPPRESSION_MATIERE")
-                        st.success(f"Matière {mat_to_del} supprimée !")
-                        st.rerun()
+            if st.button("💾 Enregistrer le Paramétrage des Matières"):
+                st.session_state.matieres_def = edited_matieres
+                sauvegarder_donnees_externes("EDIT_MATIERES_ADMIN")
+                st.success("✅ Liste des matières enregistrée et synchronisée !")
+                st.rerun()
 
         with t_adm_backup:
             st.subheader("💾 Centre de Sauvegarde et Persistance Globale")
