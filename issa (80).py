@@ -3608,7 +3608,7 @@ if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
             time.sleep(1.5)  # Laisse le temps de lire le message de succès ou d'erreur
             st.rerend() if hasattr(st, "rerend") else st.rerun()
 
-    with tr_assistant:
+with tr_assistant:
         st.markdown("### 🤖 Assistant Pédagogique Intelligent Nelson Mandela")
         q_ia = st.text_input(
             "Posez une question sur le fonctionnement pédagogique ou l'organisation"
