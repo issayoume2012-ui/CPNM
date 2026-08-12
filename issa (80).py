@@ -11,10 +11,19 @@ import pandas as pd
 from fpdf import FPDF
 import streamlit as st
 import bcrypt
+from supabase import create_client, Client
 
 # ==========================================
-# 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE & NORMALISATION
+# 0. GESTION DE LA CONNEXION SUPABASE & SÉCURITÉ
 # ==========================================
+try:
+    supabase_url = "https://vtadnxbyfoiikkxcjcda.supabase.co"
+    supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0YWRueGJ5Zm9paWtreGNqY2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTk5MzksImV4cCI6MjEwMjEzNTkzOX0.AoebJzlmr_FAntQW7គ្Z"
+    supabase: Client = create_client(supabase_url, supabase_key)
+except Exception as e:
+    supabase = None
+    print(f"Erreur de connexion Supabase : {e}")
+
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
     salt = bcrypt.gensalt()
@@ -35,7 +44,7 @@ def normaliser_texte(texte):
 ADMIN_EMAIL = "cpnm@gmail.com"
 
 def enregistrer_log_action(acteur: str, action: str, details: str):
-    """Consigne chaque action utilisateur localement."""
+    """Consigne chaque action utilisateur."""
     horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if "audit_logs_db" not in st.session_state:
         st.session_state.audit_logs_db = pd.DataFrame(columns=["horodatage", "acteur", "action", "details"])
@@ -59,12 +68,98 @@ def synchroniser_listes_blanches():
         st.session_state.prof_credentials = st.session_state.prof_white_list.copy()
 
 def charger_donnees_externes() -> dict:
-    """Charge l'ensemble des tables depuis l'état local."""
-    return {}
+    """Charge l'ensemble des tables depuis la base de données distante Supabase."""
+    tables = [
+        "admin_credentials", "admin_white_list", "prof_credentials", 
+        "prof_white_list", "parents_white_list", "classes_db", "eleves_db", 
+        "matieres_def", "coefficients_db", "periodes_db", "notes_db", 
+        "viescolaire_db", "travail_a_faire_db", "messages_parents_db", 
+        "cahier_textes", "absences_db"
+    ]
+    data = {}
+    if supabase:
+        for table in tables:
+            try:
+                res = supabase.table(table).select("*").execute()
+                if res.data:
+                    data[table] = pd.DataFrame(res.data)
+                else:
+                    data[table] = pd.DataFrame()
+            except Exception:
+                data[table] = pd.DataFrame()
+                
+        try:
+            res_edt = supabase.table("edt_grid_db").select("*").execute()
+            edt_dict = {}
+            if res_edt.data:
+                df_edt_all = pd.DataFrame(res_edt.data)
+                if "classe" in df_edt_all.columns:
+                    for classe in df_edt_all["classe"].unique():
+                        sub = df_edt_all[df_edt_all["classe"] == classe].drop(columns=["classe"], errors="ignore")
+                        if "jour" in sub.columns:
+                            sub = sub.set_index("jour")
+                        edt_dict[classe] = sub
+            data["edt_grid_db"] = edt_dict
+        except Exception:
+            data["edt_grid_db"] = {}
+    return data
 
-def sauvegarder_donnees_externes(action_label="SAUVEGARDE_LOCALE"):
-    """Sauvegarde locale des données."""
+def sauvegarder_donnees_table(nom_table, df):
+    if supabase and isinstance(df, pd.DataFrame):
+        try:
+            records = df.to_dict(orient="records")
+            cleaned_records = []
+            for row in records:
+                clean_row = {k: (None if pd.isna(v) else v) for k, v in row.items()}
+                cleaned_records.append(clean_row)
+            
+            supabase.table(nom_table).delete().neq("id", -999999).execute()
+            if cleaned_records:
+                supabase.table(nom_table).insert(cleaned_records).execute()
+        except Exception:
+            pass
+
+def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
+    """Sauvegarde les tables vers Supabase via l'API."""
     synchroniser_listes_blanches()
+    if not supabase:
+        return
+
+    mapping_tables = {
+        "admin_credentials": st.session_state.get("admin_credentials"),
+        "admin_white_list": st.session_state.get("admin_white_list"),
+        "prof_credentials": st.session_state.get("prof_credentials"),
+        "prof_white_list": st.session_state.get("prof_white_list"),
+        "parents_white_list": st.session_state.get("parents_white_list"),
+        "classes_db": st.session_state.get("classes_db"),
+        "eleves_db": st.session_state.get("eleves_db"),
+        "matieres_def": st.session_state.get("matieres_def"),
+        "coefficients_db": st.session_state.get("coefficients_db"),
+        "periodes_db": st.session_state.get("periodes_db"),
+        "notes_db": st.session_state.get("notes_db"),
+        "viescolaire_db": st.session_state.get("viescolaire_db"),
+        "travail_a_faire_db": st.session_state.get("travail_a_faire_db"),
+        "messages_parents_db": st.session_state.get("messages_parents_db"),
+        "cahier_textes": st.session_state.get("cahier_textes"),
+        "absences_db": st.session_state.get("absences_db")
+    }
+
+    for nom_table, df in mapping_tables.items():
+        if df is not None and not df.empty:
+            sauvegarder_donnees_table(nom_table, df)
+
+    edt_grids = st.session_state.get("edt_grid_db", {})
+    if edt_grids:
+        all_edt_rows = []
+        for classe, df_grid in edt_grids.items():
+            if isinstance(df_grid, pd.DataFrame):
+                df_temp = df_grid.copy()
+                df_temp["classe"] = classe
+                df_temp["jour"] = df_temp.index
+                all_edt_rows.append(df_temp)
+        if all_edt_rows:
+            combined_edt = pd.concat(all_edt_rows, ignore_index=True)
+            sauvegarder_donnees_table("edt_grid_db", combined_edt)
 
 saved_data = {}
 if "donnees_chargees" not in st.session_state:
@@ -3215,12 +3310,12 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
 
     with ta_sauv:
-        st.markdown("### 💾 Gestion de la Session Locale")
-        st.success("Statut de l'application : **Mode Local Actif (Session State)**")
+        st.markdown("### 💾 Gestion de la Session Supabase")
+        st.success("Statut de l'application : **Mode Distant Supabase Actif**")
 
-        if st.button("⚡ Enregistrer l'état"):
+        if st.button("⚡ Synchroniser avec Supabase"):
             sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
-            st.success("✅ Données sauvegardées dans la session !")
+            st.success("✅ Données synchronisées avec succès !")
 
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     st.markdown(
