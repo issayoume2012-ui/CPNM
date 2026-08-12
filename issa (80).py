@@ -147,37 +147,62 @@ import streamlit as st
 # 0. BIS. GESTION DES POLICES UNICODE ET LOGO
 # ==========================================
 
-@st.cache_resource
-def telecharger_polices():
-    # Liens directs stables pour les polices TrueType
-    fonts = {
-        "DejaVuSans.ttf": (
-            "https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/fonts/liberation/DejaVuSans.ttf"
-        ),
-        "DejaVuSans-Bold.ttf": (
-            "https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/fonts/liberation/DejaVuSans-Bold.ttf"
-        ),
-        "DejaVuSans-Oblique.ttf": (
-            "https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/fonts/liberation/DejaVuSans-Oblique.ttf"
-        ),
-    }
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+import os
+import base64
+import streamlit as st
 
-    for font_name, font_url in fonts.items():
-        chemin_fichier = os.path.join("/tmp", font_name)
-        
-        if not os.path.exists(chemin_fichier):
-            try:
-                req = urllib.request.Request(font_url, headers=headers)
-                with (
-                    urllib.request.urlopen(req) as response,
-                    open(chemin_fichier, "wb") as out_file,
-                ):
-                    out_file.write(response.read())
-            except Exception as e:
-                # Si le téléchargement échoue, on ne bloque pas l'app mais on prévient
-                st.warning(f"Police par défaut alternative utilisée pour {font_name}.")
+# ==========================================
+# 0. BIS. GESTION DU LOGO ET DU DESIGN
+# ==========================================
 
+# Logo encodé en base64 de secours (ou mettez votre chaîne base64 de nm.jpg ici si vous l'avez)
+LOGO_NM_B64 = "" 
+
+def obtenir_logo_base64():
+    """Récupère le logo en base64 de manière sécurisée."""
+    chemins_possibles = ["nm.jpg", os.path.join("/tmp", "nm.jpg")]
+    
+    for chemin_logo in chemins_possibles:
+        try:
+            if os.path.exists(chemin_logo):
+                with open(chemin_logo, "rb") as f:
+                    data = f.read()
+                return base64.b64encode(data).decode("utf-8")
+        except Exception:
+            continue
+            
+    return LOGO_NM_B64
+
+
+def assistant_ia_repondre(question: str) -> str:
+    q = question.lower()
+    if "bulletin" in q or "note" in q:
+        return (
+            "Les bulletins d'excellence sont générés automatiquement au format"
+            " standardisé sous l'autorité de l'IA Saint-Louis et IEF Saint-Louis,"
+            " garantissant rigueur et équité pour chaque élève."
+        )
+    elif "prof" in q or "enseignant" in q:
+        return (
+            "Nos enseignants d'élite s'engagent au quotidien pour encadrer les"
+            " notes, le cahier de texte, le travail à faire et le suivi"
+            " personnalisé."
+        )
+    elif "parent" in q or "élève" in q:
+        return (
+            "Les parents disposent d'un suivi pédagogique transparent en temps réel"
+            " (travaux à faire, devoirs, pièces jointes, emploi du temps et vie"
+            " scolaire) pour accompagner la réussite de leurs enfants."
+        )
+    elif "admin" in q or "administrateur" in q:
+        return (
+            "L'administration pilote l'établissement avec dévouement pour"
+            " maintenir les plus hauts standards de qualité académique."
+        )
+    return (
+        "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
+        " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
+    )
 telecharger_polices()
 
 SCEAU_SENEGAL_B64 = (
