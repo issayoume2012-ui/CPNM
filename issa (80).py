@@ -137,13 +137,7 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
 saved_data = charger_donnees_externes()
 for table, df in saved_data.items():
     st.session_state[table] = df
-# ==========================================
-import os
-import urllib.request
-import base64
-import streamlit as st
-
-# ==========================================
+################################
 import os
 import urllib.request
 import base64
@@ -155,16 +149,16 @@ import streamlit as st
 
 @st.cache_resource
 def telecharger_polices():
-    # Nouveaux liens stables pour les polices DejaVuSans
+    # Liens directs stables pour les polices TrueType
     fonts = {
         "DejaVuSans.ttf": (
-            "https://github.com/conda-forge/staged-recipes/raw/main/recipes/staged/recipes/dejavu-fonts/DejaVuSans.ttf"
+            "https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/fonts/liberation/DejaVuSans.ttf"
         ),
         "DejaVuSans-Bold.ttf": (
-            "https://github.com/conda-forge/staged-recipes/raw/main/recipes/staged/recipes/dejavu-fonts/DejaVuSans-Bold.ttf"
+            "https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/fonts/liberation/DejaVuSans-Bold.ttf"
         ),
         "DejaVuSans-Oblique.ttf": (
-            "https://github.com/conda-forge/staged-recipes/raw/main/recipes/staged/recipes/dejavu-fonts/DejaVuSans-Oblique.ttf"
+            "https://raw.githubusercontent.com/kovidgoyal/calibre/master/src/calibre/fonts/liberation/DejaVuSans-Oblique.ttf"
         ),
     }
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -181,7 +175,8 @@ def telecharger_polices():
                 ):
                     out_file.write(response.read())
             except Exception as e:
-                st.error(f"Erreur lors du téléchargement de la police {font_name} : {e}")
+                # Si le téléchargement échoue, on ne bloque pas l'app mais on prévient
+                st.warning(f"Police par défaut alternative utilisée pour {font_name}.")
 
 telecharger_polices()
 
@@ -195,17 +190,20 @@ SCEAU_SENEGAL_B64 = (
 
 
 def obtenir_logo_base64():
-    """Récupère le logo en base64 de manière sécurisée pour éviter les plantages si le fichier est absent."""
-    chemin_logo = "nm.jpg"
-    try:
-        if os.path.exists(chemin_logo):
-            with open(chemin_logo, "rb") as f:
-                data = f.read()
-            return base64.b64encode(data).decode("utf-8")
-        else:
-            return ""
-    except Exception:
-        return ""
+    """Récupère le logo en base64 de manière sécurisée en cherchant dans le dossier courant ou /tmp."""
+    chemins_possibles = ["nm.jpg", os.path.join("/tmp", "nm.jpg")]
+    
+    for chemin_logo in chemins_possibles:
+        try:
+            if os.path.exists(chemin_logo):
+                with open(chemin_logo, "rb") as f:
+                    data = f.read()
+                return base64.b64encode(data).decode("utf-8")
+        except Exception:
+            continue
+            
+    # Si l'image n'est trouvée nulle part, retourne une chaîne vide sans planter
+    return ""
 
 
 def assistant_ia_repondre(question: str) -> str:
@@ -237,7 +235,7 @@ def assistant_ia_repondre(question: str) -> str:
         "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
         " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
     )
-# ==========================================
+    =============================
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
 st.set_page_config(
