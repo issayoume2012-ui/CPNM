@@ -23,7 +23,6 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 @st.cache_resource
 def init_supabase_v2() -> Client: 
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
     """Initialise le client Supabase pour la persistance des données."""
     if HAS_SUPABASE and SUPABASE_URL and SUPABASE_KEY:
         try:
@@ -34,6 +33,7 @@ def init_supabase_v2() -> Client:
     return None
 
 supabase_client = init_supabase_v2()
+
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE
 # ==========================================
@@ -64,33 +64,6 @@ def enregistrer_log_action(acteur: str, action: str, details: str):
             }).execute()
         except Exception:
             pass
-
-def sauvegarder_donnees_externes(action_label="TEST"):
-    from supabase import create_client
-    import pandas as pd
-    import uuid
-
-    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
-    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
-    client_local = create_client(url_direct, key_direct)
-
-    # Récupérons spécifiquement les élèves pour tester
-    t_df = st.session_state.get("eleves_db")
-    
-    if isinstance(t_df, pd.DataFrame) and not t_df.empty:
-        st.write("Données trouvées en mémoire :", t_df) # <--- Affiche le tableau à l'écran
-        try:
-            df_to_send = t_df.copy()
-            if "id" not in df_to_send.columns or df_to_send["id"].isna().any():
-                df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
-
-            payload = df_to_send.to_dict(orient="records")
-            response = client_local.table("eleves_db").upsert(payload).execute()
-            st.success("Succès total de l'envoi vers Supabase !")
-        except Exception as e:
-            st.error(f"Erreur technique Supabase : {e}")
-    else:
-        st.warning("Le DataFrame 'eleves_db' est vide ou absent du session_state au moment du clic.")
 
 def nettoyer_donnees_pour_json(obj):
     if isinstance(obj, dict): return {k: nettoyer_donnees_pour_json(v) for k, v in obj.items()}
@@ -145,17 +118,18 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
             except Exception as e:
                 st.error(f"Erreur Sync sur '{t_name}': {e}")
                 return
+    st.success("Sauvegarde globale effectuée avec succès !")
 
-# Initialisation au démarrage
+# Initialisation au démarrage sécurisée
 if "donnees_chargees" not in st.session_state:
-    saved_data = charger_donnees_externes()
-    for table, df in saved_data.items():
-        st.session_state[table] = df
+    try:
+        saved_data = charger_donnees_externes() if 'charger_donnees_externes' in globals() else {}
+        if isinstance(saved_data, dict):
+            for table, df in saved_data.items():
+                st.session_state[table] = df
+    except Exception:
+        pass
     st.session_state.donnees_chargees = True
-
-import os
-import base64
-import streamlit as st
 
 # ==========================================
 # 0. BIS. GESTION DU DESIGN ET DU DRAPEAU
@@ -169,11 +143,9 @@ SCEAU_SENEGAL_B64 = (
     "AAAAAElFTkSuQmCC"
 )
 
-
 def obtenir_logo_base64():
     """Fonction de compatibilité sécurisée (le logo Mandela ayant été supprimé)."""
     return ""
-
 
 def afficher_drapeau_flottant():
     """Affiche un drapeau du Sénégal animé (effet flottant) en CSS pur."""
@@ -206,7 +178,6 @@ def afficher_drapeau_flottant():
     </div>
     """
     st.markdown(drapeau_html, unsafe_allow_html=True)
-
 
 def assistant_ia_repondre(question: str) -> str:
     q = question.lower()
