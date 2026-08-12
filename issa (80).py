@@ -143,10 +143,8 @@ import base64
 import streamlit as st
 
 # ==========================================
-# 0. BIS. GESTION DU LOGO ET DU DESIGN
+# 0. BIS. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
-
-LOGO_NM_B64 = ""
 
 SCEAU_SENEGAL_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz"
@@ -155,31 +153,6 @@ SCEAU_SENEGAL_B64 = (
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAICXAcB4AAEq99A1"
     "AAAAAElFTkSuQmCC"
 )
-
-
-def obtenir_logo_base64():
-    """Récupère le logo en base64 en testant plusieurs variantes de noms et chemins."""
-    dossier_courant = os.path.dirname(os.path.abspath(__file__))
-    
-    chemins_possibles = [
-        os.path.join(dossier_courant, "nm.jpg"),
-        os.path.join(dossier_courant, "nm.JPG"),
-        os.path.join(dossier_courant, "NM.jpg"),
-        "nm.jpg",
-        "nm.JPG",
-        os.path.join("/tmp", "nm.jpg")
-    ]
-    
-    for chemin_logo in chemins_possibles:
-        try:
-            if os.path.exists(chemin_logo):
-                with open(chemin_logo, "rb") as f:
-                    data = f.read()
-                return base64.b64encode(data).decode("utf-8")
-        except Exception:
-            continue
-            
-    return LOGO_NM_B64
 
 
 def afficher_drapeau_flottant():
