@@ -3441,27 +3441,21 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
 
     with ta_sauv:
-      st.markdown("### 💾 Console de Persistance Supabase & JSON Local")
-      st.info(
-          f"Base locale JSON active : **{LOCAL_DB_FILE}** | Supabase :"
-          f" **{'Connecté' if supabase_client else 'Hors-ligne (Stockage JSON)'}**"
-      )
+    st.markdown("### 💾 Console de Persistance Supabase")
+    st.success(
+        f"Statut de la connexion Supabase : **{'Connecté' if supabase_client else 'Hors-ligne'}**"
+    )
 
-      col_sv1, col_sv2 = st.columns(2)
-      with col_sv1:
-        if st.button("⚡ Forcer la Sauvegarde Globale Réseau"):
-          sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
-          st.success("✅ Synchronisation globale effectuée avec succès !")
+    col_sv1, col_sv2 = st.columns(2)
+    with col_sv1:
+        if st.button("⚡ Forcer la Synchronisation Globale"):
+            sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
+            st.success("✅ Synchronisation globale avec Supabase effectuée avec succès !")
 
-      with col_sv2:
-        if os.path.exists(LOCAL_DB_FILE):
-          with open(LOCAL_DB_FILE, "r", encoding="utf-8") as f_json:
-            st.download_button(
-                "📥 Télécharger le Fichier de Sauvegarde (.JSON)",
-                data=f_json.read(),
-                file_name=f"database_backup_{datetime.now().strftime('%Y%m%d')}.json",
-                mime="application/json",
-            )
+    with col_sv2:
+        # Optionnel : Vous pouvez proposer un export CSV global ou 
+        # supprimer cette colonne si elle ne sert plus à rien.
+        st.info("ℹ️ Le stockage est désormais entièrement géré dans le Cloud Supabase.")
 
       st.markdown("---")
       st.markdown("#### Historique des Synchronisations")
