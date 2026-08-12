@@ -8,7 +8,6 @@ import pandas as pd
 from fpdf import FPDF
 import streamlit as st
 import bcrypt
-
 import uuid
 
 # --- BIBLIOTHÈQUES SUPABASE ---
@@ -18,16 +17,9 @@ try:
 except ImportError:
     HAS_SUPABASE = False
 
-# Récupération sécurisée via Streamlit Secrets avec la clé correcte
+# Configuration directe et forcée pour éviter tout blocage avec les secrets
 SUPABASE_URL = "https://daugagjtwngldnvbjknx.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
-
-try:
-    if "supabase" in st.secrets:
-        SUPABASE_URL = st.secrets["supabase"].get("url", SUPABASE_URL)
-        SUPABASE_KEY = st.secrets["supabase"].get("key", SUPABASE_KEY)
-except Exception:
-    pass
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -41,7 +33,6 @@ def init_supabase() -> Client:
     return None
 
 supabase_client = init_supabase()
-
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE
 # ==========================================
