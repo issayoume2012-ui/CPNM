@@ -89,7 +89,12 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     from supabase import create_client
     url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
     key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
-    client_local = create_client(url_direct, key_direct)
+    
+    try:
+        client_local = create_client(url_direct, key_direct)
+    except Exception as e:
+        st.error(f"Échec de connexion directe à Supabase : {e}")
+        return
 
     tables_mapping = {
         "prof_white_list": st.session_state.get("prof_credentials"),
@@ -106,19 +111,35 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
         "periodes_db": st.session_state.get("periodes_db"),
     }
 
+    succes_global = True
+
     for t_name, t_df in tables_mapping.items():
         if isinstance(t_df, pd.DataFrame) and not t_df.empty:
             try:
                 df_to_send = t_df.copy()
-                if "id" not in df_to_send.columns or df_to_send["id"].isna().any():
+                
+                # Gestion indispensable de l'ID pour Supabase Upsert
+                if "id" not in df_to_send.columns:
                     df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
+                else:
+                    df_to_send["id"] = df_to_send["id"].apply(lambda x: str(uuid.uuid4()) if pd.isna(x) or str(x).strip() == "" else str(x))
 
+                # Remplacement des NaN/NaT par des valeurs acceptables par Supabase
+                df_to_send = df_to_send.replace({np.nan: None})
+                
                 payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
-                client_local.table(t_name).upsert(payload).execute()
+                
+                # Envoi vers la table Supabase
+                response = client_local.table(t_name).upsert(payload).execute()
+                
             except Exception as e:
-                st.error(f"Erreur Sync sur '{t_name}': {e}")
-                return
-    st.success("Sauvegarde globale effectuée avec succès !")
+                succes_global = False
+                st.error(f"Erreur critique sur la table '{t_name}' : {e}")
+
+    if succes_global:
+        st.success("Toutes les données ont été synchronisées avec succès sur Supabase !")
+    else:
+        st.warning("La synchronisation s'est terminée avec des erreurs (voir détails ci-dessus).")
 
 # Initialisation au démarrage sécurisée
 if "donnees_chargees" not in st.session_state:
