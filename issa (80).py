@@ -481,14 +481,8 @@ if "admin_white_list" not in st.session_state:
             "Prénom": "Ayant Droit",
             "Mot de passe": hacher_mot_de_passe("cpnm2026"),
             "Niveau d'accès": "Super-Admin Ayant-Droit",
-        },
-        {
-            "Email": "direction@cpnm.sn",
-            "Nom": "Ndiaye",
-            "Prénom": "Modou",
-            "Mot de passe": hacher_mot_de_passe("dir2026"),
-            "Niveau d'accès": "Administrateur",
-        },
+        }
+        # <-- SUPPRIMER le bloc dictionnaire pour "direction@cpnm.sn" ici
     ])
 
 if "prof_credentials" not in st.session_state:
@@ -566,16 +560,8 @@ if "parents_white_list" not in st.session_state:
             "Nom Élève": "Diallo",
             "Année Naissance": 2012,
             "Classe": "6ème A",
-        },
-        {
-            "Téléphone": ADMIN_EMAIL,
-            "Prénom Élève": "Fatou",
-            "Nom Élève": "Sow",
-            "Année Naissance": 2015,
-            "Classe": "CP",
-        },
+        }
     ])
-
 if "classes_db" not in st.session_state:
   if "classes_db" in saved_data:
     st.session_state.classes_db = pd.DataFrame(saved_data["classes_db"])
