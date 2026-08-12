@@ -137,15 +137,6 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
 saved_data = charger_donnees_externes()
 for table, df in saved_data.items():
     st.session_state[table] = df
-################################
-import os
-import urllib.request
-import base64
-import streamlit as st
-
-# ==========================================
-# 0. BIS. GESTION DES POLICES UNICODE ET LOGO
-# ==========================================
 
 import os
 import base64
@@ -155,55 +146,7 @@ import streamlit as st
 # 0. BIS. GESTION DU LOGO ET DU DESIGN
 # ==========================================
 
-# Logo encodé en base64 de secours (ou mettez votre chaîne base64 de nm.jpg ici si vous l'avez)
-LOGO_NM_B64 = "" 
-
-def obtenir_logo_base64():
-    """Récupère le logo en base64 de manière sécurisée."""
-    chemins_possibles = ["nm.jpg", os.path.join("/tmp", "nm.jpg")]
-    
-    for chemin_logo in chemins_possibles:
-        try:
-            if os.path.exists(chemin_logo):
-                with open(chemin_logo, "rb") as f:
-                    data = f.read()
-                return base64.b64encode(data).decode("utf-8")
-        except Exception:
-            continue
-            
-    return LOGO_NM_B64
-
-
-def assistant_ia_repondre(question: str) -> str:
-    q = question.lower()
-    if "bulletin" in q or "note" in q:
-        return (
-            "Les bulletins d'excellence sont générés automatiquement au format"
-            " standardisé sous l'autorité de l'IA Saint-Louis et IEF Saint-Louis,"
-            " garantissant rigueur et équité pour chaque élève."
-        )
-    elif "prof" in q or "enseignant" in q:
-        return (
-            "Nos enseignants d'élite s'engagent au quotidien pour encadrer les"
-            " notes, le cahier de texte, le travail à faire et le suivi"
-            " personnalisé."
-        )
-    elif "parent" in q or "élève" in q:
-        return (
-            "Les parents disposent d'un suivi pédagogique transparent en temps réel"
-            " (travaux à faire, devoirs, pièces jointes, emploi du temps et vie"
-            " scolaire) pour accompagner la réussite de leurs enfants."
-        )
-    elif "admin" in q or "administrateur" in q:
-        return (
-            "L'administration pilote l'établissement avec dévouement pour"
-            " maintenir les plus hauts standards de qualité académique."
-        )
-    return (
-        "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
-        " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
-    )
-telecharger_polices()
+LOGO_NM_B64 = ""
 
 SCEAU_SENEGAL_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz"
@@ -227,8 +170,8 @@ def obtenir_logo_base64():
         except Exception:
             continue
             
-    # Si l'image n'est trouvée nulle part, retourne une chaîne vide sans planter
-    return ""
+    # Si l'image n'est trouvée nulle part, retourne la variable de secours ou une chaîne vide
+    return LOGO_NM_B64
 
 
 def assistant_ia_repondre(question: str) -> str:
