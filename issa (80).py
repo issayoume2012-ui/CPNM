@@ -1853,15 +1853,13 @@ def generer_pdf_edt(classe, df_edt):
       pdf, prof_nom="Chef d'Établissement", chef_nom="Inspecteur IA Saint-Louis"
   )
 
-  # Correction pour la génération du PDF (compatible fpdf & fpdf2)
-    output_pdf = pdf.output()
-    if isinstance(output_pdf, (bytes, bytearray)):
+output_pdf = pdf.output()
+if isinstance(output_pdf, (bytes, bytearray)):
         return bytes(output_pdf)
     elif isinstance(output_pdf, str):
         return output_pdf.encode('latin1')
     else:
         return bytes(pdf.output(dest='S'))
-
 
 def generer_pdf_cahier_textes(df_ct, classe="Global"):
   pdf = FPDF()
