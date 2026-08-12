@@ -1764,7 +1764,14 @@ def generer_pdf_liste_eleves_classe(classe):
       prof_nom="Responsable de Scolarité",
       chef_nom="Inspecteur IEF Saint-Louis",
   )
-  return bytes(pdf.output())
+  
+  output_pdf = pdf.output()
+  if isinstance(output_pdf, (bytes, bytearray)):
+    return bytes(output_pdf)
+  elif isinstance(output_pdf, str):
+    return output_pdf.encode('latin1')
+  else:
+    return bytes(pdf.output(dest='S'))
 
 
 def generer_pdf_liste_absences(classe_filtre="Toutes"):
