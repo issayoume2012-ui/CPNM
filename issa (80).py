@@ -11,31 +11,6 @@ import pandas as pd
 from fpdf import FPDF
 import streamlit as st
 import bcrypt
-import uuid
-
-# --- BIBLIOTHÈQUES SUPABASE ---
-try:
-    from supabase import Client, create_client
-    HAS_SUPABASE = True
-except ImportError:
-    HAS_SUPABASE = False
-
-# Configuration directe et forcée pour éviter tout blocage avec les secrets
-SUPABASE_URL = "https://daugagjtwngldnvbjknx.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
-
-@st.cache_resource
-def init_supabase_v2() -> Client: 
-    """Initialise le client Supabase pour la persistance des données."""
-    if HAS_SUPABASE and SUPABASE_URL and SUPABASE_KEY:
-        try:
-            return create_client(SUPABASE_URL, SUPABASE_KEY)
-        except Exception as e:
-            st.error(f"Erreur d'initialisation Supabase: {e}")
-            return None
-    return None
-
-supabase_client = init_supabase_v2()
 
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE & NORMALISATION
@@ -60,25 +35,12 @@ def normaliser_texte(texte):
 ADMIN_EMAIL = "cpnm@gmail.com"
 
 def enregistrer_log_action(acteur: str, action: str, details: str):
-    """Consigne chaque action utilisateur directement dans Supabase."""
+    """Consigne chaque action utilisateur localement."""
     horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if supabase_client:
-        try:
-            supabase_client.table("audit_logs").insert({
-                "horodatage": horodatage,
-                "acteur": acteur,
-                "action": action,
-                "details": details,
-            }).execute()
-        except Exception as e:
-            print(f"Erreur log: {e}")
-
-def nettoyer_donnees_pour_json(obj):
-    if isinstance(obj, dict): return {k: nettoyer_donnees_pour_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list): return [nettoyer_donnees_pour_json(v) for v in obj]
-    elif isinstance(obj, float): return 0.0 if (np.isnan(obj) or np.isinf(obj)) else obj
-    elif pd.isna(obj): return ""
-    return obj
+    if "audit_logs_db" not in st.session_state:
+        st.session_state.audit_logs_db = pd.DataFrame(columns=["horodatage", "acteur", "action", "details"])
+    new_log = pd.DataFrame([{"horodatage": horodatage, "acteur": acteur, "action": action, "details": details}])
+    st.session_state.audit_logs_db = pd.concat([st.session_state.audit_logs_db, new_log], ignore_index=True)
 
 def trier_eleves_par_nom(df):
     if df is None or df.empty: return df
@@ -96,134 +58,20 @@ def synchroniser_listes_blanches():
     elif "prof_white_list" in st.session_state and not st.session_state.prof_white_list.empty:
         st.session_state.prof_credentials = st.session_state.prof_white_list.copy()
 
-# ==========================================
-# FONCTION DE CHARGEMENT DEPUIS SUPABASE (CORRIGÉE)
-# ==========================================
 def charger_donnees_externes() -> dict:
-    """Charge l'ensemble des tables depuis Supabase au démarrage de l'application."""
-    if not supabase_client:
-        return {}
-    
-    tables = [
-        "prof_white_list", "parents_white_list", "admin_white_list",
-        "eleves_db", "notes_db", "classes_db", "viescolaire_db",
-        "cahier_textes", "absences_db", "travail_a_faire_db",
-        "messages_parents_db", "periodes_db", "matieres_def", "coefficients_db"
-    ]
-    
-    loaded_data = {}
-    for t_name in tables:
-        try:
-            response = supabase_client.table(t_name).select("*").execute()
-            if response.data:
-                df = pd.DataFrame(response.data)
-                cols_mapping = {}
-                for col in df.columns:
-                    col_lower = col.lower()
-                    if col_lower in ["nom"]: cols_mapping[col] = "Nom"
-                    elif col_lower in ["prénom", "prenom"]: cols_mapping[col] = "Prénom"
-                    elif col_lower in ["email"]: cols_mapping[col] = "Email"
-                    elif col_lower in ["mot de passe", "password"]: cols_mapping[col] = "Mot de passe"
-                    elif col_lower in ["classe attribuée", "classe attribuee"]: cols_mapping[col] = "Classe Attribuée"
-                    elif col_lower in ["matière principale", "matiere principale"]: cols_mapping[col] = "Matière Principale"
-                    elif col_lower in ["téléphone", "telephone"]: cols_mapping[col] = "Téléphone"
-                    elif col_lower in ["prénom élève", "prenom eleve", "prenom_eleve"]: cols_mapping[col] = "Prénom Élève"
-                    elif col_lower in ["nom élève", "nom eleve", "nom_eleve"]: cols_mapping[col] = "Nom Élève"
-                    elif col_lower in ["année naissance", "annee naissance", "annee_naissance"]: cols_mapping[col] = "Année Naissance"
-                    elif col_lower in ["classe"]: cols_mapping[col] = "Classe"
-                if cols_mapping:
-                    df = df.rename(columns=cols_mapping)
-                loaded_data[t_name] = df
-        except Exception as e:
-            pass
-            
-    return loaded_data
+    """Charge l'ensemble des tables depuis l'état local."""
+    return {}
 
-# ==========================================
-# FONCTION DE SAUVEGARDE VERS SUPABASE (CORRIGÉE & SÉCURISÉE)
-# ==========================================
-def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
-    from supabase import create_client
-    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
-    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
-    
-    try:
-        client_local = create_client(url_direct, key_direct)
-    except Exception as e:
-        st.error(f"Échec de connexion directe à Supabase : {e}")
-        return
-
-    # S'assurer que les listes blanches sont parfaitement synchronisées avant l'écriture
+def sauvegarder_donnees_externes(action_label="SAUVEGARDE_LOCALE"):
+    """Sauvegarde locale des données."""
     synchroniser_listes_blanches()
-
-    tables_mapping = {
-        "prof_white_list": st.session_state.get("prof_credentials"),
-        "parents_white_list": st.session_state.get("parents_white_list"),
-        "admin_white_list": st.session_state.get("admin_white_list"),
-        "eleves_db": st.session_state.get("eleves_db"),
-        "notes_db": st.session_state.get("notes_db"),
-        "classes_db": st.session_state.get("classes_db"),
-        "viescolaire_db": st.session_state.get("viescolaire_db"),
-        "cahier_textes": st.session_state.get("cahier_textes"),
-        "absences_db": st.session_state.get("absences_db"),
-        "travail_a_faire_db": st.session_state.get("travail_a_faire_db"),
-        "messages_parents_db": st.session_state.get("messages_parents_db"),
-        "periodes_db": st.session_state.get("periodes_db"),
-        "matieres_def": st.session_state.get("matieres_def"),
-        "coefficients_db": st.session_state.get("coefficients_db"),
-    }
-
-    succes_global = True
-
-    for t_name, t_df in tables_mapping.items():
-        if isinstance(t_df, pd.DataFrame) and not t_df.empty:
-            try:
-                df_to_send = t_df.copy()
-                
-                # Correction rigoureuse du schéma pour parents_white_list (omission de annee_naissance si absent du cache Supabase pour éviter PGRST204)
-                if t_name == "parents_white_list":
-                    rename_map = {
-                        "Téléphone": "telephone",
-                        "Prénom Élève": "prenom_eleve",
-                        "Nom Élève": "nom_eleve",
-                        "Classe": "classe"
-                    }
-                    df_to_send = df_to_send.rename(columns=rename_map)
-                    if "annee_naissance" in df_to_send.columns:
-                        df_to_send = df_to_send.drop(columns=["annee_naissance"])
-                    if "Année Naissance" in df_to_send.columns:
-                        df_to_send = df_to_send.drop(columns=["Année Naissance"])
-
-                if "id" not in df_to_send.columns:
-                    df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
-                else:
-                    df_to_send["id"] = df_to_send["id"].apply(lambda x: str(uuid.uuid4()) if pd.isna(x) or str(x).strip() == "" else str(x))
-
-                df_to_send = df_to_send.replace({np.nan: None})
-                payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
-                
-                if t_name in ["admin_white_list", "prof_white_list"]:
-                    response = client_local.table(t_name).upsert(payload, on_conflict="Email").execute()
-                elif t_name == "parents_white_list":
-                    response = client_local.table(t_name).upsert(payload, on_conflict="telephone").execute()
-                else:
-                    response = client_local.table(t_name).upsert(payload, on_conflict="id").execute()
-                
-            except Exception as e:
-                succes_global = False
-                st.error(f"Erreur critique sur la table '{t_name}' : {e}")
-
-    if succes_global:
-        st.success("Toutes les données ont été synchronisées avec succès sur Supabase !")
-    else:
-        st.warning("La synchronisation s'est terminée avec des erreurs.")
 
 saved_data = {}
 if "donnees_chargees" not in st.session_state:
     try:
         saved_data = charger_donnees_externes()
     except Exception as e:
-        st.warning(f"Impossible de charger les données distantes : {e}")
+        st.warning(f"Impossible de charger les données : {e}")
     st.session_state.donnees_chargees = True
 
 # ==========================================
@@ -2125,7 +1973,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
             email_match = db_email and (input_val_norm == db_email)
             
-            # Reconnaissance ultra-robuste et flexible (Nom, Prénom, Nom complet avec inversion possible, insensible aux accents/espaces/casse)
             full_name_1 = f"{db_prenom_norm} {db_nom_norm}".strip()
             full_name_2 = f"{db_nom_norm} {db_prenom_norm}".strip()
             
@@ -3094,7 +2941,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             "⚖️ Coefficients & Matières",
             "📅 Grille des Emplois du Temps",
             "💬 Messages aux / des Parents",
-            "💾 Sauvegarde Supabase / JSON",
+            "💾 Sauvegarde / Session",
         ])
     )
 
@@ -3368,27 +3215,12 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
 
     with ta_sauv:
-        st.markdown("### 💾 Console de Persistance Supabase")
-        st.success(
-            f"Statut de la connexion Supabase : **{'Connecté' if supabase_client else 'Hors-ligne'}**"
-        )
+        st.markdown("### 💾 Gestion de la Session Locale")
+        st.success("Statut de l'application : **Mode Local Actif (Session State)**")
 
-        col_sv1, col_sv2 = st.columns(2)
-        with col_sv1:
-            if st.button("⚡ Forcer la Synchronisation Globale"):
-                sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
-                st.success("✅ Synchronisation globale avec Supabase effectuée avec succès !")
-
-        with col_sv2:
-            st.info("ℹ️ Le stockage est désormais entièrement géré dans le Cloud Supabase.")
-
-        st.markdown("---")
-        st.markdown("#### Historique des Synchronisations")
-        if "supabase_backup_history" in st.session_state:
-            st.dataframe(
-                pd.DataFrame(st.session_state.supabase_backup_history),
-                use_container_width=True,
-            )
+        if st.button("⚡ Enregistrer l'état"):
+            sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
+            st.success("✅ Données sauvegardées dans la session !")
 
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     st.markdown(
