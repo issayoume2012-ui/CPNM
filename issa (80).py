@@ -491,32 +491,7 @@ if "prof_credentials" not in st.session_state:
         saved_data["prof_credentials"]
     )
   else:
-    st.session_state.prof_credentials = pd.DataFrame([
-        {
-            "Nom": "Diallo",
-            "Prénom": "Ibrahima",
-            "Email": "i.diallo@cpnm.sn",
-            "Mot de passe": hacher_mot_de_passe("prof123"),
-            "Matière Principale": "Mathématiques",
-            "Classe Attribuée": "6ème A",
-        },
-        {
-            "Nom": "Sow",
-            "Prénom": "Aissatou",
-            "Email": "a.sow@cpnm.sn",
-            "Mot de passe": hacher_mot_de_passe("prof456"),
-            "Matière Principale": "Français",
-            "Classe Attribuée": "CP",
-        },
-        {
-            "Nom": "Ndiaye",
-            "Prénom": "Cheikh",
-            "Email": "c.ndiaye@cpnm.sn",
-            "Mot de passe": hacher_mot_de_passe("prof789"),
-            "Matière Principale": "Histoire-Géographie",
-            "Classe Attribuée": "5ème A",
-        },
-    ])
+    st.session_state.prof_credentials = pd.DataFrame()
 
 for col in [
     "Nom",
@@ -553,34 +528,14 @@ if "parents_white_list" not in st.session_state:
         saved_data["parents_white_list"]
     )
   else:
-    st.session_state.parents_white_list = pd.DataFrame([
-        {
-            "Téléphone": "+221771234567",
-            "Prénom Élève": "Mamadou",
-            "Nom Élève": "Diallo",
-            "Année Naissance": 2012,
-            "Classe": "6ème A",
-        }
-    ])
+    st.session_state.parents_white_list = pd.DataFrame()
 if "classes_db" not in st.session_state:
   if "classes_db" in saved_data:
     st.session_state.classes_db = pd.DataFrame(saved_data["classes_db"])
   else:
     st.session_state.classes_db = pd.DataFrame(
         columns=["Classe", "Cycle", "Professeur Responsable"],
-        data=[
-            ["CI", "Élémentaire", "Aissatou Sow"],
-            ["CP", "Élémentaire", "Aissatou Sow"],
-            ["CPA", "Élémentaire", "Aissatou Sow"],
-            ["CE1", "Élémentaire", "Ousmane Diop"],
-            ["CE2", "Élémentaire", "Ousmane Diop"],
-            ["CM1", "Élémentaire", "Marie Faye"],
-            ["CM2", "Élémentaire", "Marie Faye"],
-            ["6ème A", "Collège", "Ibrahima Diallo"],
-            ["5ème A", "Collège", "Cheikh Ndiaye"],
-            ["4ème A", "Collège", "Cheikh Ndiaye"],
-            ["3ème A", "Collège", "Ibrahima Diallo"],
-        ],
+        data=[],
     )
 
 if "eleves_db" not in st.session_state:
@@ -596,12 +551,7 @@ if "eleves_db" not in st.session_state:
             "Classe",
             "Photo",
         ],
-        data=[
-            ["Mamadou Diallo", "Mamadou", "Diallo", "2012-05-14", "6ème A", None],
-            ["Fatou Sow", "Fatou", "Sow", "2015-08-20", "CP", None],
-            ["Aminata Ba", "Aminata", "Ba", "2013-02-10", "6ème A", None],
-            ["Oumar Sy", "Oumar", "Sy", "2011-11-03", "5ème A", None],
-        ],
+        data=[],
     )
 
 for col_req in [
@@ -767,41 +717,7 @@ if "notes_db" not in st.session_state:
             "Composition",
             "BaremeNote",
         ],
-        data=[
-            [
-                "6ème A",
-                "Mathématiques",
-                "1er Semestre",
-                "1er Semestre",
-                "Mamadou Diallo",
-                14.0,
-                15.0,
-                13.5,
-                20.0,
-            ],
-            [
-                "6ème A",
-                "Français",
-                "1er Semestre",
-                "1er Semestre",
-                "Mamadou Diallo",
-                12.0,
-                11.5,
-                13.0,
-                20.0,
-            ],
-            [
-                "CP",
-                "Calcul / Mathématiques",
-                "1er Trimestre",
-                "1er Trimestre",
-                "Fatou Sow",
-                0.0,
-                0.0,
-                42.0,
-                50.0,
-            ],
-        ],
+        data=[],        
     )
 
 if isinstance(st.session_state.notes_db, pd.DataFrame):
@@ -843,32 +759,7 @@ if "viescolaire_db" not in st.session_state:
             "Observations",
             "DecisionConseil",
         ],
-        data=[
-            [
-                "6ème A",
-                "1er Semestre",
-                "1er Semestre",
-                "Mamadou Diallo",
-                1,
-                0,
-                1,
-                2,
-                "Elève sérieux et appliqué.",
-                "Tableau d'honneur",
-            ],
-            [
-                "CP",
-                "1er Trimestre",
-                "1er Trimestre",
-                "Fatou Sow",
-                0,
-                0,
-                0,
-                0,
-                "Très bon trimestre.",
-                "Félicitations",
-            ],
-        ],
+        data=[],
     )
 
 if "travail_a_faire_db" not in st.session_state:
@@ -893,24 +784,7 @@ if "travail_a_faire_db" not in st.session_state:
             "FichierB64",
             "FichierType",
         ],
-        data=[[
-            "TAF-001",
-            "Ibrahima Diallo",
-            "2026-08-10",
-            "2026-08-15",
-            "6ème A",
-            "Mathématiques",
-            "Exercices d'Algèbre p.45",
-            (
-                "Faire les exercices 1 à 5 sur le cahier d'exercices. Réviser"
-                " la règle des signes."
-            ),
-            "https://khanacademy.org",
-            "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-            None,
-            None,
-            None,
-        ]],
+        data=[],
     )
 
 if "messages_parents_db" not in st.session_state:
@@ -930,19 +804,7 @@ if "messages_parents_db" not in st.session_state:
             "Message",
             "Urgent",
         ],
-        data=[[
-            "MSG-001",
-            "Direction Mandela",
-            "Administration",
-            "2026-08-11",
-            "Toutes les classes",
-            "Réunion d'information de rentrée",
-            (
-                "Chers parents, la réunion générale aura lieu ce samedi à"
-                " 09h00 en salle polyvalente."
-            ),
-            False,
-        ]],
+        data=[],
     )
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
