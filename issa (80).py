@@ -107,14 +107,10 @@ def synchroniser_listes_blanches():
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """
     Synchronisation directe vers Supabase.
-    Note : Appelez cette fonction uniquement après des actions critiques de modification 
-    (boutons "Enregistrer" ou "Soumettre") pour économiser la bande passante et les appels API.
     """
-    
-    # 1. Préparation des données
-    # 1. Préparation des données incluant les profs
+    # 1. Préparation des données (pensez à inclure prof_white_list si ce n'est pas fait)
     tables_mapping = {
-        "prof_white_list": st.session_state.get("prof_credentials"), # Ajouté ici
+        "prof_white_list": st.session_state.get("prof_credentials"),
         "notes_db": st.session_state.get("notes_db"),
         "eleves_db": st.session_state.get("eleves_db"),
         "classes_db": st.session_state.get("classes_db"),
@@ -127,15 +123,24 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
 
     # 2. Envoi vers Supabase
     if supabase_client:
+        import uuid  # <--- Vous pouvez l'importer ici ou tout en haut du fichier Python
+
         for t_name, t_df in tables_mapping.items():
             if isinstance(t_df, pd.DataFrame) and not t_df.empty:
                 try:
-                    payload = nettoyer_donnees_pour_json(t_df.to_dict(orient="records"))
+                    # --- INSERTION DU CODE ICI ---
+                    df_to_send = t_df.copy()
+                    if "id" not in df_to_send.columns:
+                        # Génère un UUID unique sous forme de texte pour chaque ligne
+                        df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
+
+                    payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
                     supabase_client.table(t_name).upsert(payload).execute()
+                    # -----------------------------
+                    
                 except Exception as e:
-                    # On affiche l'erreur en rouge de façon persistante
                     st.error(f"Erreur Sync sur la table '{t_name}': {e}")
-                    st.stop() # Empêche le st.rerun() de cacher l'erreur
+                    st.stop()
 
 # Initialisation au démarrage
 if "donnees_chargees" not in st.session_state:
