@@ -155,6 +155,11 @@ SCEAU_SENEGAL_B64 = (
 )
 
 
+def obtenir_logo_base64():
+    """Fonction de compatibilité sécurisée (le logo Mandela ayant été supprimé)."""
+    return ""
+
+
 def afficher_drapeau_flottant():
     """Affiche un drapeau du Sénégal animé (effet flottant) en CSS pur."""
     drapeau_html = """
