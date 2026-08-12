@@ -62,8 +62,8 @@ def enregistrer_log_action(acteur: str, action: str, details: str):
                 "action": action,
                 "details": details,
             }).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Erreur log: {e}")
 
 def nettoyer_donnees_pour_json(obj):
     if isinstance(obj, dict): return {k: nettoyer_donnees_pour_json(v) for k, v in obj.items()}
@@ -85,21 +85,45 @@ def synchroniser_listes_blanches():
     """Maintient la cohérence des accès internes."""
     pass
 
-def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
-    from supabase import create_client
-    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
-    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+# ==========================================
+# FONCTION DE CHARGEMENT DEPUIS SUPABASE (CORRIGÉE)
+# ==========================================
+def charger_donnees_externes() -> dict:
+    """Charge l'ensemble des tables depuis Supabase au démarrage de l'application."""
+    if not supabase_client:
+        return {}
     
-    try:
-        client_local = create_client(url_direct, key_direct)
-    except Exception as e:
-        st.error(f"Échec de connexion directe à Supabase : {e}")
+    tables = [
+        "prof_white_list", "parents_white_list", "admin_white_list",
+        "eleves_db", "notes_db", "classes_db", "viescolaire_db",
+        "cahier_textes", "absences_db", "travail_a_faire_db",
+        "messages_parents_db", "periodes_db"
+    ]
+    
+    loaded_data = {}
+    for t_name in tables:
+        try:
+            response = supabase_client.table(t_name).select("*").execute()
+            if response.data:
+                loaded_data[t_name] = pd.DataFrame(response.data)
+        except Exception as e:
+            # La table n'existe peut-être pas encore ou est vide
+            pass
+            
+    return loaded_data
+
+# ==========================================
+# FONCTION DE SAUVEGARDE VERS SUPABASE (CORRIGÉE)
+# ==========================================
+def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
+    if not supabase_client:
+        st.error("Client Supabase non initialisé.")
         return
 
     tables_mapping = {
         "prof_white_list": st.session_state.get("prof_credentials"),
-        "parents_white_list": st.session_state.get("parents_credentials"),
-        "admin_white_list": st.session_state.get("admin_credentials"),
+        "parents_white_list": st.session_state.get("parents_white_list"),
+        "admin_white_list": st.session_state.get("admin_white_list"),
         "eleves_db": st.session_state.get("eleves_db"),
         "notes_db": st.session_state.get("notes_db"),
         "classes_db": st.session_state.get("classes_db"),
@@ -129,8 +153,8 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
                 
                 payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
                 
-                # Envoi vers la table Supabase
-                response = client_local.table(t_name).upsert(payload).execute()
+                # Envoi vers la table Supabase avec upsert
+                response = supabase_client.table(t_name).upsert(payload).execute()
                 
             except Exception as e:
                 succes_global = False
@@ -141,15 +165,13 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     else:
         st.warning("La synchronisation s'est terminée avec des erreurs (voir détails ci-dessus).")
 
-# Initialisation au démarrage sécurisée
+# Initialisation au démarrage sécurisée avec chargement effectif
+saved_data = {}
 if "donnees_chargees" not in st.session_state:
     try:
-        saved_data = charger_donnees_externes() if 'charger_donnees_externes' in globals() else {}
-        if isinstance(saved_data, dict):
-            for table, df in saved_data.items():
-                st.session_state[table] = df
-    except Exception:
-        pass
+        saved_data = charger_donnees_externes()
+    except Exception as e:
+        st.warning(f"Impossible de charger les données distantes : {e}")
     st.session_state.donnees_chargees = True
 
 # ==========================================
