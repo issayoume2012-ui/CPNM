@@ -3276,12 +3276,56 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.info("Aucun parent dans la liste blanche pour le moment.")
 
     with ta_classes:
-      st.markdown("### 🏫 Structure des Classes & Périodes")
-      st.dataframe(st.session_state.classes_db, use_container_width=True)
+        st.markdown("### 🏫 Structure des Classes & Périodes")
+        
+        # Formulaire d'ajout rapide d'une classe
+        with st.form("form_add_classe_admin", clear_on_submit=True):
+            col_cl1, col_cl2, col_cl3 = st.columns(3)
+            with col_cl1:
+                nouveau_nom_classe = st.text_input("Nom de la classe", placeholder="Ex: 5ème A ou CP")
+            with col_cl2:
+                nouveau_cycle = st.selectbox("Cycle", ["Élémentaire", "Collège"])
+            with col_cl3:
+                prof_resp = st.text_input("Professeur Responsable", placeholder="Nom du prof")
+                
+            if st.form_submit_button("➕ Ajouter la Classe"):
+                if nouveau_nom_classe:
+                    new_cl_row = {
+                        "Classe": nouveau_nom_classe.strip(),
+                        "Cycle": nouveau_cycle,
+                        "Professeur Responsable": prof_resp.strip() if prof_resp else ""
+                    }
+                    if "classes_db" not in st.session_state or st.session_state.classes_db.empty:
+                        st.session_state.classes_db = pd.DataFrame([new_cl_row])
+                    else:
+                        st.session_state.classes_db = pd.concat(
+                            [st.session_state.classes_db, pd.DataFrame([new_cl_row])],
+                            ignore_index=True
+                        )
+                    sauvegarder_donnees_externes("AJOUT_CLASSE")
+                    st.success(f"✅ Classe {nouveau_nom_classe} ajoutée avec succès !")
+                    st.rerun()
 
-      st.markdown("#### Périodes Académiques par Cycle")
-      st.dataframe(st.session_state.periodes_db, use_container_width=True)
+        st.markdown("---")
+        st.markdown("#### Modifier / Gérer les Classes Existantes")
+        if "classes_db" in st.session_state and not st.session_state.classes_db.empty:
+            edited_classes = st.data_editor(
+                st.session_state.classes_db,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_classes_admin"
+            )
+            if st.button("💾 Enregistrer les modifications des classes"):
+                st.session_state.classes_db = edited_classes
+                sauvegarder_donnees_externes("MAJ_CLASSES_DB")
+                st.success("✅ Structure des classes mise à jour !")
+                st.rerun()
+        else:
+            st.info("Aucune classe enregistrée pour le moment.")
 
+        st.markdown("---")
+        st.markdown("#### Périodes Académiques par Cycle")
+        st.dataframe(st.session_state.periodes_db, use_container_width=True)
     with ta_coeff:
       st.markdown("### ⚖️ Coefficients & Matières")
       edited_coeff = st.data_editor(
