@@ -18,7 +18,7 @@ from supabase import create_client, Client
 # ==========================================
 try:
     supabase_url = "https://vtadnxbyfoiikkxcjcda.supabase.co"
-    supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0YWRueGJ5Zm9paWtreGNqY2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTk5MzksImV4cCI6MjEwMjEzNTkzOX0.AoebJzlmr_FAntQW7គ្Z"
+    supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ0YWRueGJ5Zm9paWtreGNqY2RhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NTk5MzksImV4cCI6MjEwMjEzNTkzOX0.AoebJzlmr_FAntQW7cF6d1VYosInIe5fRgVK-8xVZXk"
     supabase: Client = create_client(supabase_url, supabase_key)
 except Exception as e:
     supabase = None
