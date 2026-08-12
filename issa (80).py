@@ -1653,7 +1653,13 @@ def generer_pdf_bulletin(bul_data):
       chef_nom="Inspecteur / Directeur IEF Saint-Louis",
   )
 
-  return bytes(pdf.output())
+  output_pdf = pdf.output()
+  if isinstance(output_pdf, (bytes, bytearray)):
+    return bytes(output_pdf)
+  elif isinstance(output_pdf, str):
+    return output_pdf.encode('latin1')
+  else:
+    return bytes(pdf.output(dest='S'))
 
 
 def generer_zip_bulletins_classe(classe, periode):
