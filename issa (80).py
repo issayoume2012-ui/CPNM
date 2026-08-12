@@ -1855,11 +1855,11 @@ def generer_pdf_edt(classe, df_edt):
 
 output_pdf = pdf.output()
 if isinstance(output_pdf, (bytes, bytearray)):
-        return bytes(output_pdf)
-    elif isinstance(output_pdf, str):
-        return output_pdf.encode('latin1')
-    else:
-        return bytes(pdf.output(dest='S'))
+    return bytes(output_pdf)
+elif isinstance(output_pdf, str):
+    return output_pdf.encode('latin1')
+else:
+    return bytes(pdf.output(dest='S'))
 
 def generer_pdf_cahier_textes(df_ct, classe="Global"):
   pdf = FPDF()
