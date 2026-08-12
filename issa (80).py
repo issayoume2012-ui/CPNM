@@ -120,8 +120,12 @@ def charger_donnees_externes() -> dict:
 def sauvegarder_donnees_table(nom_table, df):
     if supabase and isinstance(df, pd.DataFrame):
         try:
-            # Vider la table distante
-            supabase.table(nom_table).delete().neq("id", -999999).execute()
+            # Récupération sécurisée des ID existants pour suppression propre
+            res_get = supabase.table(nom_table).select("id").execute()
+            if res_get.data:
+                ids_a_supprimer = [row["id"] for row in res_get.data]
+                if ids_a_supprimer:
+                    supabase.table(nom_table).delete().in_("id", ids_a_supprimer).execute()
             
             records = df.to_dict(orient="records")
             cleaned_records = []
@@ -133,7 +137,7 @@ def sauvegarder_donnees_table(nom_table, df):
             if cleaned_records:
                 supabase.table(nom_table).insert(cleaned_records).execute()
         except Exception as e:
-            print(f"Erreur de sauvegarde pour {nom_table}: {e}")
+            st.error(f"Erreur Supabase sur la table [{nom_table}] : {e}")
 
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """Sauvegarde les tables vers Supabase via l'API."""
