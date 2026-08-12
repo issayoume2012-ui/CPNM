@@ -84,7 +84,6 @@ def charger_donnees_externes() -> dict:
                 if res.data:
                     rows = []
                     for item in res.data:
-                        # Si les données sont bien dans la colonne JSONB 'data'
                         if "data" in item and isinstance(item["data"], dict):
                             rows.append(item["data"])
                         else:
@@ -117,28 +116,6 @@ def charger_donnees_externes() -> dict:
             data["edt_grid_db"] = {}
     return data
 
-def sauvegarder_donnees_table(nom_table, df):
-    if supabase and isinstance(df, pd.DataFrame):
-        try:
-            # Récupération sécurisée des ID existants pour suppression propre
-            res_get = supabase.table(nom_table).select("id").execute()
-            if res_get.data:
-                ids_a_supprimer = [row["id"] for row in res_get.data]
-                if ids_a_supprimer:
-                    supabase.table(nom_table).delete().in_("id", ids_a_supprimer).execute()
-            
-            records = df.to_dict(orient="records")
-            cleaned_records = []
-            for row in records:
-                clean_row = {k: (None if pd.isna(v) else v) for k, v in row.items()}
-                # On insère chaque ligne complète à l'intérieur de la colonne 'data' (jsonb)
-                cleaned_records.append({"data": clean_row})
-            
-            if cleaned_records:
-                supabase.table(nom_table).insert(cleaned_records).execute()
-        except Exception as e:
-            st.error(f"Erreur Supabase sur la table [{nom_table}] : {e}")
-
 def sauvegarder_donnees_table(nom_table, df, cle_primaire="id"):
     """Sauvegarde ou met à jour les données table par table sans écraser les modifications des autres utilisateurs."""
     if supabase and isinstance(df, pd.DataFrame) and not df.empty:
@@ -147,10 +124,8 @@ def sauvegarder_donnees_table(nom_table, df, cle_primaire="id"):
             cleaned_records = []
             for row in records:
                 clean_row = {k: (None if pd.isna(v) else v) for k, v in row.items()}
-                # On enveloppe l'objet dans la structure jsonb 'data'
                 cleaned_records.append({"data": clean_row})
             
-            # Utilisation de l'upsert de Supabase pour fusionner intelligemment sans tout supprimer
             if cleaned_records:
                 supabase.table(nom_table).upsert(cleaned_records).execute()
         except Exception as e:
@@ -1525,6 +1500,36 @@ def calculer_bulletin_eleve(classe, eleve, periode):
   }
 
 
+def get_pdf_bytes(pdf) -> bytes:
+  """Fonction robuste pour extraire les octets d'un objet FPDF sans échec."""
+  try:
+    res = pdf.output(dest='S')
+    if isinstance(res, str):
+      return res.encode('latin1')
+    elif isinstance(res, (bytes, bytearray)):
+      return bytes(res)
+  except Exception:
+    pass
+  try:
+    res = pdf.output()
+    if isinstance(res, str):
+      return res.encode('latin1')
+    elif isinstance(res, (bytes, bytearray)):
+      return bytes(res)
+  except Exception:
+    pass
+  try:
+    if hasattr(pdf, 'output'):
+      res = pdf.output(dest='')
+      if isinstance(res, (bytes, bytearray)):
+        return bytes(res)
+      elif isinstance(res, str):
+        return res.encode('latin1')
+  except Exception:
+    pass
+  return b""
+
+
 def generer_pdf_bulletin(bul_data):
   pdf = FPDF()
   try:
@@ -1670,13 +1675,7 @@ def generer_pdf_bulletin(bul_data):
       chef_nom="Inspecteur / Directeur IEF Saint-Louis",
   )
 
-  output_pdf = pdf.output()
-  if isinstance(output_pdf, (bytes, bytearray)):
-    return bytes(output_pdf)
-  elif isinstance(output_pdf, str):
-    return output_pdf.encode('latin1')
-  else:
-    return bytes(pdf.output(dest='S'))
+  return get_pdf_bytes(pdf)
 
 
 def generer_zip_bulletins_classe(classe, periode):
@@ -1781,14 +1780,7 @@ def generer_pdf_liste_eleves_classe(classe):
       prof_nom="Responsable de Scolarité",
       chef_nom="Inspecteur IEF Saint-Louis",
   )
-  
-  output_pdf = pdf.output()
-  if isinstance(output_pdf, (bytes, bytearray)):
-    return bytes(output_pdf)
-  elif isinstance(output_pdf, str):
-    return output_pdf.encode('latin1')
-  else:
-    return bytes(pdf.output(dest='S'))
+  return get_pdf_bytes(pdf)
 
 
 def generer_pdf_liste_absences(classe_filtre="Toutes"):
@@ -1844,7 +1836,7 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
       prof_nom="Surveillant Général",
       chef_nom="Chef d'Établissement",
   )
-  return bytes(pdf.output())
+  return get_pdf_bytes(pdf)
 
 
 def generer_pdf_edt(classe, df_edt):
@@ -1883,13 +1875,7 @@ def generer_pdf_edt(classe, df_edt):
       pdf, prof_nom="Chef d'Établissement", chef_nom="Inspecteur IA Saint-Louis"
   )
 
-  output_pdf = pdf.output()
-  if isinstance(output_pdf, (bytes, bytearray)):
-    return bytes(output_pdf)
-  elif isinstance(output_pdf, str):
-    return output_pdf.encode('latin1')
-  else:
-    return bytes(pdf.output(dest='S'))
+  return get_pdf_bytes(pdf)
 
 def generer_pdf_cahier_textes(df_ct, classe="Global"):
   pdf = FPDF()
@@ -1936,7 +1922,7 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
       chef_nom="L'Inspecteur Pédagogique",
   )
 
-  return bytes(pdf.output())
+  return get_pdf_bytes(pdf)
 
 
 # ==========================================
@@ -3278,7 +3264,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     with ta_classes:
         st.markdown("### 🏫 Structure des Classes & Périodes")
         
-        # Formulaire d'ajout rapide d'une classe
         with st.form("form_add_classe_admin", clear_on_submit=True):
             col_cl1, col_cl2, col_cl3 = st.columns(3)
             with col_cl1:
