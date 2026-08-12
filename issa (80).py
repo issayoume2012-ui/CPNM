@@ -3,6 +3,8 @@ import base64
 from datetime import datetime
 import io
 import json
+import os
+import zipfile
 import numpy as np
 import pandas as pd
 from fpdf import FPDF
@@ -97,7 +99,7 @@ def charger_donnees_externes() -> dict:
         "prof_white_list", "parents_white_list", "admin_white_list",
         "eleves_db", "notes_db", "classes_db", "viescolaire_db",
         "cahier_textes", "absences_db", "travail_a_faire_db",
-        "messages_parents_db", "periodes_db"
+        "messages_parents_db", "periodes_db", "matieres_def", "coefficients_db"
     ]
     
     loaded_data = {}
@@ -107,7 +109,6 @@ def charger_donnees_externes() -> dict:
             if response.data:
                 loaded_data[t_name] = pd.DataFrame(response.data)
         except Exception as e:
-            # La table n'existe peut-être pas encore ou est vide
             pass
             
     return loaded_data
@@ -139,6 +140,8 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
         "travail_a_faire_db": st.session_state.get("travail_a_faire_db"),
         "messages_parents_db": st.session_state.get("messages_parents_db"),
         "periodes_db": st.session_state.get("periodes_db"),
+        "matieres_def": st.session_state.get("matieres_def"),
+        "coefficients_db": st.session_state.get("coefficients_db"),
     }
 
     succes_global = True
@@ -165,7 +168,7 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
                 elif t_name == "parents_white_list":
                     response = client_local.table(t_name).upsert(payload, on_conflict="Téléphone").execute()
                 else:
-                    response = client_local.table(t_name).upsert(payload).execute()
+                    response = client_local.table(t_name).upsert(payload, on_conflict="id").execute()
                 
             except Exception as e:
                 succes_global = False
@@ -262,7 +265,8 @@ def assistant_ia_repondre(question: str) -> str:
         "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
         " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
     )
-#=============================
+
+# ==========================================
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
 st.set_page_config(
@@ -517,7 +521,6 @@ if "admin_white_list" not in st.session_state:
             "Mot de passe": hacher_mot_de_passe("cpnm2026"),
             "Niveau d'accès": "Super-Admin Ayant-Droit",
         }
-        # <-- SUPPRIMER le bloc dictionnaire pour "direction@cpnm.sn" ici
     ])
 
 if "prof_credentials" not in st.session_state:
@@ -564,6 +567,7 @@ if "parents_white_list" not in st.session_state:
     )
   else:
     st.session_state.parents_white_list = pd.DataFrame()
+
 if "classes_db" not in st.session_state:
   if "classes_db" in saved_data:
     st.session_state.classes_db = pd.DataFrame(saved_data["classes_db"])
@@ -916,7 +920,6 @@ synchroniser_listes_blanches()
 # ==========================================
 # 3. FONCTIONS MÉTIER & UTILITAIRES
 # ==========================================
-
 
 def obtenir_cycle_classe(classe_nom):
   """Détermine le cycle (Élémentaire / Collège) de manière dynamique et sans ambiguïté."""
@@ -3359,6 +3362,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                 pd.DataFrame(st.session_state.supabase_backup_history),
                 use_container_width=True,
             )
+
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     st.markdown(
         '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
@@ -3485,7 +3489,6 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     with tr_cahier:
         st.markdown("### 📑 Registre Général des Cahiers de Texte")
         
-        # Formulaire correctement ouvert pour accueillir le bouton de soumission
         with st.form("form_cahier_texte_admin"):
             d_ct = st.date_input("Date du cours")
             classe_autorisee = st.selectbox("Classe", st.session_state.classes_db["Classe"].unique(), key="ct_cls")
@@ -3495,7 +3498,7 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
             
             if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
                 new_ct = {
-                    "Professeur": prof_connecte,
+                    "Professeur": "Administration",
                     "Date": str(d_ct),
                     "Classe": classe_autorisee,
                     "Matière": m_ct,
@@ -3503,19 +3506,17 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
                     "Travail à faire": t_ct,
                 }
                 
-                # Ajout des données au DataFrame existant
                 df_new_ct = pd.DataFrame([new_ct])
                 if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
                     st.session_state.cahier_textes = df_new_ct
                 else:
                     st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
                 
-                # Appel de la sauvegarde
                 sauvegarder_donnees_externes("MAJ_CAHIER_TEXTES")
                 st.success("✅ Cahier de texte enregistré avec succès !")
                 
                 import time
-                time.sleep(1.5)  # Laisse le temps de lire le message de succès ou d'erreur
+                time.sleep(1.5)
                 st.rerun()
 
     with tr_assistant:
