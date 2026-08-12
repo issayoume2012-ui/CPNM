@@ -143,11 +143,6 @@ import base64
 import streamlit as st
 
 # ==========================================
-import os
-import base64
-import streamlit as st
-
-# ==========================================
 # 0. BIS. GESTION DU LOGO ET DU DESIGN
 # ==========================================
 
@@ -163,13 +158,15 @@ SCEAU_SENEGAL_B64 = (
 
 
 def obtenir_logo_base64():
-    """Récupère le logo en base64 en cherchant de manière absolue par rapport au script et dans /tmp."""
-    # Récupère le dossier exact où est stocké ce fichier .py sur le serveur
+    """Récupère le logo en base64 en testant plusieurs variantes de noms et chemins."""
     dossier_courant = os.path.dirname(os.path.abspath(__file__))
     
     chemins_possibles = [
         os.path.join(dossier_courant, "nm.jpg"),
+        os.path.join(dossier_courant, "nm.JPG"),
+        os.path.join(dossier_courant, "NM.jpg"),
         "nm.jpg",
+        "nm.JPG",
         os.path.join("/tmp", "nm.jpg")
     ]
     
@@ -183,6 +180,39 @@ def obtenir_logo_base64():
             continue
             
     return LOGO_NM_B64
+
+
+def afficher_drapeau_flottant():
+    """Affiche un drapeau du Sénégal animé (effet flottant) en CSS pur."""
+    drapeau_html = """
+    <style>
+    @keyframes flotter {
+        0% { transform: translateY(0px) rotate(0deg); }
+        50% { transform: translateY(-6px) rotate(1deg); }
+        100% { transform: translateY(0px) rotate(0deg); }
+    }
+    .drapeau-senegal {
+        display: flex;
+        width: 90px;
+        height: 60px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        border-radius: 4px;
+        overflow: hidden;
+        animation: flotter 3s ease-in-out infinite;
+        margin: 10px 0;
+    }
+    .bande-verte { background-color: #00853f; width: 33.33%; }
+    .bande-jaune { background-color: #fdef42; width: 33.33%; display: flex; align-items: center; justify-content: center; }
+    .bande-rouge { background-color: #e31b23; width: 33.33%; }
+    .etoile { color: #00853f; font-size: 20px; font-weight: bold; }
+    </style>
+    <div class="drapeau-senegal">
+        <div class="bande-verte"></div>
+        <div class="bande-jaune"><span class="etoile">★</span></div>
+        <div class="bande-rouge"></div>
+    </div>
+    """
+    st.markdown(drapeau_html, unsafe_allow_html=True)
 
 
 def assistant_ia_repondre(question: str) -> str:
