@@ -1501,7 +1501,16 @@ def calculer_bulletin_eleve(classe, eleve, periode):
 
 
 def get_pdf_bytes(pdf) -> bytes:
-  """Fonction robuste pour extraire les octets d'un objet FPDF sans échec."""
+  """Fonction robuste pour extraire les octets d'un objet FPDF / FPDF2 sans échec."""
+  try:
+    # Pour fpdf2 moderne, pdf.output() sans argument retourne directement des octets/bytearray
+    res = pdf.output()
+    if isinstance(res, (bytes, bytearray)):
+      return bytes(res)
+    elif isinstance(res, str):
+      return res.encode('latin1')
+  except Exception:
+    pass
   try:
     res = pdf.output(dest='S')
     if isinstance(res, str):
@@ -1510,26 +1519,7 @@ def get_pdf_bytes(pdf) -> bytes:
       return bytes(res)
   except Exception:
     pass
-  try:
-    res = pdf.output()
-    if isinstance(res, str):
-      return res.encode('latin1')
-    elif isinstance(res, (bytes, bytearray)):
-      return bytes(res)
-  except Exception:
-    pass
-  try:
-    if hasattr(pdf, 'output'):
-      res = pdf.output(dest='')
-      if isinstance(res, (bytes, bytearray)):
-        return bytes(res)
-      elif isinstance(res, str):
-        return res.encode('latin1')
-  except Exception:
-    pass
   return b""
-
-
 def generer_pdf_bulletin(bul_data):
   pdf = FPDF()
   try:
@@ -1680,8 +1670,10 @@ def generer_pdf_bulletin(bul_data):
 
 def generer_zip_bulletins_classe(classe, periode):
   eleves_df = st.session_state.eleves_db
-  if "Classe" in eleves_df.columns:
-    eleves = eleves_df[eleves_df["Classe"] == classe]
+  if eleves_df is not None and not eleves_df.empty and "Classe" in eleves_df.columns:
+    # Filtrage robuste insensible à la casse et aux espaces
+    cls_target = str(classe).strip().upper()
+    eleves = eleves_df[eleves_df["Classe"].astype(str).str.strip().str.upper() == cls_target]
   else:
     eleves = pd.DataFrame()
 
@@ -3497,16 +3489,19 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
                 "Sélectionner la période", pers_rep, key="rep_per_sel"
             )
 
-            df_el_rep = pd.DataFrame()
             if (
                 "eleves_db" in st.session_state
+                and not st.session_state.eleves_db.empty
                 and "Classe" in st.session_state.eleves_db.columns
             ):
+                cls_target = str(cls_rep).strip().upper()
                 df_el_rep = trier_eleves_par_nom(
                     st.session_state.eleves_db[
-                        st.session_state.eleves_db["Classe"] == cls_rep
+                        st.session_state.eleves_db["Classe"].astype(str).str.strip().str.upper() == cls_target
                     ]
                 )
+            else:
+                df_el_rep = pd.DataFrame()
 
             if not df_el_rep.empty:
                 list_el_rep = df_el_rep["Nom Complet"].tolist()
