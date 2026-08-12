@@ -1847,22 +1847,41 @@ def generer_pdf_edt(classe, df_edt):
     font_family = "Arial"
 
   pdf.add_page()
+  
+  # Correction du nom de classe si vide ou "nan"
+  nom_cls_affiche = str(classe).upper() if classe and str(classe).strip().lower() != "nan" else "CLASSE"
   ajouter_entete_senegal_officiel(
-      pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {classe}"
+      pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {nom_cls_affiche}"
   )
 
   pdf.set_font(font_family, "B", 8)
   pdf.set_fill_color(14, 165, 233)
   pdf.set_text_color(255, 255, 255)
 
-  # Calcul dynamique de la largeur des colonnes pour s'adapter à la largeur de la page A4 paysage (297 mm - marges 20 mm = 277 mm)
-  nb_cols = len(df_edt.columns)
+  # Ordre chronologique de référence souhaité
+  ordre_heures_ref = [
+      "08h-09h", "09h-10h", "10h-11h", 
+      "11h00-11h30", "11h30-12h", 
+      "12h-13h", "13h-14h", "14h-15h", 
+      "15h-16h", "16h-17h", "17h-18h", "18h-19h"
+  ]
+  
+  # Filtrer et ordonner les colonnes présentes dans le dataframe selon l'ordre chronologique
+  cols_disponibles = list(df_edt.columns)
+  colonnes_triees = [h for h in ordre_heures_ref if h in cols_disponibles]
+  # Ajouter les colonnes restantes si l'utilisateur en a ajouté d'autres
+  for c in cols_disponibles:
+    if c not in colonnes_triees:
+      colonnes_triees.append(c)
+
+  nb_cols = len(colonnes_triees)
   largeur_jour = 35
   largeur_disponible = 277 - largeur_jour
   col_w = max(15, largeur_disponible / nb_cols) if nb_cols > 0 else 20
 
+  # En-tête du tableau
   pdf.cell(largeur_jour, 7, "Jour / Heure", 1, 0, "C", True)
-  for col in df_edt.columns:
+  for col in colonnes_triees:
     pdf.cell(col_w, 7, str(col)[:10], 1, 0, "C", True)
   pdf.ln()
 
@@ -1871,10 +1890,11 @@ def generer_pdf_edt(classe, df_edt):
   fill = False
   pdf.set_fill_color(240, 249, 255)
 
+  # Remplissage des lignes par jour
   for jour in df_edt.index:
     pdf.cell(largeur_jour, 8, str(jour), 1, 0, "C", True)
-    for col in df_edt.columns:
-      val = str(df_edt.loc[jour, col])
+    for col in colonnes_triees:
+      val = str(df_edt.loc[jour, col]) if col in df_edt.columns else ""
       pdf.cell(col_w, 8, val[:15], 1, 0, "C", fill)
     pdf.ln()
     fill = not fill
@@ -2751,11 +2771,31 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         st.dataframe(ct_sub, use_container_width=True)
 
     with t_edt_prof:
-      st.markdown(f"### 📅 Emploi du Temps Officiel ({classe_autorisee})")
-      edt_prof_df = get_or_create_edt(classe_autorisee)
-      st.dataframe(edt_prof_df, use_container_width=True)
+      # --- Ordre chronologique de référence ---
+      ordre_heures_ref = [
+          "08h-09h", "09h-10h", "10h-11h", 
+          "11h00-11h30", "11h30-12h", 
+          "12h-13h", "13h-14h", "14h-15h", 
+          "15h-16h", "16h-17h", "17h-18h", "18h-19h"
+      ]
 
-      pdf_edt_p = generer_pdf_edt(classe_autorisee, edt_prof_df)
+      # Récupération sécurisée du nom de la classe
+      cls_nom_affiche = str(classe_autorisee).upper() if 'classe_autorisee' in locals() and classe_autorisee and str(classe_autorisee).strip().lower() != "nan" else "CLASSE"
+
+      st.markdown(f"### 📅 Emploi du Temps Officiel ({cls_nom_affiche})")
+
+      # Récupération et réorganisation de la grille d'emploi du temps
+      edt_df = get_or_create_edt(classe_autorisee)
+      cols_dispo = list(edt_df.columns)
+      colonnes_triees = [h for h in ordre_heures_ref if h in cols_dispo]
+      for c in cols_dispo:
+          if c not in colonnes_triees:
+              colonnes_triees.append(c)
+
+      # Affichage du DataFrame avec les colonnes triées dans l'ordre chronologique
+      st.dataframe(edt_df[colonnes_triees], use_container_width=True)
+
+      pdf_edt_p = generer_pdf_edt(classe_autorisee, edt_df[colonnes_triees])
       st.download_button(
           "📥 Télécharger Emploi du Temps (PDF)",
           data=pdf_edt_p,
@@ -2963,18 +3003,37 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         )
 
     with tp_edt:
-      st.markdown("### 📅 Emploi du Temps Officiel")
-      edt_p_df = get_or_create_edt(classe_p)
-      st.dataframe(edt_p_df, use_container_width=True)
+      # --- Ordre chronologique de référence ---
+      ordre_heures_ref = [
+          "08h-09h", "09h-10h", "10h-11h", 
+          "11h00-11h30", "11h30-12h", 
+          "12h-13h", "13h-14h", "14h-15h", 
+          "15h-16h", "16h-17h", "17h-18h", "18h-19h"
+      ]
 
-      pdf_edt_parent = generer_pdf_edt(classe_p, edt_p_df)
+      # Récupération sécurisée du nom de la classe
+      cls_nom_affiche = str(classe_p).upper() if 'classe_p' in locals() and classe_p and str(classe_p).strip().lower() != "nan" else "CLASSE"
+
+      st.markdown(f"### 📅 Emploi du Temps Officiel ({cls_nom_affiche})")
+
+      # Récupération et réorganisation de la grille d'emploi du temps
+      edt_df = get_or_create_edt(classe_p)
+      cols_dispo = list(edt_df.columns)
+      colonnes_triees = [h for h in ordre_heures_ref if h in cols_dispo]
+      for c in cols_dispo:
+          if c not in colonnes_triees:
+              colonnes_triees.append(c)
+
+      # Affichage du DataFrame avec les colonnes triées dans l'ordre chronologique
+      st.dataframe(edt_df[colonnes_triees], use_container_width=True)
+
+      pdf_edt_parent = generer_pdf_edt(classe_p, edt_df[colonnes_triees])
       st.download_button(
           "📥 Télécharger l'Emploi du Temps (PDF)",
           data=pdf_edt_parent,
           file_name=f"Emploi_du_temps_{classe_p}.pdf",
           mime="application/pdf",
       )
-
     with tp_msg:
       st.markdown("### 💬 Communication avec l'Établissement")
       if (
