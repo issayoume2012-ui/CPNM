@@ -121,8 +121,9 @@ def charger_donnees_externes() -> dict:
                     elif col_lower in ["classe attribuée", "classe attribuee"]: cols_mapping[col] = "Classe Attribuée"
                     elif col_lower in ["matière principale", "matiere principale"]: cols_mapping[col] = "Matière Principale"
                     elif col_lower in ["téléphone", "telephone"]: cols_mapping[col] = "Téléphone"
-                    elif col_lower in ["prénom élève", "prenom eleve"]: cols_mapping[col] = "Prénom Élève"
-                    elif col_lower in ["nom élève", "nom eleve"]: cols_mapping[col] = "Nom Élève"
+                    elif col_lower in ["prénom élève", "prenom eleve", "prenom_eleve"]: cols_mapping[col] = "Prénom Élève"
+                    elif col_lower in ["nom élève", "nom eleve", "nom_eleve"]: cols_mapping[col] = "Nom Élève"
+                    elif col_lower in ["année naissance", "annee naissance", "annee_naissance"]: cols_mapping[col] = "Année Naissance"
                     elif col_lower in ["classe"]: cols_mapping[col] = "Classe"
                 if cols_mapping:
                     df = df.rename(columns=cols_mapping)
@@ -173,6 +174,17 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
             try:
                 df_to_send = t_df.copy()
                 
+                # Correction du schéma pour parents_white_list (correspondance snake_case de Supabase)
+                if t_name == "parents_white_list":
+                    rename_map = {
+                        "Téléphone": "telephone",
+                        "Prénom Élève": "prenom_eleve",
+                        "Nom Élève": "nom_eleve",
+                        "Année Naissance": "annee_naissance",
+                        "Classe": "classe"
+                    }
+                    df_to_send = df_to_send.rename(columns=rename_map)
+
                 if "id" not in df_to_send.columns:
                     df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
                 else:
@@ -184,7 +196,7 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
                 if t_name in ["admin_white_list", "prof_white_list"]:
                     response = client_local.table(t_name).upsert(payload, on_conflict="Email").execute()
                 elif t_name == "parents_white_list":
-                    response = client_local.table(t_name).upsert(payload, on_conflict="Téléphone").execute()
+                    response = client_local.table(t_name).upsert(payload, on_conflict="telephone").execute()
                 else:
                     response = client_local.table(t_name).upsert(payload, on_conflict="id").execute()
                 
@@ -2099,9 +2111,19 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             db_prenom = str(row.get("Prénom", row.get("prénom", row.get("prenom", "")))).strip().lower()
 
             email_match = db_email and (input_val == db_email)
-            name_match = (input_val == db_nom) or (
-                f"{db_prenom} {db_nom}" == input_val
-            ) or (f"{db_nom} {db_prenom}" == input_val) or (input_val in db_nom) or (input_val in db_prenom)
+            
+            # Correspondance robuste et flexible (Nom, Prénom, Nom complet, insensible à la casse et aux espaces)
+            full_name_1 = f"{db_prenom} {db_nom}".strip()
+            full_name_2 = f"{db_nom} {db_prenom}".strip()
+            name_match = (
+                input_val == db_nom or
+                input_val == db_prenom or
+                input_val == full_name_1 or
+                input_val == full_name_2 or
+                db_nom in input_val or
+                db_prenom in input_val or
+                input_val in full_name_1
+            )
 
             if email_match or name_match:
               stored_pwd = str(row.get("Mot de passe", row.get("mot de passe", row.get("password", ""))))
