@@ -144,20 +144,27 @@ import base64
 import streamlit as st
 
 # ==========================================
+import os
+import urllib.request
+import base64
+import streamlit as st
+
+# ==========================================
 # 0. BIS. GESTION DES POLICES UNICODE ET LOGO
 # ==========================================
 
 @st.cache_resource
 def telecharger_polices():
+    # Nouveaux liens stables pour les polices DejaVuSans
     fonts = {
         "DejaVuSans.ttf": (
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf"
+            "https://github.com/conda-forge/staged-recipes/raw/main/recipes/staged/recipes/dejavu-fonts/DejaVuSans.ttf"
         ),
         "DejaVuSans-Bold.ttf": (
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Bold.ttf"
+            "https://github.com/conda-forge/staged-recipes/raw/main/recipes/staged/recipes/dejavu-fonts/DejaVuSans-Bold.ttf"
         ),
         "DejaVuSans-Oblique.ttf": (
-            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Oblique.ttf"
+            "https://github.com/conda-forge/staged-recipes/raw/main/recipes/staged/recipes/dejavu-fonts/DejaVuSans-Oblique.ttf"
         ),
     }
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -230,7 +237,6 @@ def assistant_ia_repondre(question: str) -> str:
         "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
         " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
     )
-
 # ==========================================
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
