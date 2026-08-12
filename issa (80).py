@@ -138,9 +138,14 @@ saved_data = charger_donnees_externes()
 for table, df in saved_data.items():
     st.session_state[table] = df
 # ==========================================
+import os
+import urllib.request
+import base64
+import streamlit as st
+
+# ==========================================
 # 0. BIS. GESTION DES POLICES UNICODE ET LOGO
 # ==========================================
-
 
 @st.cache_resource
 def telecharger_polices():
@@ -158,7 +163,6 @@ def telecharger_polices():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
     for font_name, font_url in fonts.items():
-        # Utiliser un chemin dans /tmp pour éviter les erreurs de permissions sur Streamlit Cloud
         chemin_fichier = os.path.join("/tmp", font_name)
         
         if not os.path.exists(chemin_fichier):
@@ -192,42 +196,40 @@ def obtenir_logo_base64():
                 data = f.read()
             return base64.b64encode(data).decode("utf-8")
         else:
-            # Retourne une chaîne vide ou une image par défaut si le fichier n'existe pas
             return ""
     except Exception:
         return ""
 
 
 def assistant_ia_repondre(question: str) -> str:
-  q = question.lower()
-  if "bulletin" in q or "note" in q:
+    q = question.lower()
+    if "bulletin" in q or "note" in q:
+        return (
+            "Les bulletins d'excellence sont générés automatiquement au format"
+            " standardisé sous l'autorité de l'IA Saint-Louis et IEF Saint-Louis,"
+            " garantissant rigueur et équité pour chaque élève."
+        )
+    elif "prof" in q or "enseignant" in q:
+        return (
+            "Nos enseignants d'élite s'engagent au quotidien pour encadrer les"
+            " notes, le cahier de texte, le travail à faire et le suivi"
+            " personnalisé."
+        )
+    elif "parent" in q or "élève" in q:
+        return (
+            "Les parents disposent d'un suivi pédagogique transparent en temps réel"
+            " (travaux à faire, devoirs, pièces jointes, emploi du temps et vie"
+            " scolaire) pour accompagner la réussite de leurs enfants."
+        )
+    elif "admin" in q or "administrateur" in q:
+        return (
+            "L'administration pilote l'établissement avec dévouement pour"
+            " maintenir les plus hauts standards de qualité académique."
+        )
     return (
-        "Les bulletins d'excellence sont générés automatiquement au format"
-        " standardisé sous l'autorité de l'IA Saint-Louis et IEF Saint-Louis,"
-        " garantissant rigueur et équité pour chaque élève."
+        "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
+        " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
     )
-  elif "prof" in q or "enseignant" in q:
-    return (
-        "Nos enseignants d'élite s'engagent au quotidien pour encadrer les"
-        " notes, le cahier de texte, le travail à faire et le suivi"
-        " personnalisé."
-    )
-  elif "parent" in q or "élève" in q:
-    return (
-        "Les parents disposent d'un suivi pédagogique transparent en temps réel"
-        " (travaux à faire, devoirs, pièces jointes, emploi du temps et vie"
-        " scolaire) pour accompagner la réussite de leurs enfants."
-    )
-  elif "admin" in q or "administrateur" in q:
-    return (
-        "L'administration pilote l'établissement avec dévouement pour"
-        " maintenir les plus hauts standards de qualité académique."
-    )
-  return (
-      "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
-      " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
-  )
-
 
 # ==========================================
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
