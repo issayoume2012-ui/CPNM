@@ -3453,8 +3453,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.success("✅ Synchronisation globale avec Supabase effectuée avec succès !")
 
     with col_sv2:
-        # Optionnel : Vous pouvez proposer un export CSV global ou 
-        # supprimer cette colonne si elle ne sert plus à rien.
         st.info("ℹ️ Le stockage est désormais entièrement géré dans le Cloud Supabase.")
 
       st.markdown("---")
