@@ -144,31 +144,33 @@ for table, df in saved_data.items():
 
 @st.cache_resource
 def telecharger_polices():
-  fonts = {
-      "DejaVuSans.ttf": (
-          "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf"
-      ),
-      "DejaVuSans-Bold.ttf": (
-          "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Bold.ttf"
-      ),
-      "DejaVuSans-Oblique.ttf": (
-          "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Oblique.ttf"
-      ),
-  }
-  headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    fonts = {
+        "DejaVuSans.ttf": (
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans.ttf"
+        ),
+        "DejaVuSans-Bold.ttf": (
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Bold.ttf"
+        ),
+        "DejaVuSans-Oblique.ttf": (
+            "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/ttf/DejaVuSans-Oblique.ttf"
+        ),
+    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
 
-  for font_name, font_url in fonts.items():
-    if not os.path.exists(font_name):
-      try:
-        req = urllib.request.Request(font_url, headers=headers)
-        with (
-            urllib.request.urlopen(req) as response,
-            open(font_name, "wb") as out_file,
-        ):
-          out_file.write(response.read())
-      except Exception:
-        pass
-
+    for font_name, font_url in fonts.items():
+        # Utiliser un chemin dans /tmp pour éviter les erreurs de permissions sur Streamlit Cloud
+        chemin_fichier = os.path.join("/tmp", font_name)
+        
+        if not os.path.exists(chemin_fichier):
+            try:
+                req = urllib.request.Request(font_url, headers=headers)
+                with (
+                    urllib.request.urlopen(req) as response,
+                    open(chemin_fichier, "wb") as out_file,
+                ):
+                    out_file.write(response.read())
+            except Exception as e:
+                st.error(f"Erreur lors du téléchargement de la police {font_name} : {e}")
 
 telecharger_polices()
 
