@@ -182,15 +182,18 @@ SCEAU_SENEGAL_B64 = (
 
 
 def obtenir_logo_base64():
-  """Convertit le fichier nm.jpg local en Base64 pour un affichage HTML inline parfait."""
-  if os.path.exists("nm.jpg"):
+    """Récupère le logo en base64 de manière sécurisée pour éviter les plantages si le fichier est absent."""
+    chemin_logo = "nm.jpg"
     try:
-      with open("nm.jpg", "rb") as f:
-        encoded = base64.b64encode(f.read()).decode("utf-8")
-        return f"data:image/jpeg;base64,{encoded}"
+        if os.path.exists(chemin_logo):
+            with open(chemin_logo, "rb") as f:
+                data = f.read()
+            return base64.b64encode(data).decode("utf-8")
+        else:
+            # Retourne une chaîne vide ou une image par défaut si le fichier n'existe pas
+            return ""
     except Exception:
-      pass
-  return None
+        return ""
 
 
 def assistant_ia_repondre(question: str) -> str:
