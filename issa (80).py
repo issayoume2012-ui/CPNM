@@ -112,7 +112,9 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """
     
     # 1. Préparation des données
+    # 1. Préparation des données incluant les profs
     tables_mapping = {
+        "prof_white_list": st.session_state.get("prof_credentials"), # Ajouté ici
         "notes_db": st.session_state.get("notes_db"),
         "eleves_db": st.session_state.get("eleves_db"),
         "classes_db": st.session_state.get("classes_db"),
