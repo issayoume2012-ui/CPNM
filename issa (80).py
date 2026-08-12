@@ -3441,28 +3441,27 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
 
     with ta_sauv:
-    st.markdown("### 💾 Console de Persistance Supabase")
-    st.success(
-        f"Statut de la connexion Supabase : **{'Connecté' if supabase_client else 'Hors-ligne'}**"
-    )
-
-    col_sv1, col_sv2 = st.columns(2)
-    with col_sv1:
-        if st.button("⚡ Forcer la Synchronisation Globale"):
-            sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
-            st.success("✅ Synchronisation globale avec Supabase effectuée avec succès !")
-
-    with col_sv2:
-        st.info("ℹ️ Le stockage est désormais entièrement géré dans le Cloud Supabase.")
-
-      st.markdown("---")
-      st.markdown("#### Historique des Synchronisations")
-      if "supabase_backup_history" in st.session_state:
-        st.dataframe(
-            pd.DataFrame(st.session_state.supabase_backup_history),
-            use_container_width=True,
+        st.markdown("### 💾 Console de Persistance Supabase")
+        st.success(
+            f"Statut de la connexion Supabase : **{'Connecté' if supabase_client else 'Hors-ligne'}**"
         )
 
+        col_sv1, col_sv2 = st.columns(2)
+        with col_sv1:
+            if st.button("⚡ Forcer la Synchronisation Globale"):
+                sauvegarder_donnees_externes("SAUVEGARDE_MANUELLE_ADMIN")
+                st.success("✅ Synchronisation globale avec Supabase effectuée avec succès !")
+
+        with col_sv2:
+            st.info("ℹ️ Le stockage est désormais entièrement géré dans le Cloud Supabase.")
+
+        st.markdown("---")
+        st.markdown("#### Historique des Synchronisations")
+        if "supabase_backup_history" in st.session_state:
+            st.dataframe(
+                pd.DataFrame(st.session_state.supabase_backup_history),
+                use_container_width=True,
+            )
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
   st.markdown(
       '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
