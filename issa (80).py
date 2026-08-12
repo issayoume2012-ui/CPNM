@@ -139,6 +139,23 @@ def sauvegarder_donnees_table(nom_table, df):
         except Exception as e:
             st.error(f"Erreur Supabase sur la table [{nom_table}] : {e}")
 
+def sauvegarder_donnees_table(nom_table, df, cle_primaire="id"):
+    """Sauvegarde ou met à jour les données table par table sans écraser les modifications des autres utilisateurs."""
+    if supabase and isinstance(df, pd.DataFrame) and not df.empty:
+        try:
+            records = df.to_dict(orient="records")
+            cleaned_records = []
+            for row in records:
+                clean_row = {k: (None if pd.isna(v) else v) for k, v in row.items()}
+                # On enveloppe l'objet dans la structure jsonb 'data'
+                cleaned_records.append({"data": clean_row})
+            
+            # Utilisation de l'upsert de Supabase pour fusionner intelligemment sans tout supprimer
+            if cleaned_records:
+                supabase.table(nom_table).upsert(cleaned_records).execute()
+        except Exception as e:
+            st.error(f"Erreur Supabase sur la table [{nom_table}] : {e}")
+
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """Sauvegarde les tables vers Supabase via l'API."""
     synchroniser_listes_blanches()
