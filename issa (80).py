@@ -5,6 +5,7 @@ import io
 import json
 import os
 import zipfile
+import unicodedata
 import numpy as np
 import pandas as pd
 from fpdf import FPDF
@@ -21,7 +22,7 @@ except ImportError:
 
 # Configuration directe et forcée pour éviter tout blocage avec les secrets
 SUPABASE_URL = "https://daugagjtwngldnvbjknx.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
 
 @st.cache_resource
 def init_supabase_v2() -> Client: 
@@ -37,7 +38,7 @@ def init_supabase_v2() -> Client:
 supabase_client = init_supabase_v2()
 
 # ==========================================
-# 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE
+# 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE & NORMALISATION
 # ==========================================
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
@@ -50,6 +51,11 @@ def verifier_mot_de_passe(password: str, hashed: str) -> bool:
         return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
+
+def normaliser_texte(texte):
+    """Normalise une chaîne de caractères pour une recherche universelle (insensible aux accents, casse, espaces)."""
+    if not texte: return ""
+    return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
 ADMIN_EMAIL = "cpnm@gmail.com"
 
@@ -134,12 +140,12 @@ def charger_donnees_externes() -> dict:
     return loaded_data
 
 # ==========================================
-# FONCTION DE SAUVEGARDE VERS SUPABASE (CORRIGÉE)
+# FONCTION DE SAUVEGARDE VERS SUPABASE (CORRIGÉE & SÉCURISÉE)
 # ==========================================
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     from supabase import create_client
     url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
-    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFndWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
     
     try:
         client_local = create_client(url_direct, key_direct)
@@ -174,16 +180,19 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
             try:
                 df_to_send = t_df.copy()
                 
-                # Correction du schéma pour parents_white_list (correspondance snake_case de Supabase)
+                # Correction rigoureuse du schéma pour parents_white_list (omission de annee_naissance si absent du cache Supabase pour éviter PGRST204)
                 if t_name == "parents_white_list":
                     rename_map = {
                         "Téléphone": "telephone",
                         "Prénom Élève": "prenom_eleve",
                         "Nom Élève": "nom_eleve",
-                        "Année Naissance": "annee_naissance",
                         "Classe": "classe"
                     }
                     df_to_send = df_to_send.rename(columns=rename_map)
+                    if "annee_naissance" in df_to_send.columns:
+                        df_to_send = df_to_send.drop(columns=["annee_naissance"])
+                    if "Année Naissance" in df_to_send.columns:
+                        df_to_send = df_to_send.drop(columns=["Année Naissance"])
 
                 if "id" not in df_to_send.columns:
                     df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
@@ -2089,7 +2098,8 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         matiere_trouvee = "Mathématiques"
         nom_complet_prof = ""
 
-        input_val = p_email_or_name.strip().lower()
+        input_val_norm = normaliser_texte(p_email_or_name)
+        input_prenom_norm = normaliser_texte(p_prenom)
 
         synchroniser_listes_blanches()
         targets = []
@@ -2107,22 +2117,27 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         for target_df in targets:
           for _, row in target_df.iterrows():
             db_email = str(row.get("Email", row.get("email", ""))).strip().lower()
-            db_nom = str(row.get("Nom", row.get("nom", ""))).strip().lower()
-            db_prenom = str(row.get("Prénom", row.get("prénom", row.get("prenom", "")))).strip().lower()
-
-            email_match = db_email and (input_val == db_email)
+            db_nom_raw = str(row.get("Nom", row.get("nom", "")))
+            db_prenom_raw = str(row.get("Prénom", row.get("prénom", row.get("prenom", ""))))
             
-            # Correspondance robuste et flexible (Nom, Prénom, Nom complet, insensible à la casse et aux espaces)
-            full_name_1 = f"{db_prenom} {db_nom}".strip()
-            full_name_2 = f"{db_nom} {db_prenom}".strip()
+            db_nom_norm = normaliser_texte(db_nom_raw)
+            db_prenom_norm = normaliser_texte(db_prenom_raw)
+
+            email_match = db_email and (input_val_norm == db_email)
+            
+            # Reconnaissance ultra-robuste et flexible (Nom, Prénom, Nom complet avec inversion possible, insensible aux accents/espaces/casse)
+            full_name_1 = f"{db_prenom_norm} {db_nom_norm}".strip()
+            full_name_2 = f"{db_nom_norm} {db_prenom_norm}".strip()
+            
             name_match = (
-                input_val == db_nom or
-                input_val == db_prenom or
-                input_val == full_name_1 or
-                input_val == full_name_2 or
-                db_nom in input_val or
-                db_prenom in input_val or
-                input_val in full_name_1
+                input_val_norm == db_nom_norm or
+                input_val_norm == db_prenom_norm or
+                input_val_norm == full_name_1 or
+                input_val_norm == full_name_2 or
+                db_nom_norm in input_val_norm or
+                db_prenom_norm in input_val_norm or
+                input_val_norm in full_name_1 or
+                (input_prenom_norm and (input_prenom_norm in db_prenom_norm or input_prenom_norm in db_nom_norm) and (input_val_norm in db_nom_norm or input_val_norm in db_prenom_norm))
             )
 
             if email_match or name_match:
@@ -2139,15 +2154,13 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 matiere_trouvee = str(
                     row.get("Matière Principale", row.get("matière principale", row.get("matiere", "Mathématiques")))
                 )
-                nom_complet_prof = (
-                    f"{row.get('Prénom', row.get('prénom', row.get('prenom', '')))} {row.get('Nom', row.get('nom', ''))}".strip()
-                )
+                nom_complet_prof = f"{db_prenom_raw} {db_nom_raw}".strip()
                 break
           if match_prof:
             break
 
         if match_prof or (
-            input_val == ADMIN_EMAIL.lower() and p_pass == "cpnm2026"
+            input_val_norm == ADMIN_EMAIL.lower() and p_pass == "cpnm2026"
         ):
           st.session_state.prof_logged = True
           st.session_state.prof_nom_connecte = (
