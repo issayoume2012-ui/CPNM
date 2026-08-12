@@ -129,14 +129,17 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
                     payload = nettoyer_donnees_pour_json(t_df.to_dict(orient="records"))
                     supabase_client.table(t_name).upsert(payload).execute()
                 except Exception as e:
-                    st.error(f"Erreur Sync {t_name}: {e}")
-
-    enregistrer_log_action("ADMIN", action_label, "Synchronisation réussie avec Supabase.")
+                    # On affiche l'erreur en rouge de façon persistante
+                    st.error(f"Erreur Sync sur la table '{t_name}': {e}")
+                    st.stop() # Empêche le st.rerun() de cacher l'erreur
 
 # Initialisation au démarrage
-saved_data = charger_donnees_externes()
-for table, df in saved_data.items():
-    st.session_state[table] = df
+if "donnees_chargees" not in st.session_state:
+    saved_data = charger_donnees_externes()
+    for table, df in saved_data.items():
+        st.session_state[table] = df
+    st.session_state.donnees_chargees = True
+
 
 import os
 import base64
@@ -3580,22 +3583,30 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     else:
       st.info("Aucune absence ou retard répertorié pour cette sélection.")
 
-  with tr_cahier:
-    st.markdown("### 📑 Registre des Cahiers de Texte")
-    if (
-        "cahier_textes" in st.session_state
-        and not st.session_state.cahier_textes.empty
-    ):
-      st.dataframe(st.session_state.cahier_textes, use_container_width=True)
-      pdf_ct_all = generer_pdf_cahier_textes(
-          st.session_state.cahier_textes, "Global"
-      )
-      st.download_button(
-          "📥 Télécharger le Registre Complet des Cahiers de Texte (PDF)",
-          data=pdf_ct_all,
-          file_name="Registre_Cahier_de_Textes.pdf",
-          mime="application/pdf",
-      )
+  if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
+          new_ct = {
+              "Professeur": prof_connecte,
+              "Date": str(d_ct),
+              "Classe": classe_autorisee,
+              "Matière": m_ct,
+              "Contenu": c_ct,
+              "Travail à faire": t_ct,
+          }
+          
+          # Ajout des données au DataFrame existant
+          df_new_ct = pd.DataFrame([new_ct])
+          if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
+              st.session_state.cahier_textes = df_new_ct
+          else:
+              st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
+          
+          # Appel de la sauvegarde
+          sauvegarder_donnees_externes("MAJ_CAHIER_TEXTES")
+          st.success("✅ Cahier de texte enregistré avec succès !")
+          
+          import time
+          time.sleep(1.5) # Laisse le temps de lire le message de succès ou d'erreur
+          st.rerun()
     else:
       st.info("Aucune entrée enregistrée dans le cahier de texte.")
 
