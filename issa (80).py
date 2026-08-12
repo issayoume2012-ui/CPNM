@@ -105,37 +105,39 @@ def synchroniser_listes_blanches():
     """Maintient la cohérence des accès internes."""
     pass
 
-def sauvegarder_donnees_externes():
-    # ... votre initialisation de client_local ...
+def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
+    from supabase import create_client
+    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
+    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+    client_local = create_client(url_direct, key_direct)
 
     tables_mapping = {
         "prof_white_list": st.session_state.get("prof_credentials"),
+        "parents_white_list": st.session_state.get("parents_credentials"),
+        "admin_white_list": st.session_state.get("admin_credentials"),
         "eleves_db": st.session_state.get("eleves_db"),
         "notes_db": st.session_state.get("notes_db"),
         "classes_db": st.session_state.get("classes_db"),
-        "absences_db": st.session_state.get("absences_db"),
+        "viescolaire_db": st.session_state.get("viescolaire_db"),
         "cahier_textes": st.session_state.get("cahier_textes"),
+        "absences_db": st.session_state.get("absences_db"),
         "travail_a_faire_db": st.session_state.get("travail_a_faire_db"),
         "messages_parents_db": st.session_state.get("messages_parents_db"),
-        "viescolaire_db": st.session_state.get("viescolaire_db"),
         "periodes_db": st.session_state.get("periodes_db"),
-        "admin_white_list": st.session_state.get("admin_credentials"),
-        "parents_white_list": st.session_state.get("parents_credentials")
     }
 
     for t_name, t_df in tables_mapping.items():
         if isinstance(t_df, pd.DataFrame) and not t_df.empty:
-            df_to_send = t_df.copy()
-            
-            # --- CORRECTION GLOBALE ---
-            # Si id est manquant ou vide, on en génère un pour chaque ligne
-            df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
-            
             try:
-                payload = df_to_send.to_dict(orient="records")
+                df_to_send = t_df.copy()
+                if "id" not in df_to_send.columns or df_to_send["id"].isna().any():
+                    df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
+
+                payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
                 client_local.table(t_name).upsert(payload).execute()
             except Exception as e:
                 st.error(f"Erreur Sync sur '{t_name}': {e}")
+                return
 
 # Initialisation au démarrage
 if "donnees_chargees" not in st.session_state:
