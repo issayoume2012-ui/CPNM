@@ -143,6 +143,11 @@ import base64
 import streamlit as st
 
 # ==========================================
+import os
+import base64
+import streamlit as st
+
+# ==========================================
 # 0. BIS. GESTION DU LOGO ET DU DESIGN
 # ==========================================
 
@@ -158,8 +163,15 @@ SCEAU_SENEGAL_B64 = (
 
 
 def obtenir_logo_base64():
-    """Récupère le logo en base64 de manière sécurisée en cherchant dans le dossier courant ou /tmp."""
-    chemins_possibles = ["nm.jpg", os.path.join("/tmp", "nm.jpg")]
+    """Récupère le logo en base64 en cherchant de manière absolue par rapport au script et dans /tmp."""
+    # Récupère le dossier exact où est stocké ce fichier .py sur le serveur
+    dossier_courant = os.path.dirname(os.path.abspath(__file__))
+    
+    chemins_possibles = [
+        os.path.join(dossier_courant, "nm.jpg"),
+        "nm.jpg",
+        os.path.join("/tmp", "nm.jpg")
+    ]
     
     for chemin_logo in chemins_possibles:
         try:
@@ -170,7 +182,6 @@ def obtenir_logo_base64():
         except Exception:
             continue
             
-    # Si l'image n'est trouvée nulle part, retourne la variable de secours ou une chaîne vide
     return LOGO_NM_B64
 
 
