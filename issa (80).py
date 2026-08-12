@@ -116,8 +116,14 @@ def charger_donnees_externes() -> dict:
 # FONCTION DE SAUVEGARDE VERS SUPABASE (CORRIGÉE)
 # ==========================================
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
-    if not supabase_client:
-        st.error("Client Supabase non initialisé.")
+    from supabase import create_client
+    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
+    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+    
+    try:
+        client_local = create_client(url_direct, key_direct)
+    except Exception as e:
+        st.error(f"Échec de connexion directe à Supabase : {e}")
         return
 
     tables_mapping = {
@@ -153,8 +159,13 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
                 
                 payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
                 
-                # Envoi vers la table Supabase avec upsert
-                response = supabase_client.table(t_name).upsert(payload).execute()
+                # Gestion de la cible de conflit (on_conflict) selon la table
+                if t_name in ["admin_white_list", "prof_white_list"]:
+                    response = client_local.table(t_name).upsert(payload, on_conflict="Email").execute()
+                elif t_name == "parents_white_list":
+                    response = client_local.table(t_name).upsert(payload, on_conflict="Téléphone").execute()
+                else:
+                    response = client_local.table(t_name).upsert(payload).execute()
                 
             except Exception as e:
                 succes_global = False
