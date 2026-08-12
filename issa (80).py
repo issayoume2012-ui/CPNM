@@ -1139,7 +1139,7 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     pdf.set_line_width(0.8)
   elif hasattr(pdf, "set_linewidth"):
     pdf.set_linewidth(0.8)
-  pdf.line(10, 38, 200, 38)
+  pdf.line(10, 38, 287, 38)
   pdf.ln(5)
 
 
@@ -1163,15 +1163,15 @@ def ajouter_bloc_signatures(
   pdf.set_font(font_family, "B", 8)
   pdf.set_draw_color(200, 200, 200)
 
-  pdf.cell(90, 5, f"SIGNATURE & TAMPON : {prof_nom.upper()}", 1, 0, "C")
-  pdf.cell(10, 5, "", 0, 0, "C")
-  pdf.cell(90, 5, f"VALIDEUR : {chef_nom.upper()} (IA/IEF)", 1, 1, "C")
+  pdf.cell(130, 5, f"SIGNATURE & TAMPON : {prof_nom.upper()}", 1, 0, "C")
+  pdf.cell(17, 5, "", 0, 0, "C")
+  pdf.cell(130, 5, f"VALIDEUR : {chef_nom.upper()} (IA/IEF)", 1, 1, "C")
 
   pdf.set_font(font_family, "I", 7)
-  pdf.cell(90, 15, "Sceau numérique & Empreinte d'excellence", "LRB", 0, "C")
-  pdf.cell(10, 15, "", 0, 0, "C")
+  pdf.cell(130, 15, "Sceau numérique & Empreinte d'excellence", "LRB", 0, "C")
+  pdf.cell(17, 15, "", 0, 0, "C")
   pdf.cell(
-      90, 15, "Cachet officiel de l'Établissement d'Excellence", "LRB", 1, "C"
+      130, 15, "Cachet officiel de l'Établissement d'Excellence", "LRB", 1, "C"
   )
 
 
@@ -1855,21 +1855,29 @@ def generer_pdf_edt(classe, df_edt):
   pdf.set_fill_color(14, 165, 233)
   pdf.set_text_color(255, 255, 255)
 
-  col_w = 22
-  pdf.cell(30, 7, "Jour / Heure", 1, 0, "C", True)
+  # Calcul dynamique de la largeur des colonnes pour s'adapter à la largeur de la page A4 paysage (297 mm - marges 20 mm = 277 mm)
+  nb_cols = len(df_edt.columns)
+  largeur_jour = 35
+  largeur_disponible = 277 - largeur_jour
+  col_w = max(15, largeur_disponible / nb_cols) if nb_cols > 0 else 20
+
+  pdf.cell(largeur_jour, 7, "Jour / Heure", 1, 0, "C", True)
   for col in df_edt.columns:
-    pdf.cell(col_w, 7, str(col)[:8], 1, 0, "C", True)
+    pdf.cell(col_w, 7, str(col)[:10], 1, 0, "C", True)
   pdf.ln()
 
   pdf.set_font(font_family, "", 7)
   pdf.set_text_color(0, 0, 0)
+  fill = False
+  pdf.set_fill_color(240, 249, 255)
 
   for jour in df_edt.index:
-    pdf.cell(30, 6, str(jour), 1, 0, "C", True)
+    pdf.cell(largeur_jour, 8, str(jour), 1, 0, "C", True)
     for col in df_edt.columns:
       val = str(df_edt.loc[jour, col])
-      pdf.cell(col_w, 6, val[:12], 1, 0, "C", True)
+      pdf.cell(col_w, 8, val[:15], 1, 0, "C", fill)
     pdf.ln()
+    fill = not fill
 
   ajouter_bloc_signatures(
       pdf, prof_nom="Chef d'Établissement", chef_nom="Inspecteur IA Saint-Louis"
@@ -3481,7 +3489,7 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
                 st.warning("Aucun élève dans cette classe.")
 
     with tr_listes:
-        st.markdown("### 📋 Imprimer les Fiches de Classe (Tri Alphabétique Nom)")
+        st.markdown("### 📋 Imprimer les Fiches de Classe (Test / Tri Nom)")
         cls_fiche = st.selectbox(
             "Sélectionner la classe pour la fiche",
             st.session_state.classes_db["Classe"].unique(),
@@ -3548,7 +3556,7 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
                 if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
                     st.session_state.cahier_textes = df_new_ct
                 else:
-                    st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
+                    st.session_state.cahier_textes = pd.concat([st.session_state.st.session_state.cahier_textes if "cahier_textes" in st.session_state else pd.DataFrame(), df_new_ct], ignore_index=True) if "cahier_textes" in st.session_state else df_new_ct
                 
                 sauvegarder_donnees_externes("MAJ_CAHIER_TEXTES")
                 st.success("✅ Cahier de texte enregistré avec succès !")
@@ -3557,7 +3565,8 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
                 time.sleep(1.5)
                 st.rerun()
 
-    with tr_assistant:
+    with_assistant = tr_assistant
+    with with_assistant:
         st.markdown("### 🤖 Assistant Pédagogique Intelligent Nelson Mandela")
         q_ia = st.text_input(
             "Posez une question sur le fonctionnement pédagogique ou l'organisation",
