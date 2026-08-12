@@ -68,7 +68,7 @@ def synchroniser_listes_blanches():
         st.session_state.prof_credentials = st.session_state.prof_white_list.copy()
 
 def charger_donnees_externes() -> dict:
-    """Charge l'ensemble des tables depuis la base de données distante Supabase."""
+    """Charge l'ensemble des tables depuis la base de données distante Supabase (format colonnes id / data jsonb)."""
     tables = [
         "admin_credentials", "admin_white_list", "prof_credentials", 
         "prof_white_list", "parents_white_list", "classes_db", "eleves_db", 
@@ -82,7 +82,14 @@ def charger_donnees_externes() -> dict:
             try:
                 res = supabase.table(table).select("*").execute()
                 if res.data:
-                    data[table] = pd.DataFrame(res.data)
+                    rows = []
+                    for item in res.data:
+                        # Si les données sont bien dans la colonne JSONB 'data'
+                        if "data" in item and isinstance(item["data"], dict):
+                            rows.append(item["data"])
+                        else:
+                            rows.append(item)
+                    data[table] = pd.DataFrame(rows)
                 else:
                     data[table] = pd.DataFrame()
             except Exception:
@@ -92,7 +99,13 @@ def charger_donnees_externes() -> dict:
             res_edt = supabase.table("edt_grid_db").select("*").execute()
             edt_dict = {}
             if res_edt.data:
-                df_edt_all = pd.DataFrame(res_edt.data)
+                rows_edt = []
+                for item in res_edt.data:
+                    if "data" in item and isinstance(item["data"], dict):
+                        rows_edt.append(item["data"])
+                    else:
+                        rows_edt.append(item)
+                df_edt_all = pd.DataFrame(rows_edt)
                 if "classe" in df_edt_all.columns:
                     for classe in df_edt_all["classe"].unique():
                         sub = df_edt_all[df_edt_all["classe"] == classe].drop(columns=["classe"], errors="ignore")
@@ -107,17 +120,20 @@ def charger_donnees_externes() -> dict:
 def sauvegarder_donnees_table(nom_table, df):
     if supabase and isinstance(df, pd.DataFrame):
         try:
+            # Vider la table distante
+            supabase.table(nom_table).delete().neq("id", -999999).execute()
+            
             records = df.to_dict(orient="records")
             cleaned_records = []
             for row in records:
                 clean_row = {k: (None if pd.isna(v) else v) for k, v in row.items()}
-                cleaned_records.append(clean_row)
+                # On insère chaque ligne complète à l'intérieur de la colonne 'data' (jsonb)
+                cleaned_records.append({"data": clean_row})
             
-            supabase.table(nom_table).delete().neq("id", -999999).execute()
             if cleaned_records:
                 supabase.table(nom_table).insert(cleaned_records).execute()
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"Erreur de sauvegarde pour {nom_table}: {e}")
 
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """Sauvegarde les tables vers Supabase via l'API."""
