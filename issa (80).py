@@ -84,8 +84,11 @@ def trier_eleves_par_nom(df):
     return df_copy.reset_index(drop=True)
 
 def synchroniser_listes_blanches():
-    """Maintient la cohérence des accès internes."""
-    pass
+    """Maintient la cohérence des accès internes entre identifiants et listes blanches."""
+    if "prof_credentials" in st.session_state and not st.session_state.prof_credentials.empty:
+        st.session_state.prof_white_list = st.session_state.prof_credentials.copy()
+    elif "prof_white_list" in st.session_state and not st.session_state.prof_white_list.empty:
+        st.session_state.prof_credentials = st.session_state.prof_white_list.copy()
 
 # ==========================================
 # FONCTION DE CHARGEMENT DEPUIS SUPABASE (CORRIGÉE)
@@ -107,7 +110,24 @@ def charger_donnees_externes() -> dict:
         try:
             response = supabase_client.table(t_name).select("*").execute()
             if response.data:
-                loaded_data[t_name] = pd.DataFrame(response.data)
+                df = pd.DataFrame(response.data)
+                # Normalisation des noms de colonnes pour éviter les problèmes de casse SQL
+                cols_mapping = {}
+                for col in df.columns:
+                    col_lower = col.lower()
+                    if col_lower in ["nom"]: cols_mapping[col] = "Nom"
+                    elif col_lower in ["prénom", "prenom"]: cols_mapping[col] = "Prénom"
+                    elif col_lower in ["email"]: cols_mapping[col] = "Email"
+                    elif col_lower in ["mot de passe", "password"]: cols_mapping[col] = "Mot de passe"
+                    elif col_lower in ["classe attribuée", "classe attribuee"]: cols_mapping[col] = "Classe Attribuée"
+                    elif col_lower in ["matière principale", "matiere principale"]: cols_mapping[col] = "Matière Principale"
+                    elif col_lower in ["téléphone", "telephone"]: cols_mapping[col] = "Téléphone"
+                    elif col_lower in ["prénom élève", "prenom eleve"]: cols_mapping[col] = "Prénom Élève"
+                    elif col_lower in ["nom élève", "nom eleve"]: cols_mapping[col] = "Nom Élève"
+                    elif col_lower in ["classe"]: cols_mapping[col] = "Classe"
+                if cols_mapping:
+                    df = df.rename(columns=cols_mapping)
+                loaded_data[t_name] = df
         except Exception as e:
             pass
             
@@ -494,10 +514,8 @@ if "edt_documents" not in st.session_state:
   st.session_state.edt_documents = saved_data.get("edt_documents", {})
 
 if "admin_credentials" not in st.session_state:
-  if "admin_credentials" in saved_data:
-    st.session_state.admin_credentials = pd.DataFrame(
-        saved_data["admin_credentials"]
-    )
+  if "admin_credentials" in saved_data and not saved_data["admin_credentials"].empty:
+    st.session_state.admin_credentials = saved_data["admin_credentials"]
   else:
     st.session_state.admin_credentials = pd.DataFrame([{
         "Nom": "Principal",
@@ -508,10 +526,8 @@ if "admin_credentials" not in st.session_state:
     }])
 
 if "admin_white_list" not in st.session_state:
-  if "admin_white_list" in saved_data:
-    st.session_state.admin_white_list = pd.DataFrame(
-        saved_data["admin_white_list"]
-    )
+  if "admin_white_list" in saved_data and not saved_data["admin_white_list"].empty:
+    st.session_state.admin_white_list = saved_data["admin_white_list"]
   else:
     st.session_state.admin_white_list = pd.DataFrame([
         {
@@ -524,12 +540,12 @@ if "admin_white_list" not in st.session_state:
     ])
 
 if "prof_credentials" not in st.session_state:
-  if "prof_credentials" in saved_data:
-    st.session_state.prof_credentials = pd.DataFrame(
-        saved_data["prof_credentials"]
-    )
+  if "prof_credentials" in saved_data and not saved_data["prof_credentials"].empty:
+    st.session_state.prof_credentials = saved_data["prof_credentials"]
+  elif "prof_white_list" in saved_data and not saved_data["prof_white_list"].empty:
+    st.session_state.prof_credentials = saved_data["prof_white_list"]
   else:
-    st.session_state.prof_credentials = pd.DataFrame()
+    st.session_state.prof_credentials = pd.DataFrame(columns=["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée", "Mot de passe"])
 
 for col in [
     "Nom",
@@ -543,34 +559,20 @@ for col in [
     st.session_state.prof_credentials[col] = ""
 
 if "prof_white_list" not in st.session_state:
-  if "prof_white_list" in saved_data:
-    st.session_state.prof_white_list = pd.DataFrame(
-        saved_data["prof_white_list"]
-    )
+  if "prof_white_list" in saved_data and not saved_data["prof_white_list"].empty:
+    st.session_state.prof_white_list = saved_data["prof_white_list"]
   else:
-    sync_wl = []
-    for _, r in st.session_state.prof_credentials.iterrows():
-      sync_wl.append({
-          "Email": r.get("Email", ""),
-          "Nom": r.get("Nom", ""),
-          "Prénom": r.get("Prénom", ""),
-          "Mot de passe": r.get("Mot de passe", ""),
-          "Matière Principale": r.get("Matière Principale", ""),
-          "Classe Attribuée": r.get("Classe Attribuée", ""),
-      })
-    st.session_state.prof_white_list = pd.DataFrame(sync_wl)
+    st.session_state.prof_white_list = st.session_state.prof_credentials.copy()
 
 if "parents_white_list" not in st.session_state:
-  if "parents_white_list" in saved_data:
-    st.session_state.parents_white_list = pd.DataFrame(
-        saved_data["parents_white_list"]
-    )
+  if "parents_white_list" in saved_data and not saved_data["parents_white_list"].empty:
+    st.session_state.parents_white_list = saved_data["parents_white_list"]
   else:
-    st.session_state.parents_white_list = pd.DataFrame()
+    st.session_state.parents_white_list = pd.DataFrame(columns=["Téléphone", "Prénom Élève", "Nom Élève", "Année Naissance", "Classe"])
 
 if "classes_db" not in st.session_state:
-  if "classes_db" in saved_data:
-    st.session_state.classes_db = pd.DataFrame(saved_data["classes_db"])
+  if "classes_db" in saved_data and not saved_data["classes_db"].empty:
+    st.session_state.classes_db = saved_data["classes_db"]
   else:
     st.session_state.classes_db = pd.DataFrame(
         columns=["Classe", "Cycle", "Professeur Responsable"],
@@ -578,8 +580,8 @@ if "classes_db" not in st.session_state:
     )
 
 if "eleves_db" not in st.session_state:
-  if "eleves_db" in saved_data:
-    st.session_state.eleves_db = pd.DataFrame(saved_data["eleves_db"])
+  if "eleves_db" in saved_data and not saved_data["eleves_db"].empty:
+    st.session_state.eleves_db = saved_data["eleves_db"]
   else:
     st.session_state.eleves_db = pd.DataFrame(
         columns=[
@@ -608,8 +610,8 @@ if not st.session_state.eleves_db.empty:
   st.session_state.eleves_db = trier_eleves_par_nom(st.session_state.eleves_db)
 
 if "matieres_def" not in st.session_state:
-  if "matieres_def" in saved_data:
-    st.session_state.matieres_def = pd.DataFrame(saved_data["matieres_def"])
+  if "matieres_def" in saved_data and not saved_data["matieres_def"].empty:
+    st.session_state.matieres_def = saved_data["matieres_def"]
   else:
     st.session_state.matieres_def = pd.DataFrame([
         {"Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4, "Barème": 20},
@@ -662,10 +664,8 @@ if "Barème" not in st.session_state.matieres_def.columns:
   )
 
 if "coefficients_db" not in st.session_state:
-  if "coefficients_db" in saved_data:
-    st.session_state.coefficients_db = pd.DataFrame(
-        saved_data["coefficients_db"]
-    )
+  if "coefficients_db" in saved_data and not saved_data["coefficients_db"].empty:
+    st.session_state.coefficients_db = saved_data["coefficients_db"]
   else:
     st.session_state.coefficients_db = pd.DataFrame([
         {
@@ -729,8 +729,8 @@ if "Barème" not in st.session_state.coefficients_db.columns:
   st.session_state.coefficients_db["Barème"] = 20
 
 if "periodes_db" not in st.session_state:
-  if "periodes_db" in saved_data:
-    st.session_state.periodes_db = pd.DataFrame(saved_data["periodes_db"])
+  if "periodes_db" in saved_data and not saved_data["periodes_db"].empty:
+    st.session_state.periodes_db = saved_data["periodes_db"]
   else:
     st.session_state.periodes_db = pd.DataFrame([
         {"Période": "1er Trimestre", "Statut": "Ouvert", "Cycle": "Élémentaire"},
@@ -741,8 +741,8 @@ if "periodes_db" not in st.session_state:
     ])
 
 if "notes_db" not in st.session_state:
-  if "notes_db" in saved_data:
-    st.session_state.notes_db = pd.DataFrame(saved_data["notes_db"])
+  if "notes_db" in saved_data and not saved_data["notes_db"].empty:
+    st.session_state.notes_db = saved_data["notes_db"]
   else:
     st.session_state.notes_db = pd.DataFrame(
         columns=[
@@ -782,8 +782,8 @@ elif (
   st.session_state.notes_db["Période"] = "1er Semestre"
 
 if "viescolaire_db" not in st.session_state:
-  if "viescolaire_db" in saved_data:
-    st.session_state.viescolaire_db = pd.DataFrame(saved_data["viescolaire_db"])
+  if "viescolaire_db" in saved_data and not saved_data["viescolaire_db"].empty:
+    st.session_state.viescolaire_db = saved_data["viescolaire_db"]
   else:
     st.session_state.viescolaire_db = pd.DataFrame(
         columns=[
@@ -802,10 +802,8 @@ if "viescolaire_db" not in st.session_state:
     )
 
 if "travail_a_faire_db" not in st.session_state:
-  if "travail_a_faire_db" in saved_data:
-    st.session_state.travail_a_faire_db = pd.DataFrame(
-        saved_data["travail_a_faire_db"]
-    )
+  if "travail_a_faire_db" in saved_data and not saved_data["travail_a_faire_db"].empty:
+    st.session_state.travail_a_faire_db = saved_data["travail_a_faire_db"]
   else:
     st.session_state.travail_a_faire_db = pd.DataFrame(
         columns=[
@@ -827,10 +825,8 @@ if "travail_a_faire_db" not in st.session_state:
     )
 
 if "messages_parents_db" not in st.session_state:
-  if "messages_parents_db" in saved_data:
-    st.session_state.messages_parents_db = pd.DataFrame(
-        saved_data["messages_parents_db"]
-    )
+  if "messages_parents_db" in saved_data and not saved_data["messages_parents_db"].empty:
+    st.session_state.messages_parents_db = saved_data["messages_parents_db"]
   else:
     st.session_state.messages_parents_db = pd.DataFrame(
         columns=[
@@ -864,7 +860,7 @@ HEURES_LIST = [
 ]
 
 if "edt_grid_db" not in st.session_state:
-  if "edt_grid_db" in saved_data:
+  if "edt_grid_db" in saved_data and isinstance(saved_data.get("edt_grid_db"), dict) and len(saved_data["edt_grid_db"]) > 0:
     st.session_state.edt_grid_db = {
         k: pd.DataFrame(v) for k, v in saved_data["edt_grid_db"].items()
     }
@@ -892,8 +888,8 @@ def get_or_create_edt(classe):
 
 
 if "cahier_textes" not in st.session_state:
-  if "cahier_textes" in saved_data:
-    st.session_state.cahier_textes = pd.DataFrame(saved_data["cahier_textes"])
+  if "cahier_textes" in saved_data and not saved_data["cahier_textes"].empty:
+    st.session_state.cahier_textes = saved_data["cahier_textes"]
   else:
     st.session_state.cahier_textes = pd.DataFrame(
         columns=[
@@ -908,8 +904,8 @@ if "cahier_textes" not in st.session_state:
     )
 
 if "absences_db" not in st.session_state:
-  if "absences_db" in saved_data:
-    st.session_state.absences_db = pd.DataFrame(saved_data["absences_db"])
+  if "absences_db" in saved_data and not saved_data["absences_db"].empty:
+    st.session_state.absences_db = saved_data["absences_db"]
   else:
     st.session_state.absences_db = pd.DataFrame(
         columns=["Date", "Classe", "Élève", "Statut", "Motif"], data=[]
@@ -1342,7 +1338,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
           "Bareme": bareme_m,
           "Composition": comp,
           "MoyenneMatiere": round(moy_matiere, 2),
-          "Appreciation": obtenir_appreciation(moy_matiere, cycle_classe, bareme_m),
+          "Appreciation": obtenir_appreciation(moyenne, cycle_classe, bareme_m),
       })
     else:
       moy_devoirs = (d1 + d2) / 2.0
@@ -2104,9 +2100,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         for target_df in targets:
           for _, row in target_df.iterrows():
-            db_email = str(row.get("Email", "")).strip().lower()
-            db_nom = str(row.get("Nom", "")).strip().lower()
-            db_prenom = str(row.get("Prénom", "")).strip().lower()
+            # Lecture insensible à la casse pour les colonnes de la base de données
+            db_email = str(row.get("Email", row.get("email", ""))).strip().lower()
+            db_nom = str(row.get("Nom", row.get("nom", ""))).strip().lower()
+            db_prenom = str(row.get("Prénom", row.get("prénom", row.get("prenom", "")))).strip().lower()
 
             email_match = db_email and (input_val == db_email)
             name_match = (input_val == db_nom) or (
@@ -2114,7 +2111,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             ) or (f"{db_nom} {db_prenom}" == input_val)
 
             if email_match or name_match:
-              stored_pwd = str(row.get("Mot de passe", ""))
+              stored_pwd = str(row.get("Mot de passe", row.get("mot de passe", row.get("password", ""))))
               if (
                   not stored_pwd
                   or verifier_mot_de_passe(p_pass, stored_pwd)
@@ -2122,13 +2119,13 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
               ):
                 match_prof = True
                 classe_trouvee = str(
-                    row.get("Classe Attribuée", "6ème A")
+                    row.get("Classe Attribuée", row.get("classe attribuée", row.get("classe", "6ème A")))
                 )
                 matiere_trouvee = str(
-                    row.get("Matière Principale", "Mathématiques")
+                    row.get("Matière Principale", row.get("matière principale", row.get("matiere", "Mathématiques")))
                 )
                 nom_complet_prof = (
-                    f"{row.get('Prénom', '')} {row.get('Nom', '')}".strip()
+                    f"{row.get('Prénom', row.get('prénom', row.get('prenom', '')))} {row.get('Nom', row.get('nom', ''))}".strip()
                 )
                 break
           if match_prof:
@@ -2788,16 +2785,16 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             and not st.session_state.parents_white_list.empty
         ):
           for _, r in st.session_state.parents_white_list.iterrows():
-            tel = str(r.get("Téléphone", "")).strip().lower()
-            p_e = str(r.get("Prénom Élève", "")).strip().lower()
-            n_e = str(r.get("Nom Élève", "")).strip().lower()
+            tel = str(r.get("Téléphone", r.get("téléphone", r.get("telephone", "")))).strip().lower()
+            p_e = str(r.get("Prénom Élève", r.get("prénom élève", r.get("prenom eleve", "")))).strip().lower()
+            n_e = str(r.get("Nom Élève", r.get("nom élève", r.get("nom eleve", "")))).strip().lower()
 
             if (ident_clean == tel or ident_clean == ADMIN_EMAIL.lower()) and (
                 nom_clean in p_e or nom_clean in n_e or not nom_clean
             ):
               match_p = True
-              el_trouve = f"{r.get('Prénom Élève', '')} {r.get('Nom Élève', '')}".strip()
-              cl_trouvee = str(r.get("Classe", "6ème A"))
+              el_trouve = f"{r.get('Prénom Élève', r.get('prénom élève', r.get('prenom eleve', '')))} {r.get('Nom Élève', r.get('nom élève', r.get('nom eleve', '')))}".strip()
+              cl_trouvee = str(r.get("Classe", r.get("classe", "6ème A")))
               break
 
         if not match_p and (
@@ -3171,6 +3168,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                 [st.session_state.prof_credentials, pd.DataFrame([new_p])],
                 ignore_index=True,
             )
+            synchroniser_listes_blanches()
             sauvegarder_donnees_externes("AJOUT_PROFESSEUR")
             st.success("✅ Enseignant ajouté à la liste blanche !")
             st.rerun()
@@ -3189,6 +3187,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
         if st.button("💾 Sauvegarder la Liste Blanche Professeurs"):
           st.session_state.prof_credentials = edited_prof_cred
+          synchroniser_listes_blanches()
           sauvegarder_donnees_externes("MAJ_LISTE_PROFESSEURS")
           st.success("✅ Liste d'accès mise à jour !")
           st.rerun()
