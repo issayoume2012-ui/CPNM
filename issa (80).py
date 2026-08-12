@@ -84,7 +84,7 @@ def trier_eleves_par_nom(df):
     return df_copy.reset_index(drop=True)
 
 def synchroniser_listes_blanches():
-    """Maintient la cohérence des accès internes entre identifiants et listes blanches."""
+    """Maintient la cohérence absolue et bidirectionnelle des accès professeurs."""
     if "prof_credentials" in st.session_state and not st.session_state.prof_credentials.empty:
         st.session_state.prof_white_list = st.session_state.prof_credentials.copy()
     elif "prof_white_list" in st.session_state and not st.session_state.prof_white_list.empty:
@@ -111,7 +111,6 @@ def charger_donnees_externes() -> dict:
             response = supabase_client.table(t_name).select("*").execute()
             if response.data:
                 df = pd.DataFrame(response.data)
-                # Normalisation des noms de colonnes pour éviter les problèmes de casse SQL
                 cols_mapping = {}
                 for col in df.columns:
                     col_lower = col.lower()
@@ -147,6 +146,9 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
         st.error(f"Échec de connexion directe à Supabase : {e}")
         return
 
+    # S'assurer que les listes blanches sont parfaitement synchronisées avant l'écriture
+    synchroniser_listes_blanches()
+
     tables_mapping = {
         "prof_white_list": st.session_state.get("prof_credentials"),
         "parents_white_list": st.session_state.get("parents_white_list"),
@@ -171,18 +173,14 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
             try:
                 df_to_send = t_df.copy()
                 
-                # Gestion indispensable de l'ID pour Supabase Upsert
                 if "id" not in df_to_send.columns:
                     df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
                 else:
                     df_to_send["id"] = df_to_send["id"].apply(lambda x: str(uuid.uuid4()) if pd.isna(x) or str(x).strip() == "" else str(x))
 
-                # Remplacement des NaN/NaT par des valeurs acceptables par Supabase
                 df_to_send = df_to_send.replace({np.nan: None})
-                
                 payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
                 
-                # Gestion de la cible de conflit (on_conflict) selon la table
                 if t_name in ["admin_white_list", "prof_white_list"]:
                     response = client_local.table(t_name).upsert(payload, on_conflict="Email").execute()
                 elif t_name == "parents_white_list":
@@ -197,9 +195,8 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     if succes_global:
         st.success("Toutes les données ont été synchronisées avec succès sur Supabase !")
     else:
-        st.warning("La synchronisation s'est terminée avec des erreurs (voir détails ci-dessus).")
+        st.warning("La synchronisation s'est terminée avec des erreurs.")
 
-# Initialisation au démarrage sécurisée avec chargement effectif
 saved_data = {}
 if "donnees_chargees" not in st.session_state:
     try:
@@ -221,11 +218,9 @@ SCEAU_SENEGAL_B64 = (
 )
 
 def obtenir_logo_base64():
-    """Fonction de compatibilité sécurisée (le logo Mandela ayant été supprimé)."""
     return ""
 
 def afficher_drapeau_flottant():
-    """Affiche un drapeau du Sénégal animé (effet flottant) en CSS pur."""
     drapeau_html = """
     <style>
     @keyframes flotter {
@@ -918,7 +913,6 @@ synchroniser_listes_blanches()
 # ==========================================
 
 def obtenir_cycle_classe(classe_nom):
-  """Détermine le cycle (Élémentaire / Collège) de manière dynamique et sans ambiguïté."""
   if not classe_nom:
     return "Élémentaire"
 
@@ -972,7 +966,6 @@ def obtenir_cycle_classe(classe_nom):
 
 
 def est_cycle_elementaire(cycle_or_classe):
-  """Fonction helper universelle pour éliminer les incohérences d'encodage ou d'accentuation."""
   if not cycle_or_classe:
     return True
   val = str(cycle_or_classe).strip().lower()
@@ -1338,7 +1331,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
           "Bareme": bareme_m,
           "Composition": comp,
           "MoyenneMatiere": round(moy_matiere, 2),
-          "Appreciation": obtenir_appreciation(moyenne, cycle_classe, bareme_m),
+          "Appreciation": obtenir_appreciation(moyenne_generale if 'moyenne_generale' in locals() else moy_matiere, cycle_classe, bareme_m),
       })
     else:
       moy_devoirs = (d1 + d2) / 2.0
@@ -2086,6 +2079,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         input_val = p_email_or_name.strip().lower()
 
+        synchroniser_listes_blanches()
         targets = []
         if (
             "prof_credentials" in st.session_state
@@ -2100,7 +2094,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         for target_df in targets:
           for _, row in target_df.iterrows():
-            # Lecture insensible à la casse pour les colonnes de la base de données
             db_email = str(row.get("Email", row.get("email", ""))).strip().lower()
             db_nom = str(row.get("Nom", row.get("nom", ""))).strip().lower()
             db_prenom = str(row.get("Prénom", row.get("prénom", row.get("prenom", "")))).strip().lower()
@@ -2108,7 +2101,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             email_match = db_email and (input_val == db_email)
             name_match = (input_val == db_nom) or (
                 f"{db_prenom} {db_nom}" == input_val
-            ) or (f"{db_nom} {db_prenom}" == input_val)
+            ) or (f"{db_nom} {db_prenom}" == input_val) or (input_val in db_nom) or (input_val in db_prenom)
 
             if email_match or name_match:
               stored_pwd = str(row.get("Mot de passe", row.get("mot de passe", row.get("password", ""))))
