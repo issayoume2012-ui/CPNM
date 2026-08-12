@@ -16,8 +16,9 @@ try:
 except ImportError:
     HAS_SUPABASE = False
 
-SUPABASE_URL = "https://daugagjtwngldnvbjknx.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6IZEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+# Récupération sécurisée via Streamlit Secrets
+SUPABASE_URL = st.secrets["supabase"]["url"] if "supabase" in st.secrets else "https://daugagjtwngldnvbjknx.supabase.co"
+SUPABASE_KEY = st.secrets["supabase"]["key"] if "supabase" in st.secrets else "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjE0MjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -25,7 +26,8 @@ def init_supabase() -> Client:
     if HAS_SUPABASE and SUPABASE_URL and SUPABASE_KEY:
         try:
             return create_client(SUPABASE_URL, SUPABASE_KEY)
-        except Exception:
+        except Exception as e:
+            st.error(f"Erreur d'initialisation Supabase: {e}")
             return None
     return None
 
