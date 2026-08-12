@@ -235,7 +235,7 @@ def assistant_ia_repondre(question: str) -> str:
         "École Président Nelson Mandela - Excellence, Discipline et Réussite au"
         " cœur du Système Pédagogique (IA Saint-Louis / IEF Saint-Louis)."
     )
-    =============================
+#=============================
 # 1. CONFIGURATION DE LA PAGE & DESIGN XXL
 # ==========================================
 st.set_page_config(
