@@ -3583,33 +3583,32 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     else:
       st.info("Aucune absence ou retard répertorié pour cette sélection.")
 
-  if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
-          new_ct = {
-              "Professeur": prof_connecte,
-              "Date": str(d_ct),
-              "Classe": classe_autorisee,
-              "Matière": m_ct,
-              "Contenu": c_ct,
-              "Travail à faire": t_ct,
-          }
-          
-          # Ajout des données au DataFrame existant
-          df_new_ct = pd.DataFrame([new_ct])
-          if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
-              st.session_state.cahier_textes = df_new_ct
-          else:
-              st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
-          
-          # Appel de la sauvegarde
-          sauvegarder_donnees_externes("MAJ_CAHIER_TEXTES")
-          st.success("✅ Cahier de texte enregistré avec succès !")
-          
-          import time
-          time.sleep(1.5) # Laisse le temps de lire le message de succès ou d'erreur
-          st.rerun()
+ if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
+    new_ct = {
+        "Professeur": prof_connecte,
+        "Date": str(d_ct),
+        "Classe": classe_autorisee,
+        "Matière": m_ct,
+        "Contenu": c_ct,
+        "Travail à faire": t_ct,
+    }
+    
+    # Ajout des données au DataFrame existant
+    df_new_ct = pd.DataFrame([new_ct])
+    if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
+        st.session_state.cahier_textes = df_new_ct
     else:
-      st.info("Aucune entrée enregistrée dans le cahier de texte.")
-
+        st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
+    
+    # Appel de la sauvegarde
+    sauvegarder_donnees_externes("MAJ_CAHIER_TEXTES")
+    st.success("✅ Cahier de texte enregistré avec succès !")
+    
+    import time
+    time.sleep(1.5)  # Laisse le temps de lire le message de succès ou d'erreur
+    st.rerun()
+else:
+    st.info("Aucune entrée enregistrée dans le cahier de texte.")
   with tr_assistant:
     st.markdown("### 🤖 Assistant Pédagogique Intelligent Nelson Mandela")
     q_ia = st.text_input(
