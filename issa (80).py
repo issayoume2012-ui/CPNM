@@ -9,6 +9,8 @@ from fpdf import FPDF
 import streamlit as st
 import bcrypt
 
+import uuid
+
 # --- BIBLIOTHÈQUES SUPABASE ---
 try:
     from supabase import Client, create_client
@@ -16,9 +18,16 @@ try:
 except ImportError:
     HAS_SUPABASE = False
 
-# Récupération sécurisée via Streamlit Secrets
-SUPABASE_URL = st.secrets["supabase"]["url"] if "supabase" in st.secrets else "https://daugagjtwngldnvbjknx.supabase.co"
-SUPABASE_KEY = st.secrets["supabase"]["key"] if "supabase" in st.secrets else "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjE0MjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+# Récupération sécurisée via Streamlit Secrets avec la clé correcte
+SUPABASE_URL = "https://daugagjtwngldnvbjknx.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+
+try:
+    if "supabase" in st.secrets:
+        SUPABASE_URL = st.secrets["supabase"].get("url", SUPABASE_URL)
+        SUPABASE_KEY = st.secrets["supabase"].get("key", SUPABASE_KEY)
+except Exception:
+    pass
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -102,13 +111,12 @@ def trier_eleves_par_nom(df):
 
 def synchroniser_listes_blanches():
     """Maintient la cohérence des accès internes."""
-    pass # Logique de maintien d'état
+    pass
 
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """
     Synchronisation directe vers Supabase.
     """
-    # 1. Préparation des données (pensez à inclure prof_white_list si ce n'est pas fait)
     tables_mapping = {
         "prof_white_list": st.session_state.get("prof_credentials"),
         "notes_db": st.session_state.get("notes_db"),
@@ -121,22 +129,16 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
         "messages_parents_db": st.session_state.get("messages_parents_db"),
     }
 
-    # 2. Envoi vers Supabase
     if supabase_client:
-        import uuid  # <--- Vous pouvez l'importer ici ou tout en haut du fichier Python
-
         for t_name, t_df in tables_mapping.items():
             if isinstance(t_df, pd.DataFrame) and not t_df.empty:
                 try:
-                    # --- INSERTION DU CODE ICI ---
                     df_to_send = t_df.copy()
                     if "id" not in df_to_send.columns:
-                        # Génère un UUID unique sous forme de texte pour chaque ligne
                         df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
 
                     payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
                     supabase_client.table(t_name).upsert(payload).execute()
-                    # -----------------------------
                     
                 except Exception as e:
                     st.error(f"Erreur Sync sur la table '{t_name}': {e}")
@@ -148,7 +150,6 @@ if "donnees_chargees" not in st.session_state:
     for table, df in saved_data.items():
         st.session_state[table] = df
     st.session_state.donnees_chargees = True
-
 
 import os
 import base64
