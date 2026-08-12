@@ -106,8 +106,14 @@ def synchroniser_listes_blanches():
 
 def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     """
-    Synchronisation directe vers Supabase.
+    Synchronisation directe vers Supabase avec client forcé.
     """
+    # Forçage direct du client dans la fonction pour éviter tout bug de portée
+    from supabase import create_client
+    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
+    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+    client_local = create_client(url_direct, key_direct)
+
     tables_mapping = {
         "prof_white_list": st.session_state.get("prof_credentials"),
         "notes_db": st.session_state.get("notes_db"),
@@ -120,20 +126,21 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
         "messages_parents_db": st.session_state.get("messages_parents_db"),
     }
 
-    if supabase_client:
-        for t_name, t_df in tables_mapping.items():
-            if isinstance(t_df, pd.DataFrame) and not t_df.empty:
-                try:
-                    df_to_send = t_df.copy()
-                    if "id" not in df_to_send.columns:
-                        df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
+    for t_name, t_df in tables_mapping.items():
+        if isinstance(t_df, pd.DataFrame) and not t_df.empty:
+            try:
+                df_to_send = t_df.copy()
+                if "id" not in df_to_send.columns:
+                    df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
 
-                    payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
-                    supabase_client.table(t_name).upsert(payload).execute()
-                    
-                except Exception as e:
-                    st.error(f"Erreur Sync sur la table '{t_name}': {e}")
-                    st.stop()
+                payload = nettoyer_donnees_pour_json(df_to_send.to_dict(orient="records"))
+                
+                # Utilisation du client local forcé
+                client_local.table(t_name).upsert(payload).execute()
+                
+            except Exception as e:
+                st.error(f"Erreur Sync sur la table '{t_name}': {e}")
+                st.stop()
 
 # Initialisation au démarrage
 if "donnees_chargees" not in st.session_state:
