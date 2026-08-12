@@ -65,25 +65,32 @@ def enregistrer_log_action(acteur: str, action: str, details: str):
         except Exception:
             pass
 
-def charger_donnees_externes():
-    """Chargement des données depuis Supabase vers st.session_state."""
-    data = {}
-    if supabase_client:
-        tables_a_charger = [
-            "prof_white_list", "admin_white_list", "parents_white_list",
-            "eleves_db", "notes_db", "classes_db", "matieres_def",
-            "coefficients_db", "periodes_db", "viescolaire_db",
-            "cahier_textes", "absences_db", "travail_a_faire_db",
-            "messages_parents_db"
-        ]
-        for table in tables_a_charger:
-            try:
-                res = supabase_client.table(table).select("*").execute()
-                if res.data:
-                    data[table] = pd.DataFrame(res.data)
-            except Exception:
-                continue
-    return data
+def sauvegarder_donnees_externes(action_label="TEST"):
+    from supabase import create_client
+    import pandas as pd
+    import uuid
+
+    url_direct = "https://daugagjtwngldnvbjknx.supabase.co"
+    key_direct = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
+    client_local = create_client(url_direct, key_direct)
+
+    # Récupérons spécifiquement les élèves pour tester
+    t_df = st.session_state.get("eleves_db")
+    
+    if isinstance(t_df, pd.DataFrame) and not t_df.empty:
+        st.write("Données trouvées en mémoire :", t_df) # <--- Affiche le tableau à l'écran
+        try:
+            df_to_send = t_df.copy()
+            if "id" not in df_to_send.columns or df_to_send["id"].isna().any():
+                df_to_send["id"] = [str(uuid.uuid4()) for _ in range(len(df_to_send))]
+
+            payload = df_to_send.to_dict(orient="records")
+            response = client_local.table("eleves_db").upsert(payload).execute()
+            st.success("Succès total de l'envoi vers Supabase !")
+        except Exception as e:
+            st.error(f"Erreur technique Supabase : {e}")
+    else:
+        st.warning("Le DataFrame 'eleves_db' est vide ou absent du session_state au moment du clic.")
 
 def nettoyer_donnees_pour_json(obj):
     if isinstance(obj, dict): return {k: nettoyer_donnees_pour_json(v) for k, v in obj.items()}
