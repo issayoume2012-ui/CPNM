@@ -1,7 +1,6 @@
-streamlit
+psycopg2-binary
+sqlalchemy
 pandas
-numpy
-fpdf2
+streamlit
+fpdf
 bcrypt
-supabase
-openpyxl
