@@ -22,7 +22,8 @@ SUPABASE_URL = "https://daugagjtwngldnvbjknx.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRhdWdhZ2p0d25nbGRudmJqa254Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0NTQ2NzYsImV4cCI6MjEwMjAzMDY3Nn0.Zrm4CIEW4abVJLX2eBjYNWPcP19vmE9MCRaTOUH5A8w"
 
 @st.cache_resource
-def init_supabase() -> Client:
+def init_supabase_v2() -> Client: 
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
     """Initialise le client Supabase pour la persistance des données."""
     if HAS_SUPABASE and SUPABASE_URL and SUPABASE_KEY:
         try:
@@ -32,7 +33,7 @@ def init_supabase() -> Client:
             return None
     return None
 
-supabase_client = init_supabase()
+supabase_client = init_supabase_v2()
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ MOTS DE PASSE
 # ==========================================
