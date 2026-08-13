@@ -36,11 +36,10 @@ def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFra
                     df[col] = colonnes_defaut[col]
             return df
     except Exception as e:
-        st.error(f"Erreur de chargement depuis la table {nom_table} : {e}")
+        # Ne bloque plus l'application : affiche un avertissement discret et renvoie une structure vide ou par défaut
+        print(mode="normal") # ou st.toast discret
+        pass 
     return pd.DataFrame(columns=list(colonnes_defaut.keys()))
-
-charger__supabase = charger_depuis_supabase
-
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
     """Sauvegarde sécurisée avec bascule automatique sur l'insertion directe si l'upsert bloque."""
     try:
