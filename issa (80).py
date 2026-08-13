@@ -2767,15 +2767,19 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
       st.dataframe(edt_p_df, use_container_width=True)
 
       pdf_edt_parent = generer_pdf_edt(classe_p, edt_p_df)
-      st.download_button(
-          f"📥 Télécharger {row.get('FichierNom')}",
-                data=f_bytes,
-                file_name=row.get("FichierNom"),
-                mime=row.get("FichierType", "application/octet-stream"),
-                key=f"dl_taf_{row.get('ID')}_{eleve_p}",
-            )
-            except Exception:
-                pass
+      
+      # Ensure the try-except block is correctly indented within your loop/logic:
+      try:
+          st.download_button(
+              f"📥 Télécharger {row.get('FichierNom')}",
+              data=f_bytes,
+              file_name=row.get("FichierNom"),
+              mime=row.get("FichierType", "application/octet-stream"),
+              key=f"dl_taf_{row.get('ID')}_{eleve_p}",
+          )
+      except Exception:
+          pass
+          
       else:
         st.info("Aucun travail à faire publié pour le moment.")
 
