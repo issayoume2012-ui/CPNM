@@ -35,34 +35,42 @@ def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFra
                 if col not in df.columns:
                     df[col] = colonnes_defaut[col]
             return df
-    except Exception:
-        pass
+    except Exception as e:
+        st.error(f"Erreur de chargement depuis la table {nom_table} : {e}")
     return pd.DataFrame(columns=list(colonnes_defaut.keys()))
 
 def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_conflict_col: str = "id"):
-    """Insère ou met à jour un enregistrement unique de manière sécurisée sans supprimer le reste de la table."""
+    """Insère ou met à jour un enregistrement unique de manière sécurisée."""
     try:
         cleaned = {k: (v if pd.notna(v) else None) for k, v in enregistrement.items()}
-        supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
+        # Si on_conflict_col est vide, on fait un insert simple, sinon un upsert
+        if on_conflict_col:
+            supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
+        else:
+            supabase.table(nom_table).insert(cleaned).execute()
     except Exception as e:
-        print(f"Erreur lors de la sauvegarde ciblée sur {nom_table}: {e}")
+        st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
 
 charger__supabase = charger_depuis_supabase
 
-def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str):
-    """Sauvegarde un ensemble de lignes en mode upsert ciblé sans vider toute la table."""
+def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
+    """Sauvegarde un ensemble de lignes en mode sécurisé avec retour d'erreur visible."""
     try:
         if not df.empty:
             records = df.to_dict(orient="records")
             cleaned = [{k: (v if pd.notna(v) else None) for k, v in r.items()} for r in records]
             if cleaned:
-                supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
+                if on_conflict_cols:
+                    supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
+                else:
+                    # Si pas de colonne de conflit, on insère proprement
+                    supabase.table(nom_table).upsert(cleaned).execute()
     except Exception as e:
-        print(f"Erreur lors de la sauvegarde du lot sur {nom_table}: {e}")
+        st.error(f"Erreur de sauvegarde lot sur {nom_table} : {e}")
 
 def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
     """Fonction de compatibilité globale pour rediriger vers la sauvegarde par lot."""
-    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="id")
+    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="")
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
 # ==========================================
