@@ -1120,6 +1120,9 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
   except Exception:
     font_family = "Arial"
 
+  # Déterminer la largeur maximale de la page (200 pour Portrait A4, 280+ pour Paysage)
+  max_width = pdf.w - 17 if hasattr(pdf, "w") else 200
+
   try:
     if os.path.exists("nm.jpg"):
       pdf.image("nm.jpg", x=12, y=8, w=22)
@@ -1172,7 +1175,7 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     pdf.set_line_width(0.8)
   elif hasattr(pdf, "set_linewidth"):
     pdf.set_linewidth(0.8)
-  pdf.line(10, 38, 200, 38)
+  pdf.line(10, 38, max_width, 38)
   pdf.ln(5)
 
 
@@ -1758,8 +1761,14 @@ def generer_pdf_liste_eleves_classe(classe):
       classe_val = row.get("Classe", "")
       classe_str = "" if pd.isna(classe_val) else str(classe_val)
       
-      date_val = row.get("Date de Naissance", "")
-      date_str = "" if pd.isna(date_val) else str(date_val)
+      # Récupération robuste de la date de naissance parmi plusieurs clés potentielles
+      date_val = None
+      for k_date in ["Date de Naissance", "Date Naissance", "Date", "naissance"]:
+        if k_date in row and pd.notna(row[k_date]) and str(row[k_date]).strip() != "":
+          date_val = row[k_date]
+          break
+      
+      date_str = str(date_val).strip() if date_val is not None and str(date_val).lower() != "nat" else "Non renseignée"
 
       pdf.cell(
           col_widths[0],
@@ -1870,8 +1879,8 @@ def generer_pdf_edt(classe, df_edt):
   pdf.set_fill_color(14, 165, 233)
   pdf.set_text_color(255, 255, 255)
 
-  col_w = 22
-  pdf.cell(30, 7, "Jour / Heure", 1, 0, "C", True)
+  col_w = 21
+  pdf.cell(28, 7, "Jour / Heure", 1, 0, "C", True)
   for col in df_edt.columns:
     pdf.cell(col_w, 7, str(col)[:8], 1, 0, "C", True)
   pdf.ln()
@@ -1880,10 +1889,10 @@ def generer_pdf_edt(classe, df_edt):
   pdf.set_text_color(0, 0, 0)
 
   for jour in df_edt.index:
-    pdf.cell(30, 6, str(jour), 1, 0, "C", True)
+    pdf.cell(28, 6, str(jour), 1, 0, "C", True)
     for col in df_edt.columns:
       val = str(df_edt.loc[jour, col])
-      pdf.cell(col_w, 6, val[:12], 1, 0, "C", True)
+      pdf.cell(col_w, 6, val[:11], 1, 0, "C", True)
     pdf.ln()
 
   ajouter_bloc_signatures(
