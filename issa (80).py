@@ -58,6 +58,11 @@ def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_con
             supabase.table(nom_table).insert(cleaned).execute()
     except Exception as e:
         st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
+def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
+    """Fonction de compatibilité globale pour rediriger vers la sauvegarde par lot avec la bonne clé de conflit."""
+    # On utilise "nom_complet" par défaut pour la table des élèves, ou une chaîne vide pour les autres
+    conflict_col = "nom_complet" if nom_table == "eleves_db" else ""
+    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols=conflict_col)
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
 # ==========================================
