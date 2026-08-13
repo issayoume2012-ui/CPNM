@@ -50,7 +50,7 @@ def charger__supabase(nom_table: str, structure_defaut) -> pd.DataFrame:
     return pd.DataFrame()
 
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
-    """Sauvegarde sécurisée utilisant l'insertion directe (Solution 3 - sans ID ni upsert bloquant)."""
+    """Sauvegarde sécurisée avec gestion des doublons (upsert) et affichage des erreurs."""
     try:
         if not df.empty:
             df_copie = df.copy()
@@ -63,29 +63,29 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
             cleaned = [{k: (v if pd.notna(v) else None) for k, v in r.items()} for r in records]
             
             if cleaned:
-                try:
-                    # Remplacement de l'upsert par un mode d'insertion simple ou ciblé par ligne
-                    for row in cleaned:
-                        supabase.table(nom_table).insert(row).execute()
-                except Exception as e:
-                    pass 
+                for row in cleaned:
+                    try:
+                        # Utilisation de .upsert() pour mettre à jour si la clé primaire existe déjà
+                        supabase.table(nom_table).upsert(row).execute()
+                    except Exception as err:
+                        st.error(f"Erreur d'insertion sur la ligne ({row}) dans {nom_table} : {err}")
     except Exception as e:
-        st.error(f"Erreur critique de sauvegarde sur {nom_table} : {e}")
+        st.error(f"Erreur critique de lot sur {nom_table} : {e}")
 
 def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_conflict_col: str = ""):
-    """Insère un enregistrement unique avec sécurité de secours (Solution 3)."""
+    """Insère ou met à jour un enregistrement unique avec retour d'erreur visible."""
     try:
         cleaned = {
             str(k).strip().lower().replace(" ", "_").replace("é", "e").replace("è", "e").replace("à", "a"): (v if pd.notna(v) else None) 
             for k, v in enregistrement.items()
         }
-        supabase.table(nom_table).insert(cleaned).execute()
+        supabase.table(nom_table).upsert(cleaned).execute()
     except Exception as e:
         st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
 
 def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
     """Fonction de compatibilité globale."""
-    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="")
+    sauvegarder_lot_vers_supabase(nom_table, df)
 
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
