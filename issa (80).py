@@ -2447,7 +2447,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             key="editor_appel_prof",
         )
 
-        if st.button("💾 Valider & Enregistrer sur Supabase"):
+        if st.button("💾 Valider & Enregistrer sur Supabase", key="btn_save_appel_prof"):
           records_appel = []
           for _, r in edited_appel.iterrows():
             if r["Statut"] != "Présent":
@@ -3012,7 +3012,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_eleves_admin",
         )
-        if st.button("💾 Sauvegarder sur Supabase"):
+        if st.button("💾 Sauvegarder sur Supabase", key="btn_save_eleves_admin"):
           st.session_state.eleves_db = trier_eleves_par_nom(edited_e_db)
           sauvegarder_vers_supabase("eleves_db", st.session_state.eleves_db)
           st.success("✅ Fichier élèves mis à jour sur Supabase !")
@@ -3070,7 +3070,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_profs_admin",
         )
-        if st.button("💾 Sauvegarder sur Supabase"):
+        if st.button("💾 Sauvegarder sur Supabase", key="btn_save_profs_admin"):
           st.session_state.prof_credentials = edited_prof_cred
           synchroniser_listes_blanches()
           sauvegarder_vers_supabase("prof_credentials", st.session_state.prof_credentials)
@@ -3148,7 +3148,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_parents_wl_admin",
         )
-        if st.button("💾 Sauvegarder sur Supabase"):
+        if st.button("💾 Sauvegarder sur Supabase", key="btn_save_parents_admin"):
           st.session_state.parents_white_list = edited_parents_wl
           sauvegarder_vers_supabase("parents_white_list", st.session_state.parents_white_list)
           st.success("✅ Liste blanche mise à jour sur Supabase !")
@@ -3234,9 +3234,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_periodes_db_admin",
         )
-        if st.button("💾 Enregistrer sur Supabase", key="btn_save_coeff_admin"):
-          st.session_state.coefficients_db = edited_coeff
-          sauvegarder_lot_vers_supabase("coefficients_db", st.session_state.coefficients_db)
+        if st.button("💾 Enregistrer sur Supabase", key="btn_save_periodes_admin"):
+          st.session_state.periodes_db = edited_periodes_db
+          sauvegarder_lot_vers_supabase("periodes_db", st.session_state.periodes_db)
           st.success("✅ Grille mise à jour sur Supabase !")
           st.rerun()
       else:
@@ -3250,7 +3250,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           use_container_width=True,
           key="editor_coeff_admin",
       )
-      if st.button("💾 Enregistrer sur Supabase"):
+      if st.button("💾 Enregistrer sur Supabase", key="btn_save_coeff_admin"):
         st.session_state.coefficients_db = edited_coeff
         sauvegarder_vers_supabase("coefficients_db", st.session_state.coefficients_db)
         st.success("✅ Grille mise à jour sur Supabase !")
@@ -3270,7 +3270,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           edt_grid, use_container_width=True, key=f"edt_editor_{cls_edt_sel}"
       )
 
-      if st.button(f"💾 Sauvegarder l'Emploi du Temps ({cls_edt_sel})"):
+      if st.button(f"💾 Sauvegarder l'Emploi du Temps ({cls_edt_sel})", key=f"btn_save_edt_{cls_edt_sel}"):
         st.session_state.edt_grid_db[cls_edt_sel] = edited_edt
         st.success(f"✅ Emploi du temps de {cls_edt_sel} configuré !")
 
