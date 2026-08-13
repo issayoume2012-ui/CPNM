@@ -13,7 +13,7 @@ import streamlit as st
 import bcrypt
 
 # ==========================================
-# 0. GESTION DE LA SÉCURITÉ LOCALE (SANS SUPABASE)
+# 0. GESTION DE LA SÉCURITÉ LOCALE & SUPABASE
 # ==========================================
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
@@ -43,8 +43,9 @@ def enregistrer_log_action(acteur: str, action: str, details: str):
     """Consigne chaque action utilisateur."""
     horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if "audit_logs_db" not in st.session_state:
-        st.session_state.audit_logs_db = pd.DataFrame(columns=["horodatage", "acteur", "action", "details"])
-    new_log = pd.DataFrame([{"horodatage": horodatage, "acteur": acteur, "action": action, "details": details}])
+        st.session_state.audit_logs_db = pd.DataFrame(columns=["ID", "horodatage", "acteur", "action", "details"])
+    new_id = len(st.session_state.audit_logs_db) + 1
+    new_log = pd.DataFrame([{"ID": new_id, "horodatage": horodatage, "acteur": acteur, "action": action, "details": details}])
     st.session_state.audit_logs_db = pd.concat([st.session_state.audit_logs_db, new_log], ignore_index=True)
 
 def trier_eleves_par_nom(df):
@@ -324,7 +325,7 @@ hide_streamlit_style = """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. INITIALISATION EXHAUSTIVE DES DONNÉES LOCALES
+# 2. INITIALISATION EXHAUSTIVE DES DONNÉES LOCALES AVEC ID ENTIER
 # ==========================================
 if "espace_actif" not in st.session_state:
   st.session_state.espace_actif = "🏠 Accueil"
@@ -335,8 +336,10 @@ if "authenticated_admin" not in st.session_state:
 if "edt_documents" not in st.session_state:
   st.session_state.edt_documents = {}
 
+# Table 1 : admin_credentials
 if "admin_credentials" not in st.session_state:
   st.session_state.admin_credentials = pd.DataFrame([{
+      "ID": 1,
       "Nom": "Principal",
       "Prénom": "Admin",
       "Email": ADMIN_EMAIL,
@@ -344,9 +347,11 @@ if "admin_credentials" not in st.session_state:
       "Niveau d'accès": "Super-Admin Ayant-Droit",
   }])
 
+# Table 2 : admin_white_list
 if "admin_white_list" not in st.session_state:
   st.session_state.admin_white_list = pd.DataFrame([
       {
+          "ID": 1,
           "Email": ADMIN_EMAIL,
           "Nom": "Mandela",
           "Prénom": "Ayant Droit",
@@ -355,10 +360,12 @@ if "admin_white_list" not in st.session_state:
       }
   ])
 
+# Table 3 : prof_credentials
 if "prof_credentials" not in st.session_state:
-  st.session_state.prof_credentials = pd.DataFrame(columns=["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée", "Mot de passe"])
+  st.session_state.prof_credentials = pd.DataFrame(columns=["ID", "Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée", "Mot de passe"])
 
 for col in [
+    "ID",
     "Nom",
     "Prénom",
     "Email",
@@ -367,26 +374,30 @@ for col in [
     "Mot de passe",
 ]:
   if col not in st.session_state.prof_credentials.columns:
-    st.session_state.prof_credentials[col] = ""
+    st.session_state.prof_credentials[col] = "" if col != "ID" else 0
 
 if "prof_white_list" not in st.session_state:
   st.session_state.prof_white_list = st.session_state.prof_credentials.copy()
 
+# Table 4 : parents_white_list
 if "parents_white_list" not in st.session_state:
-  st.session_state.parents_white_list = pd.DataFrame(columns=["Téléphone", "Prénom Élève", "Nom Élève", "Année Naissance", "Classe"])
+  st.session_state.parents_white_list = pd.DataFrame(columns=["ID", "Téléphone", "Prénom Élève", "Nom Élève", "Année Naissance", "Classe"])
 
+# Table 5 : classes_db
 if "classes_db" not in st.session_state:
   st.session_state.classes_db = pd.DataFrame(
-      columns=["Classe", "Cycle", "Professeur Responsable"],
+      columns=["ID", "Classe", "Cycle", "Professeur Responsable"],
       data=[
-          ["6ème A", "Collège", "Prof. Math"],
-          ["CP", "Élémentaire", "Prof. Élémen"]
+          [1, "6ème A", "Collège", "Prof. Math"],
+          [2, "CP", "Élémentaire", "Prof. Élémen"]
       ],
   )
 
+# Table 6 : eleves_db
 if "eleves_db" not in st.session_state:
   st.session_state.eleves_db = pd.DataFrame(
       columns=[
+          "ID",
           "Nom Complet",
           "Prénom",
           "Nom",
@@ -398,6 +409,7 @@ if "eleves_db" not in st.session_state:
   )
 
 for col_req in [
+    "ID",
     "Nom Complet",
     "Prénom",
     "Nom",
@@ -406,53 +418,24 @@ for col_req in [
     "Photo",
 ]:
   if col_req not in st.session_state.eleves_db.columns:
-    st.session_state.eleves_db[col_req] = ""
+    st.session_state.eleves_db[col_req] = "" if col_req != "ID" else 0
 
 if not st.session_state.eleves_db.empty:
   st.session_state.eleves_db = trier_eleves_par_nom(st.session_state.eleves_db)
 
+# Table 7 : matieres_def
 if "matieres_def" not in st.session_state:
   st.session_state.matieres_def = pd.DataFrame([
-      {"Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4, "Barème": 20},
-      {"Matière": "Français", "Cycle": "Collège", "Coefficient": 5, "Barème": 20},
-      {
-          "Matière": "Histoire-Géographie",
-          "Cycle": "Collège",
-          "Coefficient": 2,
-          "Barème": 20,
-      },
-      {"Matière": "SVT", "Cycle": "Collège", "Coefficient": 2, "Barème": 20},
-      {"Matière": "Anglais", "Cycle": "Collège", "Coefficient": 2, "Barème": 20},
-      {
-          "Matière": "Physique-Chimie",
-          "Cycle": "Collège",
-          "Coefficient": 2,
-          "Barème": 20,
-      },
-      {
-          "Matière": "Lecture / Langage",
-          "Cycle": "Élémentaire",
-          "Coefficient": 1,
-          "Barème": 50,
-      },
-      {
-          "Matière": "Calcul / Mathématiques",
-          "Cycle": "Élémentaire",
-          "Coefficient": 1,
-          "Barème": 50,
-      },
-      {
-          "Matière": "Éveil / Science",
-          "Cycle": "Élémentaire",
-          "Coefficient": 1,
-          "Barème": 30,
-      },
-      {
-          "Matière": "Éducation Civique",
-          "Cycle": "Élémentaire",
-          "Coefficient": 1,
-          "Barème": 20,
-      },
+      {"ID": 1, "Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4, "Barème": 20},
+      {"ID": 2, "Matière": "Français", "Cycle": "Collège", "Coefficient": 5, "Barème": 20},
+      {"ID": 3, "Matière": "Histoire-Géographie", "Cycle": "Collège", "Coefficient": 2, "Barème": 20},
+      {"ID": 4, "Matière": "SVT", "Cycle": "Collège", "Coefficient": 2, "Barème": 20},
+      {"ID": 5, "Matière": "Anglais", "Cycle": "Collège", "Coefficient": 2, "Barème": 20},
+      {"ID": 6, "Matière": "Physique-Chimie", "Cycle": "Collège", "Coefficient": 2, "Barème": 20},
+      {"ID": 7, "Matière": "Lecture / Langage", "Cycle": "Élémentaire", "Coefficient": 1, "Barème": 50},
+      {"ID": 8, "Matière": "Calcul / Mathématiques", "Cycle": "Élémentaire", "Coefficient": 1, "Barème": 50},
+      {"ID": 9, "Matière": "Éveil / Science", "Cycle": "Élémentaire", "Coefficient": 1, "Barème": 30},
+      {"ID": 10, "Matière": "Éducation Civique", "Cycle": "Élémentaire", "Coefficient": 1, "Barème": 20},
   ])
 
 if "Barème" not in st.session_state.matieres_def.columns:
@@ -462,80 +445,39 @@ if "Barème" not in st.session_state.matieres_def.columns:
       )
   )
 
+# Table 8 : coefficients_db
 if "coefficients_db" not in st.session_state:
   st.session_state.coefficients_db = pd.DataFrame([
-      {
-          "Classe": "6ème A",
-          "Matière": "Mathématiques",
-          "Coefficient": 4,
-          "Barème": 20,
-      },
-      {
-          "Classe": "6ème A",
-          "Matière": "Français",
-          "Coefficient": 5,
-          "Barème": 20,
-      },
-      {
-          "Classe": "6ème A",
-          "Matière": "Histoire-Géographie",
-          "Coefficient": 2,
-          "Barème": 20,
-      },
-      {"Classe": "6ème A", "Matière": "SVT", "Coefficient": 2, "Barème": 20},
-      {
-          "Classe": "6ème A",
-          "Matière": "Anglais",
-          "Coefficient": 2,
-          "Barème": 20,
-      },
-      {
-          "Classe": "6ème A",
-          "Matière": "Physique-Chimie",
-          "Coefficient": 2,
-          "Barème": 20,
-      },
-      {
-          "Classe": "CP",
-          "Matière": "Lecture / Langage",
-          "Coefficient": 1,
-          "Barème": 50,
-      },
-      {
-          "Classe": "CP",
-          "Matière": "Calcul / Mathématiques",
-          "Coefficient": 1,
-          "Barème": 50,
-      },
-      {
-          "Classe": "CP",
-          "Matière": "Éveil / Science",
-          "Coefficient": 1,
-          "Barème": 30,
-      },
-      {
-          "Classe": "CP",
-          "Matière": "Éducation Civique",
-          "Coefficient": 1,
-          "Barème": 20,
-      },
+      {"ID": 1, "Classe": "6ème A", "Matière": "Mathématiques", "Coefficient": 4, "Barème": 20},
+      {"ID": 2, "Classe": "6ème A", "Matière": "Français", "Coefficient": 5, "Barème": 20},
+      {"ID": 3, "Classe": "6ème A", "Matière": "Histoire-Géographie", "Coefficient": 2, "Barème": 20},
+      {"ID": 4, "Classe": "6ème A", "Matière": "SVT", "Coefficient": 2, "Barème": 20},
+      {"ID": 5, "Classe": "6ème A", "Matière": "Anglais", "Coefficient": 2, "Barème": 20},
+      {"ID": 6, "Classe": "6ème A", "Matière": "Physique-Chimie", "Coefficient": 2, "Barème": 20},
+      {"ID": 7, "Classe": "CP", "Matière": "Lecture / Langage", "Coefficient": 1, "Barème": 50},
+      {"ID": 8, "Classe": "CP", "Matière": "Calcul / Mathématiques", "Coefficient": 1, "Barème": 50},
+      {"ID": 9, "Classe": "CP", "Matière": "Éveil / Science", "Coefficient": 1, "Barème": 30},
+      {"ID": 10, "Classe": "CP", "Matière": "Éducation Civique", "Coefficient": 1, "Barème": 20},
   ])
 
 if "Barème" not in st.session_state.coefficients_db.columns:
   st.session_state.coefficients_db["Barème"] = 20
 
+# Table 9 : periodes_db
 if "periodes_db" not in st.session_state:
   st.session_state.periodes_db = pd.DataFrame([
-      {"Période": "1er Trimestre", "Statut": "Ouvert", "Cycle": "Élémentaire"},
-      {"Période": "2ème Trimestre", "Statut": "Fermé", "Cycle": "Élémentaire"},
-      {"Période": "3ème Trimestre", "Statut": "Fermé", "Cycle": "Élémentaire"},
-      {"Période": "1er Semestre", "Statut": "Ouvert", "Cycle": "Collège"},
-      {"Période": "2ème Semestre", "Statut": "Fermé", "Cycle": "Collège"},
+      {"ID": 1, "Période": "1er Trimestre", "Statut": "Ouvert", "Cycle": "Élémentaire"},
+      {"ID": 2, "Période": "2ème Trimestre", "Statut": "Fermé", "Cycle": "Élémentaire"},
+      {"ID": 3, "Période": "3ème Trimestre", "Statut": "Fermé", "Cycle": "Élémentaire"},
+      {"ID": 4, "Période": "1er Semestre", "Statut": "Ouvert", "Cycle": "Collège"},
+      {"ID": 5, "Période": "2ème Semestre", "Statut": "Fermé", "Cycle": "Collège"},
   ])
 
+# Table 10 : notes_db
 if "notes_db" not in st.session_state:
   st.session_state.notes_db = pd.DataFrame(
       columns=[
+          "ID",
           "Classe",
           "Matière",
           "Periode",
@@ -571,9 +513,11 @@ elif (
   st.session_state.notes_db["Periode"] = "1er Semestre"
   st.session_state.notes_db["Période"] = "1er Semestre"
 
+# Table 11 : viescolaire_db
 if "viescolaire_db" not in st.session_state:
   st.session_state.viescolaire_db = pd.DataFrame(
       columns=[
+          "ID",
           "Classe",
           "Periode",
           "Période",
@@ -588,6 +532,7 @@ if "viescolaire_db" not in st.session_state:
       data=[],
   )
 
+# Table 12 : travail_a_faire_db
 if "travail_a_faire_db" not in st.session_state:
   st.session_state.travail_a_faire_db = pd.DataFrame(
       columns=[
@@ -608,6 +553,7 @@ if "travail_a_faire_db" not in st.session_state:
       data=[],
   )
 
+# Table 13 : messages_parents_db
 if "messages_parents_db" not in st.session_state:
   st.session_state.messages_parents_db = pd.DataFrame(
       columns=[
@@ -663,9 +609,11 @@ def get_or_create_edt(classe):
   return st.session_state.edt_grid_db[classe]
 
 
+# Table 14 : cahier_textes
 if "cahier_textes" not in st.session_state:
   st.session_state.cahier_textes = pd.DataFrame(
       columns=[
+          "ID",
           "Professeur",
           "Date",
           "Classe",
@@ -676,9 +624,10 @@ if "cahier_textes" not in st.session_state:
       data=[],
   )
 
+# Table 15 : absences_db
 if "absences_db" not in st.session_state:
   st.session_state.absences_db = pd.DataFrame(
-      columns=["Date", "Classe", "Élève", "Statut", "Motif"], data=[]
+      columns=["ID", "Date", "Classe", "Élève", "Statut", "Motif"], data=[]
   )
 
 synchroniser_listes_blanches()
@@ -1486,14 +1435,14 @@ def generer_pdf_liste_eleves_classe(classe):
       "eleves_db" not in st.session_state
       or st.session_state.eleves_db.empty
   ):
-    df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
+    df_eleves = pd.DataFrame(columns=["ID", "Nom Complet", "Classe", "Date de Naissance"])
   else:
     if "Classe" in st.session_state.eleves_db.columns:
       df_eleves = st.session_state.eleves_db[
           st.session_state.eleves_db["Classe"] == classe
       ]
     else:
-      df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
+      df_eleves = pd.DataFrame(columns=["ID", "Nom Complet", "Classe", "Date de Naissance"])
 
   df_eleves = trier_eleves_par_nom(df_eleves)
 
@@ -2112,7 +2061,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           )
 
           rows_notes = []
-          for el in eleves_list:
+          for idx, el in enumerate(eleves_list, 1):
             d1_val, d2_val, comp_val = 0.0, 0.0, 0.0
             if (
                 not df_temp_notes.empty
@@ -2146,12 +2095,14 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
             if is_elem_prof:
               rows_notes.append({
+                  "ID": idx,
                   "Eleve": el,
                   "Composition": comp_val,
                   "BaremeNote": float(bareme_sel),
               })
             else:
               rows_notes.append({
+                  "ID": idx,
                   "Eleve": el,
                   "Devoir1": d1_val,
                   "Devoir2": d2_val,
@@ -2186,6 +2137,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                   drop=True
               )
 
+            edited_notes["ID"] = [len(st.session_state.notes_db) + i + 1 for i in range(len(edited_notes))]
             edited_notes["Classe"] = classe_autorisee
             edited_notes["Matière"] = matiere_sel
             edited_notes["Periode"] = periode_sel
@@ -2267,6 +2219,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         if btn_publier_taf:
           if titre_taf and consignes_taf:
+            taf_id_int = len(st.session_state.travail_a_faire_db) + 1
             taf_id = f"TAF-{datetime.now().strftime('%Y%m%d%H%M%S')}"
             f_nom, f_b64, f_type = None, None, None
 
@@ -2277,7 +2230,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
               f_type = fichier_joint.type
 
             nouveau_taf = {
-                "ID": taf_id,
+                "ID": taf_id_int,
                 "Professeur": prof_connecte,
                 "DatePublication": str(datetime.now().strftime("%Y-%m-%d")),
                 "DateRendu": str(date_rendu_taf),
@@ -2377,6 +2330,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
       if not df_el_app.empty:
         list_el_app = df_el_app["Nom Complet"].tolist()
         df_appel_init = pd.DataFrame({
+            "ID": range(1, len(list_el_app) + 1),
             "Élève": list_el_app,
             "Statut": ["Présent"] * len(list_el_app),
             "Motif / Remarque": [""] * len(list_el_app),
@@ -2399,7 +2353,9 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           records_appel = []
           for _, r in edited_appel.iterrows():
             if r["Statut"] != "Présent":
+              next_abs_id = len(st.session_state.absences_db) + len(records_appel) + 1
               records_appel.append({
+                  "ID": next_abs_id,
                   "Date": str(date_appel),
                   "Classe": classe_autorisee,
                   "Élève": r["Élève"],
@@ -2446,7 +2402,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
               else pd.DataFrame()
           )
 
-          for el in list_el_vs:
+          for idx, el in enumerate(list_el_vs, 1):
             abs_j, abs_nj, ret, h_p, obs, dec = (
                 0,
                 0,
@@ -2473,6 +2429,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 dec = sub_v.iloc[0].get("DecisionConseil", "Encouragements")
 
             vs_records.append({
+                "ID": idx,
                 "Eleve": el,
                 "AbsencesJustifiees": int(abs_j),
                 "AbsencesNonJustifiees": int(abs_nj),
@@ -2488,6 +2445,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           )
 
           if st.button("💾 Enregistrer la Vie Scolaire", key="btn_save_vs"):
+            edited_vs["ID"] = [len(vs_exist) + i + 1 for i in range(len(edited_vs))]
             edited_vs["Classe"] = classe_autorisee
             edited_vs["Periode"] = per_vs_sel
             edited_vs["Période"] = per_vs_sel
@@ -2522,7 +2480,9 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           t_ct = st.text_area("Travail à faire pour la séance suivante")
 
         if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
+          new_ct_id = len(st.session_state.cahier_textes) + 1
           new_ct = {
+              "ID": new_ct_id,
               "Professeur": prof_connecte,
               "Date": str(d_ct),
               "Classe": classe_autorisee,
@@ -2807,8 +2767,9 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         body_msg = st.text_area("Votre message")
         if st.form_submit_button("Envoyer à l'Administration"):
           if obj_msg and body_msg:
+            msg_id_int = len(st.session_state.messages_parents_db) + 1
             new_msg = {
-                "ID": f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                "ID": msg_id_int,
                 "Emetteur": f"Parent de {eleve_p}",
                 "RoleEmetteur": "Parent",
                 "DateEnvoi": str(datetime.now().strftime("%Y-%m-%d")),
@@ -2908,7 +2869,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         if st.form_submit_button("➕ Inscrire l'Élève"):
           if p_el and n_el:
             nc_el = f"{p_el.strip()} {n_el.strip()}".strip()
+            eleve_id_int = len(st.session_state.eleves_db) + 1
             new_e = {
+                "ID": eleve_id_int,
                 "Nom Complet": nc_el,
                 "Prénom": p_el.strip(),
                 "Nom": n_el.strip(),
@@ -2944,6 +2907,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             key="editor_eleves_admin",
         )
         if st.button("💾 Sauvegarder la liste des élèves"):
+          edited_e_db["ID"] = range(1, len(edited_e_db) + 1)
           st.session_state.eleves_db = trier_eleves_par_nom(edited_e_db)
           st.success("✅ Fichier élèves mis à jour localement !")
           st.rerun()
@@ -2971,7 +2935,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
         if st.form_submit_button("➕ Ajouter l'Enseignant"):
           if n_prof and e_prof:
+            prof_id_int = len(st.session_state.prof_credentials) + 1
             new_p = {
+                "ID": prof_id_int,
                 "Nom": n_prof.strip(),
                 "Prénom": p_prof.strip(),
                 "Email": e_prof.strip(),
@@ -3000,6 +2966,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             key="editor_profs_admin",
         )
         if st.button("💾 Sauvegarder la Liste Blanche Professeurs"):
+          edited_prof_cred["ID"] = range(1, len(edited_prof_cred) + 1)
           st.session_state.prof_credentials = edited_prof_cred
           synchroniser_listes_blanches()
           st.success("✅ Liste d'accès mise à jour localement !")
@@ -3028,7 +2995,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
         if st.form_submit_button("➕ Ajouter à la Liste Blanche des Parents"):
           if p_tel and p_prenom_el and p_nom_el:
+            parent_id_int = len(st.session_state.parents_white_list) + 1 if "parents_white_list" in st.session_state else 1
             new_pw = {
+                "ID": parent_id_int,
                 "Téléphone": p_tel.strip(),
                 "Prénom Élève": p_prenom_el.strip(),
                 "Nom Élève": p_nom_el.strip(),
@@ -3055,6 +3024,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             key="editor_parents_wl_admin",
         )
         if st.button("💾 Sauvegarder la Liste Blanche des Parents"):
+          edited_parents_wl["ID"] = range(1, len(edited_parents_wl) + 1)
           st.session_state.parents_white_list = edited_parents_wl
           st.success("✅ Liste blanche des parents mise à jour avec succès !")
           st.rerun()
@@ -3077,6 +3047,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           key="editor_coeff_admin",
       )
       if st.button("💾 Enregistrer la Grille de Coefficients"):
+        edited_coeff["ID"] = range(1, len(edited_coeff) + 1)
         st.session_state.coefficients_db = edited_coeff
         st.success("✅ Grille mise à jour localement !")
 
@@ -3117,8 +3088,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
         if st.form_submit_button("🚀 Publier le Message"):
           if obj_adm and msg_body_adm:
+            msg_id_int = len(st.session_state.messages_parents_db) + 1
             new_msg_a = {
-                "ID": f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}",
+                "ID": msg_id_int,
                 "Emetteur": "Direction Mandela",
                 "RoleEmetteur": "Administration",
                 "DateEnvoi": str(datetime.now().strftime("%Y-%m-%d")),
@@ -3149,7 +3121,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
     with ta_sauv:
         st.markdown("### 💾 Gestion de la Session Locale")
-        st.success("Statut de l'application : **Mode 100% Local (Sans Supabase)**")
+        st.success("Statut de l'application : **Mode 100% Local (ID Entiers intégrés pour Supabase)**")
         st.info("Toutes les modifications sont enregistrées en mémoire de session de manière totalement sécurisée et rapide.")
 
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
@@ -3286,7 +3258,9 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
             t_ct = st.text_area("Travail à faire")
             
             if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
+                new_ct_id = len(st.session_state.cahier_textes) + 1
                 new_ct = {
+                    "ID": new_ct_id,
                     "Professeur": "Administration",
                     "Date": str(d_ct),
                     "Classe": classe_autorisee,
