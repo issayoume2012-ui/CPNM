@@ -12,7 +12,6 @@ from fpdf import FPDF
 import streamlit as st  # <-- C'est ici qu'on importe Streamlit sous l'alias 'st'
 import bcrypt
 from supabase import create_client, Client
-
 # ==========================================
 # 0. CONFIGURATION DE LA CONNEXION SUPABASE
 # ==========================================
@@ -24,40 +23,20 @@ def init_supabase() -> Client:
     return create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
 
 supabase = init_supabase()
-
-def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFrame:
-    try:
-        response = supabase.table(nom_table).select("*").execute()
-        data = response.data
-        if data:
-            df = pd.DataFrame(data)
-            for col in colonnes_defaut:
-                if col not in df.columns:
-                    df[col] = colonnes_defaut[col]
-            return df
-    except Exception as e:
-        st.error(f"Erreur de chargement depuis la table {nom_table} : {e}")
-    return pd.DataFrame(columns=list(colonnes_defaut.keys()))
-
-def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_conflict_col: str = "id"):
-    """Insère ou met à jour un enregistrement unique de manière sécurisée."""
-    try:
-        cleaned = {k: (v if pd.notna(v) else None) for k, v in enregistrement.items()}
-        if on_conflict_col:
-            supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
-        else:
-            supabase.table(nom_table).insert(cleaned).execute()
-    except Exception as e:
-        st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
-
-charger__supabase = charger_depuis_supabase
-
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
-    """Sauvegarde un ensemble de lignes en mode sécurisé avec retour d'erreur visible."""
+    """Sauvegarde un ensemble de lignes en convertissant les clés en minuscules pour correspondre à Supabase."""
     try:
         if not df.empty:
-            records = df.to_dict(orient="records")
+            df_copie = df.copy()
+            # Normalisation automatique des noms de colonnes pour correspondre à PostgreSQL (minuscules, sans espaces)
+            df_copie.columns = [
+                str(c).strip().lower().replace(" ", "_").replace("é", "e").replace("è", "e").replace("à", "a")
+                for c in df_copie.columns
+            ]
+            
+            records = df_copie.to_dict(orient="records")
             cleaned = [{k: (v if pd.notna(v) else None) for k, v in r.items()} for r in records]
+            
             if cleaned:
                 if on_conflict_cols:
                     supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
@@ -66,9 +45,19 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
     except Exception as e:
         st.error(f"Erreur de sauvegarde lot sur {nom_table} : {e}")
 
-def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
-    """Fonction de compatibilité globale pour rediriger vers la sauvegarde par lot."""
-    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="")
+def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_conflict_col: str = "id"):
+    """Insère ou met à jour un enregistrement unique avec normalisation des clés."""
+    try:
+        cleaned = {
+            str(k).strip().lower().replace(" ", "_").replace("é", "e").replace("è", "e").replace("à", "a"): (v if pd.notna(v) else None) 
+            for k, v in enregistrement.items()
+        }
+        if on_conflict_col:
+            supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
+        else:
+            supabase.table(nom_table).insert(cleaned).execute()
+    except Exception as e:
+        st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
 # ==========================================
