@@ -3277,8 +3277,14 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
 
   # --- VÉRIFICATION DE LA CONNEXION ADMINISTRATEUR ---
   if not st.session_state.get("authenticated_admin", False):
-    st.error("🔒 Accès restreint : Vous devez être connecté en tant qu'Administrateur pour accéder à cet espace.")
-    st.info("Veuillez vous rendre dans l'onglet **🔒 Espace Administration (Sécurisé)** pour vous authentifier.")
+    st.error(
+        "🔒 Accès restreint : Vous devez être connecté en tant qu'Administrateur"
+        " pour accéder à cet espace."
+    )
+    st.info(
+        "Veuillez vous rendre dans l'onglet **🔒 Espace Administration"
+        " (Sécurisé)** pour vous authentifier."
+    )
   else:
     tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_stats = st.tabs([
         "📄 Édition & Téléchargement des Bulletins",
@@ -3381,7 +3387,11 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
           if "absences_db" in st.session_state
           else pd.DataFrame()
       )
-      if not df_abs_disp.empty and cls_abs_sel != "Toutes" and "Classe" in df_abs_disp.columns:
+      if (
+          not df_abs_disp.empty
+          and cls_abs_sel != "Toutes"
+          and "Classe" in df_abs_disp.columns
+      ):
         df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
 
       if not df_abs_disp.empty:
@@ -3396,60 +3406,121 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
       else:
         st.info("Aucune absence ou retard répertorié pour cette sélection.")
 
+    # --- REGISTRE GÉNÉRAL DES CAHIERS DE TEXTE (CONSULTATION & TÉLÉCHARGEMENT SEULEMENT) ---
     with tr_cahier:
-      st.markdown("### 📑 Registre Général des Cahiers de Texte")
-      
-      with st.form("form_cahier_texte_admin"):
-        d_ct = st.date_input("Date du cours")
-        classe_autorisee = st.selectbox("Classe", st.session_state.classes_db["Classe"].unique(), key="ct_cls")
-        m_ct = st.text_input("Matière")
-        c_ct = st.text_area("Contenu de la séance")
-        t_ct = st.text_area("Travail à faire")
-        
-        if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
-          new_ct = {
-              "Professeur": "Administration",
-              "Date": str(d_ct),
-              "Classe": classe_autorisee,
-              "Matière": m_ct,
-              "Contenu": c_ct,
-              "Travail à faire": t_ct,
-          }
-          
-          df_new_ct = pd.DataFrame([new_ct])
-          if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
-            st.session_state.cahier_textes = df_new_ct
-          else:
-            st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
-          
-          st.success("✅ Cahier de texte enregistré localement avec succès !")
-          
-          import time
-          time.sleep(1.5)
-          st.rerun()
+      st.markdown("### 📑 Consultation des Cahiers de Texte Enseignants")
+      st.info(
+          "Espace de suivi et de contrôle administratif de la progression"
+          " pédagogique renseignée par les enseignants."
+      )
 
-    # --- NOUVEL ONGLET ADÉQUAT : SYNTHÈSE & STATISTIQUES ADMINISTRATIVES ---
+      df_ct_all = (
+          st.session_state.cahier_textes
+          if "cahier_textes" in st.session_state
+          else pd.DataFrame()
+      )
+
+      if not df_ct_all.empty:
+        # Filtres de consultation
+        col_f_ct1, col_f_ct2 = st.columns(2)
+        with col_f_ct1:
+          cls_ct_filter = st.selectbox(
+              "Filtrer par classe",
+              ["Toutes les classes"]
+              + list(st.session_state.classes_db["Classe"].unique()),
+              key="admin_filter_ct_cls",
+          )
+        with col_f_ct2:
+          mat_options = ["Toutes les matières"]
+          if "Matière" in df_ct_all.columns:
+            mat_options += list(df_ct_all["Matière"].dropna().unique())
+          mat_ct_filter = st.selectbox(
+              "Filtrer par matière",
+              mat_options,
+              key="admin_filter_ct_mat",
+          )
+
+        # Application des filtres
+        df_ct_filtered = df_ct_all.copy()
+        if (
+            cls_ct_filter != "Toutes les classes"
+            and "Classe" in df_ct_filtered.columns
+        ):
+          df_ct_filtered = df_ct_filtered[
+              df_ct_filtered["Classe"] == cls_ct_filter
+          ]
+        if (
+            mat_ct_filter != "Toutes les matières"
+            and "Matière" in df_ct_filtered.columns
+        ):
+          df_ct_filtered = df_ct_filtered[
+              df_ct_filtered["Matière"] == mat_ct_filter
+          ]
+
+        st.markdown("---")
+        st.markdown(
+            f"#### Registre des Séances ({len(df_ct_filtered)} enregistrement(s))"
+        )
+        st.dataframe(df_ct_filtered, use_container_width=True)
+
+        # Exportation des données
+        csv_ct = df_ct_filtered.to_csv(index=False).encode("utf-8")
+        st.download_button(
+            "📥 Télécharger le Cahier de Texte Filtré (CSV)",
+            data=csv_ct,
+            file_name=f"Cahier_de_texte_{cls_ct_filter}_{mat_ct_filter}.csv",
+            mime="text/csv",
+        )
+      else:
+        st.warning(
+            "Aucun contenu n'a été enregistré dans le cahier de texte pour le"
+            " moment."
+        )
+
+    # --- SYNTHÈSE & STATISTIQUES ADMINISTRATIVES ---
     with tr_stats:
       st.markdown("### 📊 Synthèse & Tableaux de Bord Statistiques")
-      
+
       col_st1, col_st2, col_st3 = st.columns(3)
-      
-      nb_eleves = len(st.session_state.eleves_db) if "eleves_db" in st.session_state else 0
-      nb_classes = len(st.session_state.classes_db) if "classes_db" in st.session_state else 0
-      nb_absences = len(st.session_state.absences_db) if "absences_db" in st.session_state else 0
-      
+
+      nb_eleves = (
+          len(st.session_state.eleves_db)
+          if "eleves_db" in st.session_state
+          else 0
+      )
+      nb_classes = (
+          len(st.session_state.classes_db)
+          if "classes_db" in st.session_state
+          else 0
+      )
+      nb_absences = (
+          len(st.session_state.absences_db)
+          if "absences_db" in st.session_state
+          else 0
+      )
+
       with col_st1:
         st.metric("Total Élèves Inscrits", nb_eleves)
       with col_st2:
         st.metric("Total Classes Actives", nb_classes)
       with col_st3:
         st.metric("Total Incidents / Absences", nb_absences)
-        
+
       st.markdown("---")
       st.markdown("#### 🏫 Répartition des Élèves par Classe")
-      if "eleves_db" in st.session_state and not st.session_state.eleves_db.empty and "Classe" in st.session_state.eleves_db.columns:
-        df_eff = st.session_state.eleves_db["Classe"].value_counts().reset_index()
+      if (
+          "eleves_db" in st.session_state
+          and not st.session_state.eleves_db.empty
+          and "Classe" in st.session_state.eleves_db.columns
+      ):
+        df_eff = (
+            st.session_state.eleves_db["Classe"]
+            .value_counts()
+            .reset_index()
+        )
         df_eff.columns = ["Classe", "Effectif Élèves"]
         st.dataframe(df_eff, use_container_width=True)
       else:
-        st.info("Données insuffisantes pour afficher la répartition par classe.")
+        st.info(
+            "Données insuffisantes pour afficher la répartition par classe."
+        )
