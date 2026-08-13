@@ -950,17 +950,22 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
 # 4. GÉNÉRATION DES BULLETINS ET PDF (Suite)
 # ==========================================
 
+# ==========================================
+# 4. GÉNÉRATION DES BULLETINS ET PDF (Suite)
+# ==========================================
+
 if titre_document:
     pdf.set_font(font_family, "B", 11)
     pdf.set_text_color(14, 165, 233)
     pdf.cell(0, 6, nettoyer_texte_pdf(titre_document.upper()), 0, 1, "C")
     pdf.set_text_color(0, 0, 0)
     pdf.set_draw_color(14, 165, 233)
-  # Exemple de correction de la structure d'indentation autour de la ligne 959
+    
     if hasattr(pdf, "set_line_width"):
         pdf.set_line_width(0.2)
-  elif hasattr(pdf, "set_linewidth"):
-    pdf.set_linewidth(0.8)
+    elif hasattr(pdf, "set_linewidth"):
+        pdf.set_linewidth(0.8)
+        
     pdf.line(10, 38, 200, 38)
     pdf.ln(5)
 
