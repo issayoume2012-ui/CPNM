@@ -2774,7 +2774,7 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                 mime=row.get("FichierType", "application/octet-stream"),
                 key=f"dl_taf_{row.get('ID')}_{eleve_p}",
             )
-              except Exception:
+            except Exception:
                 pass
       else:
         st.info("Aucun travail à faire publié pour le moment.")
