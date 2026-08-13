@@ -950,9 +950,8 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
 # 4. GÉNÉRATION DES BULLETINS ET PDF (Suite)
 # ==========================================
 
-# ==========================================
-# 4. GÉNÉRATION DES BULLETINS ET PDF (Suite)
-# ==========================================
+# Sécurisation de la variable titre_document
+titre_document = locals().get("titre_document", "")
 
 if titre_document:
     pdf.set_font(font_family, "B", 11)
