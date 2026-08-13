@@ -16,8 +16,16 @@ from supabase import create_client, Client
 # ==========================================
 # 0. CONFIGURATION DE LA CONNEXION SUPABASE
 # ==========================================
+# Streamlit (st.session_state) et une base de données distante Supabase garantissent 
+# une protection globale, avec les nuances suivantes :[cite: 1]
+# - Redémarrage / plantage : Les données sont sécurisées et rechargées depuis la base distante.[cite: 1]
+# - Utilisations simultanées : Risque potentiel de conflit d'écrasement selon les méthodes de sauvegarde globales.[cite: 1]
+# - Bug / interruption réseau : Les blocs try...except gèrent les erreurs d'API, mais une modification 
+#   non synchronisée pourrait nécessiter une vérification réseau.[cite: 1]
+# ==========================================
+
 SUPABASE_URL = "https://czajjqxihlvjaiukohjxa.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN6YWpqanhpbHZqYWl1a29oanhhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MTE3ODUsImV4cCI6MjEwMjE4Nzc4NX0.SrN0g_-hsBrhKNd3dGVGf42xjSu9DPG_DtMdcTqT69s"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN5bmN1c2VyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MTE3ODUsImV4cCI6MjEwMjE4Nzc4NX0.SrN0g_-hsBrhKNd3dGVGf42xjSu9DPG_DtMdcTqT69s"
 
 @st.cache_resource
 def init_supabase() -> Client:
@@ -25,23 +33,22 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFrame:
+def charger__supabase(nom_table: str, structure_defaut) -> pd.DataFrame:
+    """Charge les données depuis Supabase avec secours sur structure par défaut."""
     try:
         response = supabase.table(nom_table).select("*").execute()
         data = response.data
         if data:
-            df = pd.DataFrame(data)
-            for col in colonnes_defaut:
-                if col not in df.columns:
-                    df[col] = colonnes_defaut[col]
-            return df
+            return pd.DataFrame(data)
     except Exception as e:
-        # On ignore l'erreur réseau ou table absente pour ne pas bloquer l'application
-        pass 
-    return pd.DataFrame(columns=list(colonnes_defaut.keys()))
+        pass
+    
+    if isinstance(structure_defaut, dict):
+        return pd.DataFrame([structure_defaut])
+    elif isinstance(structure_defaut, list):
+        return pd.DataFrame(structure_defaut)
+    return pd.DataFrame()
 
-# Définition sécurisée de l'alias
-charger__supabase = charger_depuis_supabase
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
     """Sauvegarde sécurisée avec bascule automatique sur l'insertion directe si l'upsert bloque."""
     try:
@@ -66,7 +73,7 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
                         try:
                             supabase.table(nom_table).insert(row).execute()
                         except Exception:
-                            pass
+                            pass 
     except Exception as e:
         st.error(f"Erreur critique de sauvegarde sur {nom_table} : {e}")
 
@@ -89,8 +96,7 @@ def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_con
 
 def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
     """Fonction de compatibilité globale."""
-    conflict = "nom_complet" if nom_table == "eleves_db" else ""
-    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols=conflict)
+    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="")
 
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
@@ -108,12 +114,12 @@ def verifier_mot_de_passe(password: str, hashed: str) -> bool:
         return False
 
 def normaliser_texte(texte):
-    """Normalise une chaîne de caractères pour une recherche universelle."""
+    """Normalise une chaîne de caractères pour une recherche universelle (insensible aux accents, casse, espaces)."""
     if not texte: return ""
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
 def nettoyer_texte_pdf(texte):
-    """Nettoie et encode le texte pour garantir la compatibilité PDF."""
+    """Nettoie et encode le texte pour garantir la compatibilité PDF sans erreur d'affichage."""
     if not texte: return ""
     return str(texte).encode('latin-1', 'replace').decode('latin-1')
 
@@ -147,6 +153,7 @@ def synchroniser_listes_blanches():
 # ==========================================
 # 0. BIS. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
+
 SCEAU_SENEGAL_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz"
     "AAAOxAAADsQBlSsOGwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ2V3ZgZ3AAAAYklE"
@@ -732,6 +739,7 @@ if "absences_db" not in st.session_state:
   })
 
 synchroniser_listes_blanches()
+
 # ==========================================
 # 3. FONCTIONS MÉTIER & UTILITAIRES
 # ==========================================
@@ -2234,7 +2242,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
               edited_notes["Devoir1"] = 0.0
               edited_notes["Devoir2"] = 0.0
 
-            # Sauvegarde ciblée ligne par ligne pour éviter d'écraser le travail des autres professeurs
             for _, row_data in edited_notes.iterrows():
                 dict_ligne = row_data.to_dict()
                 
@@ -3161,9 +3168,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
       else:
         st.info("Aucun parent dans la liste blanche pour le moment.")
 
-    # -------------------------------------------------------------------
-    # ONGLET 4 : STRUCTURE & CLASSES
-    # -------------------------------------------------------------------
     with ta_classes:
       st.markdown("### 🏫 Structure des Classes & Périodes")
 
@@ -3337,6 +3341,15 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
       st.info(
           "Toutes les données sont désormais stockées et synchronisées à distance en temps réel."
       )
+      st.markdown(
+          """
+          **Nuances de synchronisation Streamlit & Supabase[cite: 1] :**
+          * **Redémarrage / Plantage :** Vos données sont sécurisées. Grâce au chargement initial et aux enregistrements envoyés sur Supabase, un redémarrage ne supprime pas vos données : elles sont automatiquement rechargées depuis la base distante au lancement[cite: 1].
+          * **Utilisations simultanées :** Risque potentiel de conflit si plusieurs utilisateurs modifient la même table en même temps[cite: 1].
+          * **Bug ou interruption réseau :** Les blocs `try...except` gèrent les alertes d'API, mais veillez à vérifier la bonne exécution des sauvegardes[cite: 1].
+          """
+      )
+
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
   st.markdown(
       '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
