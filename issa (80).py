@@ -40,6 +40,7 @@ def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFra
         print(mode="normal") # ou st.toast discret
         pass 
     return pd.DataFrame(columns=list(colonnes_defaut.keys()))
+charger__supabase = charger_depuis_supabase
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
     """Sauvegarde sécurisée avec bascule automatique sur l'insertion directe si l'upsert bloque."""
     try:
