@@ -1872,7 +1872,7 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
       st.rerun()
 
     st.markdown("---")
-    t_suivi_ notes, t_suivi_taf, t_suivi_edt, t_suivi_msg = st.tabs([
+    t_suivi_notes, t_suivi_taf, t_suivi_edt, t_suivi_msg = st.tabs([
         "📊 Bulletins & Notes Officielles",
         "📌 Travaux à Faire & Médias",
         "📅 Emploi du Temps de la Classe",
