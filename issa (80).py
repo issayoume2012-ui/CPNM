@@ -3189,7 +3189,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_classes_db_admin",
         )
-        if st.button("💾 Sauvegarder sur Supabase"):
+        if st.button("💾 Sauvegarder sur Supabase", key="btn_save_classes_supabase"):
           st.session_state.classes_db = edited_classes_db
           sauvegarder_vers_supabase("classes_db", st.session_state.classes_db)
           st.success("✅ Structure des classes mise à jour sur Supabase !")
