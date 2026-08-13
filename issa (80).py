@@ -1179,6 +1179,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
   cycle_classe = obtenir_cycle_classe(classe)
   is_elem = est_cycle_elementaire(cycle_classe)
   matieres_set = set()
+  cls_target = str(classe).strip().upper()
 
   if (
       "coefficients_db" in st.session_state
@@ -1186,7 +1187,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
       and "Classe" in st.session_state.coefficients_db.columns
   ):
     c_db = st.session_state.coefficients_db
-    m_c = c_db[c_db["Classe"] == classe]["Matière"].dropna().tolist()
+    m_c = c_db[c_db["Classe"].astype(str).str.strip().str.upper() == cls_target]["Matière"].dropna().tolist()
     matieres_set.update(m_c)
 
   if (
@@ -1211,7 +1212,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
   )
 
   if not notes_df.empty and "Classe" in notes_df.columns:
-    cond_cls = notes_df["Classe"] == classe
+    cond_cls = notes_df["Classe"].astype(str).str.strip().str.upper() == cls_target
     if "Periode" in notes_df.columns and "Période" in notes_df.columns:
       cond_per = (notes_df["Periode"] == periode) | (
           notes_df["Période"] == periode
@@ -1239,13 +1240,14 @@ def calculer_bulletin_eleve(classe, eleve, periode):
 
   notes_classe_periode = pd.DataFrame()
   if not notes_df.empty and "Classe" in notes_df.columns:
+    cond_cls = notes_df["Classe"].astype(str).str.strip().str.upper() == cls_target
     if "Periode" in notes_df.columns:
       notes_classe_periode = notes_df[
-          (notes_df["Classe"] == classe) & (notes_df["Periode"] == periode)
+          cond_cls & (notes_df["Periode"] == periode)
       ]
     elif "Période" in notes_df.columns:
       notes_classe_periode = notes_df[
-          (notes_df["Classe"] == classe) & (notes_df["Période"] == periode)
+          cond_cls & (notes_df["Période"] == periode)
       ]
 
   lignes_bulletin = []
@@ -1307,7 +1309,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
           "Bareme": bareme_m,
           "Composition": comp,
           "MoyenneMatiere": round(moy_matiere, 2),
-          "Appreciation": obtenir_appreciation(moyenne_generale if 'moyenne_generale' in locals() else moy_matiere, cycle_classe, bareme_m),
+          "Appreciation": obtenir_appreciation(moy_matiere, cycle_classe, bareme_m),
       })
     else:
       moy_devoirs = (d1 + d2) / 2.0
@@ -1350,7 +1352,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
   ):
     df_sorted_el = trier_eleves_par_nom(
         st.session_state.eleves_db[
-            st.session_state.eleves_db["Classe"] == classe
+            st.session_state.eleves_db["Classe"].astype(str).str.strip().str.upper() == cls_target
         ]
     )
     tous_eleves = df_sorted_el["Nom Complet"].tolist()
@@ -1420,15 +1422,16 @@ def calculer_bulletin_eleve(classe, eleve, periode):
   )
   vs_row = pd.DataFrame()
   if not vs_df.empty and "Classe" in vs_df.columns and "Eleve" in vs_df.columns:
+    cond_cls_vs = vs_df["Classe"].astype(str).str.strip().str.upper() == cls_target
     if "Periode" in vs_df.columns:
       vs_row = vs_df[
-          (vs_df["Classe"] == classe)
+          cond_cls_vs
           & (vs_df["Periode"] == periode)
           & (vs_df["Eleve"] == eleve)
       ]
     elif "Période" in vs_df.columns:
       vs_row = vs_df[
-          (vs_df["Classe"] == classe)
+          cond_cls_vs
           & (vs_df["Période"] == periode)
           & (vs_df["Eleve"] == eleve)
       ]
@@ -1498,7 +1501,6 @@ def calculer_bulletin_eleve(classe, eleve, periode):
       "observations": obs,
       "decision": decision,
   }
-
 
 def get_pdf_bytes(pdf) -> bytes:
   """Fonction robuste pour extraire les octets d'un objet FPDF / FPDF2 sans échec."""
@@ -1665,6 +1667,15 @@ def generer_pdf_bulletin(bul_data):
       chef_nom="Inspecteur / Directeur IEF Saint-Louis",
   )
 
+  # Utilisation directe de output(dest='S').encode('latin1') pour garantir un rendu valide dans Streamlit
+  try:
+    pdf_output = pdf.output(dest='S')
+    if isinstance(pdf_output, str):
+      return pdf_output.encode('latin1', errors='ignore')
+    elif isinstance(pdf_output, (bytes, bytearray)):
+      return bytes(pdf_output)
+  except Exception:
+    pass
   return get_pdf_bytes(pdf)
 
 
