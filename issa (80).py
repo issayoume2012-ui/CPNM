@@ -2827,8 +2827,8 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
 
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
   st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace'
-      " Administration & Pilotage Global</div>",
+      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">'
+      "Espace Administration & Pilotage Global</div>",
       unsafe_allow_html=True,
   )
 
@@ -2846,7 +2846,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             and not st.session_state.admin_white_list.empty
         ):
           for _, r in st.session_state.admin_white_list.iterrows():
-            if str(r.get("Email", "")).strip().lower() == a_email.strip().lower():
+            if (
+                str(r.get("Email", "")).strip().lower()
+                == a_email.strip().lower()
+            ):
               pwd_h = str(r.get("Mot de passe", ""))
               if verifier_mot_de_passe(a_pass, pwd_h) or a_pass == "cpnm2026":
                 admin_match = True
@@ -2858,7 +2861,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         ):
           st.session_state.authenticated_admin = True
           enregistrer_log_action(
-              a_email, "CONNEXION_ADMIN", "Connexion réussie au portail Admin"
+              a_email,
+              "CONNEXION_ADMIN",
+              "Connexion réussie au portail Admin",
           )
           st.success("Authentification réussie !")
           st.rerun()
@@ -2876,22 +2881,54 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     # Initialisation des variables session_state si non définies
     if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
       st.session_state.eleves_db = pd.DataFrame(columns=[
-          "Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"
+          "Nom Complet",
+          "Prénom",
+          "Nom",
+          "Date de Naissance",
+          "Classe",
+          "Photo",
       ])
 
     if "parents_white_list" not in st.session_state:
       st.session_state.parents_white_list = pd.DataFrame(columns=[
-          "Nom", "Prénom", "Email", "Élève Associé", "Classe Élève", "Mot de passe"
+          "Nom",
+          "Prénom",
+          "Email",
+          "Élève Associé",
+          "Classe Élève",
+          "Mot de passe",
       ])
 
-    # Définition des onglets incluant les Parents
-    t_adm_eleves, t_adm_parents, t_adm_profs, t_adm_classes, t_adm_coefs, t_adm_ct, t_adm_logs = st.tabs([
+    if "messages_parents_db" not in st.session_state:
+      st.session_state.messages_parents_db = pd.DataFrame(columns=[
+          "ID",
+          "Emetteur",
+          "RoleEmetteur",
+          "DateEnvoi",
+          "Classe",
+          "Objet",
+          "Message",
+          "Statut",
+      ])
+
+    # Définition des onglets incluant la Messagerie
+    (
+        t_adm_eleves,
+        t_adm_parents,
+        t_adm_profs,
+        t_adm_classes,
+        t_adm_coefs,
+        t_adm_ct,
+        t_adm_msg,
+        t_adm_logs,
+    ) = st.tabs([
         "👥 Gestion Élèves",
         "👨‍👩‍👧‍👦 Liste Blanche Parents",
         "👨‍🏫 Liste Blanche Professeurs",
         "🏫 Structures & Classes",
         "📊 Coefficients & Barèmes",
         "📖 Registre Cahiers de Texte",
+        "💬 Messagerie Administration",
         "📜 Journal d'Audit",
     ])
 
@@ -2903,7 +2940,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
       liste_classes = (
           st.session_state.classes_db["Classe"].tolist()
-          if "classes_db" in st.session_state and "Classe" in st.session_state.classes_db.columns
+          if "classes_db" in st.session_state
+          and "Classe" in st.session_state.classes_db.columns
           else ["6ème A", "CP", "CE1", "CM2"]
       )
 
@@ -2915,10 +2953,16 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             prenom_el = st.text_input("Prénom de l'élève")
             nom_el = st.text_input("Nom de l'élève")
           with col_el2:
-            date_naiss_el = st.date_input("Date de Naissance", value=datetime(2015, 1, 1))
-            classe_el = st.selectbox("Classe d'affectation", liste_classes, key="add_el_classe")
+            date_naiss_el = st.date_input(
+                "Date de Naissance", value=datetime(2015, 1, 1)
+            )
+            classe_el = st.selectbox(
+                "Classe d'affectation", liste_classes, key="add_el_classe"
+            )
           with col_el3:
-            photo_el = st.file_uploader("Photo d'identité (optionnel)", type=["png", "jpg", "jpeg"])
+            photo_el = st.file_uploader(
+                "Photo d'identité (optionnel)", type=["png", "jpg", "jpeg"]
+            )
 
           btn_add_el = st.form_submit_button("➕ Valider l'inscription")
 
@@ -2942,49 +2986,86 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                   [st.session_state.eleves_db, pd.DataFrame([nouveau_rec])],
                   ignore_index=True,
               )
-              st.session_state.eleves_db = trier_eleves_par_nom(st.session_state.eleves_db)
-              enregistrer_log_action(ADMIN_EMAIL, "AJOUT_ELEVE", f"Inscription de {nom_complet} en {classe_el}")
+              st.session_state.eleves_db = trier_eleves_par_nom(
+                  st.session_state.eleves_db
+              )
+              enregistrer_log_action(
+                  ADMIN_EMAIL,
+                  "AJOUT_ELEVE",
+                  f"Inscription de {nom_complet} en {classe_el}",
+              )
               st.success(f"✅ Élève {nom_complet} inscrit avec succès !")
               st.rerun()
             else:
-              st.error(" Le prénom et le nom de l'élève sont obligatoires.")
+              st.error("Le prénom et le nom de l'élève sont obligatoires.")
 
       st.markdown("---")
 
       # 2. ÉDITION / SUPPRESSION DIRECTE PAR TABLEAU
-      st.markdown("#### ✏️ Modification directe & Suppression dans le tableau")
+      st.markdown(
+          "#### ✏️ Modification directe & Suppression dans le tableau"
+      )
       if not st.session_state.eleves_db.empty:
-        st.session_state.eleves_db = trier_eleves_par_nom(st.session_state.eleves_db)
+        st.session_state.eleves_db = trier_eleves_par_nom(
+            st.session_state.eleves_db
+        )
 
         edited_eleves = st.data_editor(
             st.session_state.eleves_db,
-            num_rows="dynamic",  # Permet d'ajouter ou de SUPPRIMER des lignes directement dans le tableau
+            num_rows="dynamic",
             use_container_width=True,
             key="editor_adm_eleves",
         )
 
-        if st.button("💾 Enregistrer les modifications du tableau", key="btn_save_adm_eleves"):
+        if st.button(
+            "💾 Enregistrer les modifications du tableau",
+            key="btn_save_adm_eleves",
+        ):
           st.session_state.eleves_db = trier_eleves_par_nom(edited_eleves)
-          enregistrer_log_action(ADMIN_EMAIL, "MODIF_ELEVES", "Mise à jour de la liste des élèves")
+          enregistrer_log_action(
+              ADMIN_EMAIL,
+              "MODIF_ELEVES",
+              "Mise à jour de la liste des élèves",
+          )
           st.success("✅ Base d'élèves enregistrée avec succès !")
           st.rerun()
 
         # 3. SUPPRESSION CIBLÉE / INDIVIDUELLE (OPTION DE SÉCURITÉ)
         with st.expander("🗑️ Supprimer un élève en particulier"):
-          eleves_list = st.session_state.eleves_db["Nom Complet"].tolist() if "Nom Complet" in st.session_state.eleves_db.columns else []
+          eleves_list = (
+              st.session_state.eleves_db["Nom Complet"].tolist()
+              if "Nom Complet" in st.session_state.eleves_db.columns
+              else []
+          )
           if eleves_list:
-            eleve_a_supprimer = st.selectbox("Sélectionner l'élève à supprimer", eleves_list, key="sel_del_el")
-            if st.button("❌ Supprimer définitivement cet élève", key="btn_del_single_el"):
+            eleve_a_supprimer = st.selectbox(
+                "Sélectionner l'élève à supprimer",
+                eleves_list,
+                key="sel_del_el",
+            )
+            if st.button(
+                "❌ Supprimer définitivement cet élève", key="btn_del_single_el"
+            ):
               st.session_state.eleves_db = st.session_state.eleves_db[
                   st.session_state.eleves_db["Nom Complet"] != eleve_a_supprimer
               ].reset_index(drop=True)
-              enregistrer_log_action(ADMIN_EMAIL, "SUPPR_ELEVE", f"Suppression de l'élève {eleve_a_supprimer}")
-              st.success(f" Élève {eleve_a_supprimer} supprimé avec succès !")
+              enregistrer_log_action(
+                  ADMIN_EMAIL,
+                  "SUPPR_ELEVE",
+                  f"Suppression de l'élève {eleve_a_supprimer}",
+              )
+              st.success(
+                  f"Élève {eleve_a_supprimer} supprimé avec succès !"
+              )
               st.rerun()
 
         col_dl_el1, col_dl_el2 = st.columns(2)
         with col_dl_el1:
-          cls_pdf_sel = st.selectbox("Sélectionner une classe pour exporter la liste PDF", liste_classes, key="cls_pdf_sel")
+          cls_pdf_sel = st.selectbox(
+              "Sélectionner une classe pour exporter la liste PDF",
+              liste_classes,
+              key="cls_pdf_sel",
+          )
         with col_dl_el2:
           st.write("")
           st.write("")
@@ -2999,7 +3080,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.info("Aucun élève enregistré pour le moment.")
 
     # -------------------------------------------------------------------
-    # ONGLET 2 : LISTE BLANCHE PARENTS (RÉINTÉGRÉ)
+    # ONGLET 2 : LISTE BLANCHE PARENTS
     # -------------------------------------------------------------------
     with t_adm_parents:
       st.markdown("### 👨‍👩‍👧‍👦 Gestion de la Liste Blanche des Parents")
@@ -3014,11 +3095,14 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             p_prenom = st.text_input("Prénom du Parent")
           with col_p2:
             p_email = st.text_input("Email du Parent (Identifiant)")
-            p_pass = st.text_input("Mot de passe temporaire", value="parent2026", type="password")
+            p_pass = st.text_input(
+                "Mot de passe temporaire", value="parent2026", type="password"
+            )
           with col_p3:
             list_eleves_complets = (
                 st.session_state.eleves_db["Nom Complet"].tolist()
-                if not st.session_state.eleves_db.empty and "Nom Complet" in st.session_state.eleves_db.columns
+                if not st.session_state.eleves_db.empty
+                and "Nom Complet" in st.session_state.eleves_db.columns
                 else ["Aucun élève"]
             )
             p_eleve = st.selectbox("Élève associé", list_eleves_complets)
@@ -3026,11 +3110,16 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           if st.form_submit_button("➕ Créer l'accès Parent"):
             if p_nom.strip() and p_email.strip():
               pwd_hash = hacher_mot_de_passe(p_pass)
-              
+
               # Trouver la classe de l'élève associé
               classe_parent = "-"
-              if not st.session_state.eleves_db.empty and "Nom Complet" in st.session_state.eleves_db.columns:
-                sub_e = st.session_state.eleves_db[st.session_state.eleves_db["Nom Complet"] == p_eleve]
+              if (
+                  not st.session_state.eleves_db.empty
+                  and "Nom Complet" in st.session_state.eleves_db.columns
+              ):
+                sub_e = st.session_state.eleves_db[
+                    st.session_state.eleves_db["Nom Complet"] == p_eleve
+                ]
                 if not sub_e.empty:
                   classe_parent = sub_e.iloc[0].get("Classe", "-")
 
@@ -3043,14 +3132,21 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                   "Mot de passe": pwd_hash,
               }
               st.session_state.parents_white_list = pd.concat(
-                  [st.session_state.parents_white_list, pd.DataFrame([new_parent])],
+                  [
+                      st.session_state.parents_white_list,
+                      pd.DataFrame([new_parent]),
+                  ],
                   ignore_index=True,
               )
-              enregistrer_log_action(ADMIN_EMAIL, "AJOUT_PARENT", f"Création accès parent pour {p_email}")
+              enregistrer_log_action(
+                  ADMIN_EMAIL,
+                  "AJOUT_PARENT",
+                  f"Création accès parent pour {p_email}",
+              )
               st.success("✅ Compte parent ajouté avec succès !")
               st.rerun()
             else:
-              st.error(" Le Nom et l'Email du parent sont obligatoires.")
+              st.error("Le Nom et l'Email du parent sont obligatoires.")
 
       st.markdown("---")
       st.markdown("#### ✏️ Modifier ou Supprimer des Comptes Parents")
@@ -3058,13 +3154,17 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
       if not st.session_state.parents_white_list.empty:
         edited_parents = st.data_editor(
             st.session_state.parents_white_list,
-            num_rows="dynamic", # Permet de supprimer des parents en cochant/supprimant la ligne
+            num_rows="dynamic",
             use_container_width=True,
             key="editor_adm_parents",
         )
-        if st.button("💾 Enregistrer la Liste Blanche Parents", key="btn_save_adm_parents"):
+        if st.button(
+            "💾 Enregistrer la Liste Blanche Parents", key="btn_save_adm_parents"
+        ):
           st.session_state.parents_white_list = edited_parents
-          enregistrer_log_action(ADMIN_EMAIL, "MODIF_PARENTS", "Mise à jour liste parents")
+          enregistrer_log_action(
+              ADMIN_EMAIL, "MODIF_PARENTS", "Mise à jour liste parents"
+          )
           st.success("✅ Liste blanche des parents mise à jour !")
           st.rerun()
       else:
@@ -3075,7 +3175,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     # -------------------------------------------------------------------
     with t_adm_profs:
       st.markdown("### 👨‍🏫 Gestion de la Liste Blanche des Professeurs")
-      st.info("Tous les professeurs enregistrés ici pourront se connecter sur leur espace dédié.")
+      st.info(
+          "Tous les professeurs enregistrés ici pourront se connecter sur leur"
+          " espace dédié."
+      )
 
       with st.form("form_add_prof", clear_on_submit=True):
         col_pr1, col_pr2, col_pr3 = st.columns(3)
@@ -3084,7 +3187,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           p_prenom = st.text_input("Prénom du Professeur")
         with col_pr2:
           p_email = st.text_input("Email professionnel")
-          p_pass = st.text_input("Mot de passe temporaire", value="mandela2026", type="password")
+          p_pass = st.text_input(
+              "Mot de passe temporaire", value="mandela2026", type="password"
+          )
         with col_pr3:
           p_mat = st.text_input("Matière Principale")
           p_cls = st.selectbox("Classe Attribuée", liste_classes)
@@ -3105,7 +3210,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                 ignore_index=True,
             )
             synchroniser_listes_blanches()
-            enregistrer_log_action(ADMIN_EMAIL, "AJOUT_PROF", f"Ajout de {p_prenom} {p_nom} ({p_mat})")
+            enregistrer_log_action(
+                ADMIN_EMAIL,
+                "AJOUT_PROF",
+                f"Ajout de {p_prenom} {p_nom} ({p_mat})",
+            )
             st.success("✅ Professeur ajouté à la liste blanche !")
             st.rerun()
           else:
@@ -3120,7 +3229,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           use_container_width=True,
           key="editor_adm_profs",
       )
-      if st.button("💾 Enregistrer la Liste Blanche Enseignants", key="btn_save_adm_profs"):
+      if st.button(
+          "💾 Enregistrer la Liste Blanche Enseignants",
+          key="btn_save_adm_profs",
+      ):
         st.session_state.prof_credentials = edited_profs
         synchroniser_listes_blanches()
         st.success("✅ Liste blanche mise à jour et synchronisée !")
@@ -3131,15 +3243,19 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     # -------------------------------------------------------------------
     with t_adm_classes:
       st.markdown("### 🏫 Structure de l'Établissement & Classes")
-      
+
       with st.form("form_add_cls", clear_on_submit=True):
         col_c1, col_c2, col_c3 = st.columns(3)
         with col_c1:
           new_cls_nom = st.text_input("Nom de la Classe (ex: 5ème B, CE1 B)")
         with col_c2:
-          new_cls_cyc = st.selectbox("Cycle d'enseignement", ["Collège", "Élémentaire"])
+          new_cls_cyc = st.selectbox(
+              "Cycle d'enseignement", ["Collège", "Élémentaire"]
+          )
         with col_c3:
-          new_cls_resp = st.text_input("Professeur Responsable", value="À désigner")
+          new_cls_resp = st.text_input(
+              "Professeur Responsable", value="À désigner"
+          )
 
         if st.form_submit_button("➕ Ajouter la Classe"):
           if new_cls_nom:
@@ -3165,7 +3281,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           use_container_width=True,
           key="editor_adm_classes",
       )
-      if st.button("💾 Enregistrer la Structure des Classes", key="btn_save_adm_classes"):
+      if st.button(
+          "💾 Enregistrer la Structure des Classes", key="btn_save_adm_classes"
+      ):
         st.session_state.classes_db = edited_classes
         st.success("✅ Configuration des classes enregistrée !")
         st.rerun()
@@ -3174,8 +3292,13 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     # ONGLET 5 : COEFFICIENTS
     # -------------------------------------------------------------------
     with t_adm_coefs:
-      st.markdown("### 📊 Configuration des Coefficients & Barèmes par Classe")
-      st.info("Ajustez les barèmes et coefficients selon les normes pédagogiques nationales sénégalaises.")
+      st.markdown(
+          "### 📊 Configuration des Coefficients & Barèmes par Classe"
+      )
+      st.info(
+          "Ajustez les barèmes et coefficients selon les normes pédagogiques"
+          " nationales sénégalaises."
+      )
 
       edited_coefs = st.data_editor(
           st.session_state.coefficients_db,
@@ -3183,7 +3306,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           use_container_width=True,
           key="editor_adm_coefs",
       )
-      if st.button("💾 Valider les Coefficients & Barèmes", key="btn_save_adm_coefs"):
+      if st.button(
+          "💾 Valider les Coefficients & Barèmes", key="btn_save_adm_coefs"
+      ):
         st.session_state.coefficients_db = edited_coefs
         st.success("✅ Barèmes et coefficients mis à jour !")
         st.rerun()
@@ -3224,18 +3349,123 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
               mime="application/pdf",
           )
       else:
-        st.warning("⚠️ Aucun cahier de texte n'a encore été renseigné par les enseignants.")
+        st.warning(
+            "⚠️ Aucun cahier de texte n'a encore été renseigné par les"
+            " enseignants."
+        )
 
     # -------------------------------------------------------------------
-    # ONGLET 7 : LOGS
+    # ONGLET 7 : MESSAGERIE ADMINISTRATION (PARENTS & PROFS)
+    # -------------------------------------------------------------------
+    with t_adm_msg:
+      st.markdown("### 💬 Boîte de Réception & Communications")
+      st.caption(
+          "Consultez et gérez l'ensemble des messages transmis par les parents"
+          " et les enseignants."
+      )
+
+      df_msg = st.session_state.messages_parents_db
+
+      if df_msg.empty:
+        st.info("📨 Aucun message reçu pour le moment.")
+      else:
+        if "Statut" not in df_msg.columns:
+          df_msg["Statut"] = "Non lu"
+
+        col_mf1, col_mf2 = st.columns(2)
+        with col_mf1:
+          filtre_role = st.selectbox(
+              "Filtrer par rôle",
+              ["Tous", "Parent", "Enseignant"],
+              key="admin_msg_filter_role",
+          )
+        with col_mf2:
+          filtre_statut = st.selectbox(
+              "Filtrer par statut",
+              ["Tous", "Non lu", "Traité"],
+              key="admin_msg_filter_statut",
+          )
+
+        df_filtered = df_msg.copy()
+        if filtre_role != "Tous":
+          df_filtered = df_filtered[df_filtered["RoleEmetteur"] == filtre_role]
+        if filtre_statut != "Tous":
+          df_filtered = df_filtered[df_filtered["Statut"] == filtre_statut]
+
+        st.markdown(f"**Nombre de messages : {len(df_filtered)}**")
+
+        for idx, row in df_filtered.iterrows():
+          msg_id = row.get("ID", f"MSG-{idx}")
+          emetteur = row.get("Emetteur", "Inconnu")
+          role = row.get("RoleEmetteur", "Utilisateur")
+          date_e = row.get("DateEnvoi", "-")
+          classe = row.get("Classe", "Non spécifiée")
+          objet = row.get("Objet", "Sans objet")
+          contenu = row.get("Message", "")
+          statut = row.get("Statut", "Non lu")
+
+          border_color = "#0EA5E9" if role == "Parent" else "#8B5CF6"
+          badge_color = "#FEF08A" if statut == "Non lu" else "#BBF7D0"
+
+          st.markdown(
+              f"""
+              <div style="background-color: #FFFFFF; padding: 15px; border-radius: 10px; border-left: 5px solid {border_color}; border-top: 1px solid #E2E8F0; border-right: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; margin-bottom: 15px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center;">
+                      <h4 style="margin: 0; color: #0F172A;">{objet}</h4>
+                      <span style="background-color: {badge_color}; padding: 3px 8px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; color: #0F172A;">{statut}</span>
+                  </div>
+                  <p style="margin: 5px 0; font-size: 0.85rem; color: #64748B;">
+                      <b>Expéditeur :</b> {emetteur} ({role}) | <b>Classe :</b> {classe} | <b>Date :</b> {date_e}
+                  </p>
+                  <div style="background-color: #F8FAFC; padding: 10px; border-radius: 6px; margin-top: 8px; color: #334155;">
+                      {contenu}
+                  </div>
+              </div>
+              """,
+              unsafe_allow_html=True,
+          )
+
+          c_act1, c_act2, _ = st.columns([2, 2, 6])
+          with c_act1:
+            if statut == "Non lu":
+              if st.button(
+                  "✅ Marquer comme traité", key=f"btn_mark_tr_{msg_id}"
+              ):
+                st.session_state.messages_parents_db.loc[
+                    st.session_state.messages_parents_db["ID"] == msg_id,
+                    "Statut",
+                ] = "Traité"
+                enregistrer_log_action(
+                    ADMIN_EMAIL,
+                    "MSG_TRAITE",
+                    f"Message {msg_id} marqué comme traité",
+                )
+                st.rerun()
+          with c_act2:
+            if st.button("🗑️ Supprimer", key=f"btn_del_msg_{msg_id}"):
+              st.session_state.messages_parents_db = (
+                  st.session_state.messages_parents_db[
+                      st.session_state.messages_parents_db["ID"] != msg_id
+                  ]
+              )
+              enregistrer_log_action(
+                  ADMIN_EMAIL, "MSG_SUPPR", f"Suppression du message {msg_id}"
+              )
+              st.success("Message supprimé.")
+              st.rerun()
+
+    # -------------------------------------------------------------------
+    # ONGLET 8 : LOGS
     # -------------------------------------------------------------------
     with t_adm_logs:
       st.markdown("### 📜 Journal d'Audit & Sécurité des Opérations Local")
-      if "audit_logs_db" in st.session_state and not st.session_state.audit_logs_db.empty:
+      if (
+          "audit_logs_db" in st.session_state
+          and not st.session_state.audit_logs_db.empty
+      ):
         st.dataframe(st.session_state.audit_logs_db, use_container_width=True)
       else:
         st.info("Aucun évènement enregistré dans le journal d'audit.")
-
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
   st.markdown(
       '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Tableau'
