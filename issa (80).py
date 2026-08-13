@@ -25,7 +25,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-def charger_ depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFrame:
+def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFrame:
     try:
         response = supabase.table(nom_table).select("*").execute()
         data = response.data
