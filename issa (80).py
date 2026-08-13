@@ -107,9 +107,12 @@ def charger_donnees_externes() -> dict:
                 df_edt_all = pd.DataFrame(rows_edt)
                 if "classe" in df_edt_all.columns:
                     for classe in df_edt_all["classe"].unique():
+                        if pd.isna(classe) or str(classe).upper() == "NAN":
+                            continue
                         sub = df_edt_all[df_edt_all["classe"] == classe].drop(columns=["classe"], errors="ignore")
                         if "jour" in sub.columns:
                             sub = sub.set_index("jour")
+                        sub = sub[~sub.index.duplicated(keep='first')]
                         edt_dict[classe] = sub
             data["edt_grid_db"] = edt_dict
         except Exception:
@@ -169,7 +172,7 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     if edt_grids:
         all_edt_rows = []
         for classe, df_grid in edt_grids.items():
-            if isinstance(df_grid, pd.DataFrame):
+            if isinstance(df_grid, pd.DataFrame) and classe and str(classe).upper() != "NAN":
                 df_temp = df_grid.copy()
                 df_temp["classe"] = classe
                 df_temp["jour"] = df_temp.index
@@ -845,6 +848,8 @@ if "edt_grid_db" not in st.session_state:
 
 
 def get_or_create_edt(classe):
+  if not classe or pd.isna(classe) or str(classe).upper() == "NAN":
+    classe = "6ème A"
   if classe not in st.session_state.edt_grid_db:
     df_def = pd.DataFrame("", index=JOURS_LIST, columns=HEURES_LIST)
     if "11h00-11h30" in df_def.columns:
@@ -852,6 +857,13 @@ def get_or_create_edt(classe):
     st.session_state.edt_grid_db[classe] = df_def
   else:
     df_exist = st.session_state.edt_grid_db[classe]
+    if not isinstance(df_exist, pd.DataFrame):
+      df_exist = pd.DataFrame(df_exist)
+    df_exist = df_exist[~df_exist.index.duplicated(keep='first')]
+    for j in JOURS_LIST:
+      if j not in df_exist.index:
+        df_exist.loc[j] = ""
+    df_exist = df_exist.reindex(JOURS_LIST)
     if "11h00-11h30" not in df_exist.columns:
       df_def = pd.DataFrame("", index=JOURS_LIST, columns=HEURES_LIST)
       for col in df_exist.columns:
@@ -859,7 +871,8 @@ def get_or_create_edt(classe):
           df_def[col] = df_exist[col]
       if "11h00-11h30" in df_def.columns:
         df_def["11h00-11h30"] = "Récréation"
-      st.session_state.edt_grid_db[classe] = df_def
+      df_exist = df_def
+    st.session_state.edt_grid_db[classe] = df_exist
   return st.session_state.edt_grid_db[classe]
 
 
@@ -1739,22 +1752,31 @@ def generer_pdf_liste_eleves_classe(classe):
 
   if not df_eleves.empty:
     for _, row in df_eleves.iterrows():
+      nom_complet = row.get("Nom Complet", "")
+      nom_complet_str = "" if pd.isna(nom_complet) else str(nom_complet)
+      
+      classe_val = row.get("Classe", "")
+      classe_str = "" if pd.isna(classe_val) else str(classe_val)
+      
+      date_val = row.get("Date de Naissance", "")
+      date_str = "" if pd.isna(date_val) else str(date_val)
+
       pdf.cell(
           col_widths[0],
           6,
-          str(row.get("Nom Complet", ""))[:35],
+          nom_complet_str[:35],
           1,
           0,
           "L",
           fill,
       )
       pdf.cell(
-          col_widths[1], 6, str(row.get("Classe", ""))[:20], 1, 0, "C", fill
+          col_widths[1], 6, classe_str[:20], 1, 0, "C", fill
       )
       pdf.cell(
           col_widths[2],
           6,
-          str(row.get("Date de Naissance", ""))[:20],
+          date_str[:20],
           1,
           0,
           "C",
@@ -1831,6 +1853,8 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
 
 
 def generer_pdf_edt(classe, df_edt):
+  if not classe or pd.isna(classe) or str(classe).upper() == "NAN":
+    classe = "6ème A"
   pdf = FPDF(orientation="L", unit="mm", format="A4")
   try:
     font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
@@ -1839,7 +1863,7 @@ def generer_pdf_edt(classe, df_edt):
 
   pdf.add_page()
   ajouter_entete_senegal_officiel(
-      pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {classe}"
+      pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {str(classe).upper()}"
   )
 
   pdf.set_font(font_family, "B", 8)
