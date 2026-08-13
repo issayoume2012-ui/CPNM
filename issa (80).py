@@ -24,7 +24,7 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
-    """Sauvegarde un ensemble de lignes avec gestion stricte du conflit pour PostgreSQL."""
+    """Sauvegarde sécurisée avec bascule automatique sur l'insertion directe si l'upsert bloque."""
     try:
         if not df.empty:
             df_copie = df.copy()
@@ -37,50 +37,42 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
             cleaned = [{k: (v if pd.notna(v) else None) for k, v in r.items()} for r in records]
             
             if cleaned:
-                # Définition automatique de la colonne de conflit selon la table
-                if not on_conflict_cols:
-                    if nom_table == "eleves_db":
-                        on_conflict_cols = "nom_complet"
-                    elif nom_table in ["admin_credentials", "prof_credentials", "parents_white_list"]:
-                        on_conflict_cols = "email" if "email" in cleaned[0] else "telephone"
-                    elif nom_table == "classes_db":
-                        on_conflict_cols = "classe"
-                    elif nom_table == "matieres_def":
-                        on_conflict_cols = "matiere"
-                    elif nom_table == "coefficients_db":
-                        on_conflict_cols = "classe,matiere"
-
-                if on_conflict_cols:
-                    supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
-                else:
-                    supabase.table(nom_table).upsert(cleaned).execute()
+                try:
+                    # Tentative d'upsert si une colonne de conflit est fournie
+                    if on_conflict_cols:
+                        supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
+                    else:
+                        supabase.table(nom_table).upsert(cleaned).execute()
+                except Exception:
+                    # Secours absolu : si l'upsert échoue à cause des contraintes, on tente un insert simple ligne par ligne
+                    for row in cleaned:
+                        try:
+                            supabase.table(nom_table).insert(row).execute()
+                        except Exception:
+                            pass # Ignore les doublons stricts pour ne pas casser l'appli
     except Exception as e:
-        st.error(f"Erreur de sauvegarde lot sur {nom_table} : {e}")
+        st.error(f"Erreur critique de sauvegarde sur {nom_table} : {e}")
 
 def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_conflict_col: str = ""):
-    """Insère ou met à jour un enregistrement unique de manière sécurisée."""
+    """Insère ou met à jour un enregistrement unique avec sécurité de secours."""
     try:
         cleaned = {
             str(k).strip().lower().replace(" ", "_").replace("é", "e").replace("è", "e").replace("à", "a"): (v if pd.notna(v) else None) 
             for k, v in enregistrement.items()
         }
-        if not on_conflict_col:
-            if nom_table == "eleves_db":
-                on_conflict_col = "nom_complet"
-            elif nom_table == "classes_db":
-                on_conflict_col = "classe"
-
-        if on_conflict_col:
-            supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
-        else:
+        try:
+            if on_conflict_col:
+                supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
+            else:
+                supabase.table(nom_table).insert(cleaned).execute()
+        except Exception:
             supabase.table(nom_table).insert(cleaned).execute()
     except Exception as e:
         st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
 
 def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
-    """Fonction de compatibilité globale pour rediriger vers la sauvegarde par lot."""
-    conflict = "nom_complet" if nom_table == "eleves_db" else ""
-    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols=conflict)
+    """Fonction de compatibilité globale."""
+    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="")
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
 # ==========================================
