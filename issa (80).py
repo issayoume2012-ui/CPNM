@@ -41,6 +41,11 @@ def normaliser_texte(texte):
     if not texte: return ""
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
+def nettoyer_texte_pdf(texte):
+    """Nettoie et encode le texte pour garantir la compatibilité PDF sans erreur d'affichage."""
+    if not texte: return ""
+    return str(texte).encode('latin-1', 'replace').decode('latin-1')
+
 ADMIN_EMAIL = "cpnm@gmail.com"
 
 def enregistrer_log_action(acteur: str, action: str, details: str):
@@ -107,12 +112,9 @@ def charger_donnees_externes() -> dict:
                 df_edt_all = pd.DataFrame(rows_edt)
                 if "classe" in df_edt_all.columns:
                     for classe in df_edt_all["classe"].unique():
-                        if pd.isna(classe) or str(classe).upper() == "NAN":
-                            continue
                         sub = df_edt_all[df_edt_all["classe"] == classe].drop(columns=["classe"], errors="ignore")
                         if "jour" in sub.columns:
                             sub = sub.set_index("jour")
-                        sub = sub[~sub.index.duplicated(keep='first')]
                         edt_dict[classe] = sub
             data["edt_grid_db"] = edt_dict
         except Exception:
@@ -172,7 +174,7 @@ def sauvegarder_donnees_externes(action_label="SAUVEGARDE_SUPABASE"):
     if edt_grids:
         all_edt_rows = []
         for classe, df_grid in edt_grids.items():
-            if isinstance(df_grid, pd.DataFrame) and classe and str(classe).upper() != "NAN":
+            if isinstance(df_grid, pd.DataFrame):
                 df_temp = df_grid.copy()
                 df_temp["classe"] = classe
                 df_temp["jour"] = df_temp.index
@@ -203,37 +205,6 @@ SCEAU_SENEGAL_B64 = (
 
 def obtenir_logo_base64():
     return ""
-
-def afficher_drapeau_flottant():
-    drapeau_html = """
-    <style>
-    @keyframes flotter {
-        0% { transform: translateY(0px) rotate(0deg); }
-        50% { transform: translateY(-6px) rotate(1deg); }
-        100% { transform: translateY(0px) rotate(0deg); }
-    }
-    .drapeau-senegal {
-        display: flex;
-        width: 90px;
-        height: 60px;
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        border-radius: 4px;
-        overflow: hidden;
-        animation: flotter 3s ease-in-out infinite;
-        margin: 10px 0;
-    }
-    .bande-verte { background-color: #00853f; width: 33.33%; }
-    .bande-jaune { background-color: #fdef42; width: 33.33%; display: flex; align-items: center; justify-content: center; }
-    .bande-rouge { background-color: #e31b23; width: 33.33%; }
-    .etoile { color: #00853f; font-size: 20px; font-weight: bold; }
-    </style>
-    <div class="drapeau-senegal">
-        <div class="bande-verte"></div>
-        <div class="bande-jaune"><span class="etoile">★</span></div>
-        <div class="bande-rouge"></div>
-    </div>
-    """
-    st.markdown(drapeau_html, unsafe_allow_html=True)
 
 def assistant_ia_repondre(question: str) -> str:
     q = question.lower()
@@ -848,8 +819,6 @@ if "edt_grid_db" not in st.session_state:
 
 
 def get_or_create_edt(classe):
-  if not classe or pd.isna(classe) or str(classe).upper() == "NAN":
-    classe = "6ème A"
   if classe not in st.session_state.edt_grid_db:
     df_def = pd.DataFrame("", index=JOURS_LIST, columns=HEURES_LIST)
     if "11h00-11h30" in df_def.columns:
@@ -857,13 +826,6 @@ def get_or_create_edt(classe):
     st.session_state.edt_grid_db[classe] = df_def
   else:
     df_exist = st.session_state.edt_grid_db[classe]
-    if not isinstance(df_exist, pd.DataFrame):
-      df_exist = pd.DataFrame(df_exist)
-    df_exist = df_exist[~df_exist.index.duplicated(keep='first')]
-    for j in JOURS_LIST:
-      if j not in df_exist.index:
-        df_exist.loc[j] = ""
-    df_exist = df_exist.reindex(JOURS_LIST)
     if "11h00-11h30" not in df_exist.columns:
       df_def = pd.DataFrame("", index=JOURS_LIST, columns=HEURES_LIST)
       for col in df_exist.columns:
@@ -871,8 +833,7 @@ def get_or_create_edt(classe):
           df_def[col] = df_exist[col]
       if "11h00-11h30" in df_def.columns:
         df_def["11h00-11h30"] = "Récréation"
-      df_exist = df_def
-    st.session_state.edt_grid_db[classe] = df_exist
+      st.session_state.edt_grid_db[classe] = df_def
   return st.session_state.edt_grid_db[classe]
 
 
@@ -905,21 +866,6 @@ synchroniser_listes_blanches()
 # ==========================================
 # 3. FONCTIONS MÉTIER & UTILITAIRES
 # ==========================================
-
-def _obtenir_bytes_pdf(pdf):
-    """Fonction robuste pour extraire les octets d'un objet FPDF sans lever d'exception."""
-    try:
-        out = pdf.output(dest='S')
-    except Exception:
-        try:
-            out = pdf.output()
-        except Exception:
-            out = b""
-    if isinstance(out, (bytes, bytearray)):
-        return bytes(out)
-    elif isinstance(out, str):
-        return out.encode('latin1')
-    return bytes(out)
 
 def obtenir_cycle_classe(classe_nom):
   if not classe_nom:
@@ -1120,9 +1066,6 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
   except Exception:
     font_family = "Arial"
 
-  # Déterminer la largeur maximale de la page (200 pour Portrait A4, 280+ pour Paysage)
-  max_width = pdf.w - 17 if hasattr(pdf, "w") else 200
-
   try:
     if os.path.exists("nm.jpg"):
       pdf.image("nm.jpg", x=12, y=8, w=22)
@@ -1134,16 +1077,16 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     pass
 
   pdf.set_font(font_family, "B", 10)
-  pdf.cell(0, 4, "RÉPUBLIQUE DU SÉNÉGAL", 0, 1, "C")
+  pdf.cell(0, 4, nettoyer_texte_pdf("RÉPUBLIQUE DU SÉNÉGAL"), 0, 1, "C")
   pdf.set_font(font_family, "", 8)
-  pdf.cell(0, 4, "Un Peuple - Un But - Une Foi", 0, 1, "C")
+  pdf.cell(0, 4, nettoyer_texte_pdf("Un Peuple - Un But - Une Foi"), 0, 1, "C")
   pdf.set_font(font_family, "B", 9)
-  pdf.cell(0, 4, "MINISTÈRE DE L'ÉDUCATION NATIONALE", 0, 1, "C")
+  pdf.cell(0, 4, nettoyer_texte_pdf("MINISTÈRE DE L'ÉDUCATION NATIONALE"), 0, 1, "C")
   pdf.set_font(font_family, "B", 9)
   pdf.cell(
       0,
       4,
-      "INSPECTION D'ACADÉMIE DE SAINT-LOUIS (IA SAINT-LOUIS)",
+      nettoyer_texte_pdf("INSPECTION D'ACADÉMIE DE SAINT-LOUIS (IA SAINT-LOUIS)"),
       0,
       1,
       "C",
@@ -1152,9 +1095,8 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
   pdf.cell(
       0,
       4,
-      (
-          "INSPECTION DE L'ÉDUCATION ET DE LA FORMATION DE SAINT-LOUIS (IEF"
-          " SAINT-LOUIS)"
+      nettoyer_texte_pdf(
+          "INSPECTION DE L'ÉDUCATION ET DE LA FORMATION DE SAINT-LOUIS (IEF SAINT-LOUIS)"
       ),
       0,
       1,
@@ -1162,12 +1104,12 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
   )
 
   pdf.set_font(font_family, "B", 10)
-  pdf.cell(0, 5, "ÉCOLE PRÉSIDENT NELSON MANDELA", 0, 1, "C")
+  pdf.cell(0, 5, nettoyer_texte_pdf("ÉCOLE PRÉSIDENT NELSON MANDELA"), 0, 1, "C")
 
   if titre_document:
     pdf.set_font(font_family, "B", 11)
     pdf.set_text_color(14, 165, 233)
-    pdf.cell(0, 6, titre_document.upper(), 0, 1, "C")
+    pdf.cell(0, 6, nettoyer_texte_pdf(titre_document.upper()), 0, 1, "C")
     pdf.set_text_color(0, 0, 0)
 
   pdf.set_draw_color(14, 165, 233)
@@ -1175,7 +1117,7 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     pdf.set_line_width(0.8)
   elif hasattr(pdf, "set_linewidth"):
     pdf.set_linewidth(0.8)
-  pdf.line(10, 38, max_width, 38)
+  pdf.line(10, 38, 200, 38)
   pdf.ln(5)
 
 
@@ -1199,15 +1141,15 @@ def ajouter_bloc_signatures(
   pdf.set_font(font_family, "B", 8)
   pdf.set_draw_color(200, 200, 200)
 
-  pdf.cell(90, 5, f"SIGNATURE & TAMPON : {prof_nom.upper()}", 1, 0, "C")
+  pdf.cell(90, 5, nettoyer_texte_pdf(f"SIGNATURE & TAMPON : {prof_nom.upper()}"), 1, 0, "C")
   pdf.cell(10, 5, "", 0, 0, "C")
-  pdf.cell(90, 5, f"VALIDEUR : {chef_nom.upper()} (IA/IEF)", 1, 1, "C")
+  pdf.cell(90, 5, nettoyer_texte_pdf(f"VALIDEUR : {chef_nom.upper()} (IA/IEF)"), 1, 1, "C")
 
   pdf.set_font(font_family, "I", 7)
-  pdf.cell(90, 15, "Sceau numérique & Empreinte d'excellence", "LRB", 0, "C")
+  pdf.cell(90, 15, nettoyer_texte_pdf("Sceau numérique & Empreinte d'excellence"), "LRB", 0, "C")
   pdf.cell(10, 15, "", 0, 0, "C")
   pdf.cell(
-      90, 15, "Cachet officiel de l'Établissement d'Excellence", "LRB", 1, "C"
+      90, 15, nettoyer_texte_pdf("Cachet officiel de l'Établissement d'Excellence"), "LRB", 1, "C"
   )
 
 
@@ -1557,10 +1499,10 @@ def generer_pdf_bulletin(bul_data):
   )
 
   pdf.set_font(font_family, "B", 10)
-  pdf.cell(100, 6, f"Nom et Prénom : {bul_data['eleve']}", 0, 0, "L")
-  pdf.cell(90, 6, f"Classe : {bul_data['classe']}", 0, 1, "R")
-  pdf.cell(100, 6, f"Effectif : {bul_data['effectif']} élèves", 0, 0, "L")
-  pdf.cell(90, 6, f"Rang : {bul_data['rang']}", 0, 1, "R")
+  pdf.cell(100, 6, nettoyer_texte_pdf(f"Nom et Prénom : {bul_data['eleve']}"), 0, 0, "L")
+  pdf.cell(90, 6, nettoyer_texte_pdf(f"Classe : {bul_data['classe']}"), 0, 1, "R")
+  pdf.cell(100, 6, nettoyer_texte_pdf(f"Effectif : {bul_data['effectif']} élèves"), 0, 0, "L")
+  pdf.cell(90, 6, nettoyer_texte_pdf(f"Rang : {bul_data['rang']}"), 0, 1, "R")
   pdf.ln(4)
 
   pdf.set_font(font_family, "B", 9)
@@ -1583,7 +1525,7 @@ def generer_pdf_bulletin(bul_data):
     ]
 
   for i, h in enumerate(headers):
-    pdf.cell(col_widths[i], 7, h, 1, 0, "C", True)
+    pdf.cell(col_widths[i], 7, nettoyer_texte_pdf(h), 1, 0, "C", True)
   pdf.ln()
 
   pdf.set_font(font_family, "", 8)
@@ -1593,18 +1535,18 @@ def generer_pdf_bulletin(bul_data):
 
   for lig in bul_data["lignes"]:
     if is_elem:
-      pdf.cell(col_widths[0], 6, str(lig["Matiere"])[:30], 1, 0, "L", fill)
-      pdf.cell(col_widths[1], 6, f"/ {lig['Bareme']}", 1, 0, "C", fill)
-      pdf.cell(col_widths[2], 6, str(lig["Composition"]), 1, 0, "C", fill)
-      pdf.cell(col_widths[3], 6, str(lig["Appreciation"])[:15], 1, 0, "C", fill)
+      pdf.cell(col_widths[0], 6, nettoyer_texte_pdf(str(lig["Matiere"])[:30]), 1, 0, "L", fill)
+      pdf.cell(col_widths[1], 6, nettoyer_texte_pdf(f"/ {lig['Bareme']}"), 1, 0, "C", fill)
+      pdf.cell(col_widths[2], 6, nettoyer_texte_pdf(str(lig["Composition"])), 1, 0, "C", fill)
+      pdf.cell(col_widths[3], 6, nettoyer_texte_pdf(str(lig["Appreciation"])[:15]), 1, 0, "C", fill)
     else:
-      pdf.cell(col_widths[0], 6, str(lig["Matiere"])[:25], 1, 0, "L", fill)
-      pdf.cell(col_widths[1], 6, str(lig["Coefficient"]), 1, 0, "C", fill)
-      pdf.cell(col_widths[2], 6, str(lig["Devoir1"]), 1, 0, "C", fill)
-      pdf.cell(col_widths[3], 6, str(lig["Devoir2"]), 1, 0, "C", fill)
-      pdf.cell(col_widths[4], 6, str(lig["Composition"]), 1, 0, "C", fill)
-      pdf.cell(col_widths[5], 6, str(lig["MoyenneMatiere"]), 1, 0, "C", fill)
-      pdf.cell(col_widths[6], 6, str(lig["Appreciation"])[:15], 1, 0, "C", fill)
+      pdf.cell(col_widths[0], 6, nettoyer_texte_pdf(str(lig["Matiere"])[:25]), 1, 0, "L", fill)
+      pdf.cell(col_widths[1], 6, nettoyer_texte_pdf(str(lig["Coefficient"])), 1, 0, "C", fill)
+      pdf.cell(col_widths[2], 6, nettoyer_texte_pdf(str(lig["Devoir1"])), 1, 0, "C", fill)
+      pdf.cell(col_widths[3], 6, nettoyer_texte_pdf(str(lig["Devoir2"])), 1, 0, "C", fill)
+      pdf.cell(col_widths[4], 6, nettoyer_texte_pdf(str(lig["Composition"])), 1, 0, "C", fill)
+      pdf.cell(col_widths[5], 6, nettoyer_texte_pdf(str(lig["MoyenneMatiere"])), 1, 0, "C", fill)
+      pdf.cell(col_widths[6], 6, nettoyer_texte_pdf(str(lig["Appreciation"])[:15]), 1, 0, "C", fill)
     pdf.ln()
     fill = not fill
 
@@ -1615,7 +1557,7 @@ def generer_pdf_bulletin(bul_data):
     pdf.cell(
         0,
         6,
-        (
+        nettoyer_texte_pdf(
             f"Moyenne Générale : {bul_data['moyenne_generale']} / {bul_data['total_bareme']}"
             f" | Total Points : {bul_data['total_points']}"
         ),
@@ -1628,7 +1570,7 @@ def generer_pdf_bulletin(bul_data):
     pdf.cell(
         0,
         6,
-        (
+        nettoyer_texte_pdf(
             f"Moyenne Générale : {bul_data['moyenne_generale']} / 20"
             f" | Total Points : {bul_data['total_points']}"
         ),
@@ -1640,12 +1582,12 @@ def generer_pdf_bulletin(bul_data):
   pdf.ln(3)
 
   pdf.set_font(font_family, "B", 9)
-  pdf.cell(0, 5, "BILAN DE LA VIE SCOLAIRE ET DISCIPLINE", 0, 1, "L")
+  pdf.cell(0, 5, nettoyer_texte_pdf("BILAN DE LA VIE SCOLAIRE ET DISCIPLINE"), 0, 1, "L")
   pdf.set_font(font_family, "", 9)
   pdf.cell(
       0,
       5,
-      (
+      nettoyer_texte_pdf(
           "Absences justifiées : "
           f"{bul_data['abs_just']} | Absences non justifiées :"
           f" {bul_data['abs_non_just']} | Retards : {bul_data['retards']} |"
@@ -1658,7 +1600,7 @@ def generer_pdf_bulletin(bul_data):
   pdf.cell(
       0,
       5,
-      (
+      nettoyer_texte_pdf(
           "Observations / Appréciation générale :"
           f" {bul_data['observations']}"
       ),
@@ -1669,7 +1611,7 @@ def generer_pdf_bulletin(bul_data):
   pdf.cell(
       0,
       5,
-      f"Décision du Conseil de Classe : {bul_data['decision']}",
+      nettoyer_texte_pdf(f"Décision du Conseil de Classe : {bul_data['decision']}"),
       1,
       1,
       "L",
@@ -1681,7 +1623,16 @@ def generer_pdf_bulletin(bul_data):
       chef_nom="Inspecteur / Directeur IEF Saint-Louis",
   )
 
-  return _obtenir_bytes_pdf(pdf)
+  try:
+    output_pdf = pdf.output(dest='S')
+    if isinstance(output_pdf, str):
+      return output_pdf.encode('latin1', 'replace')
+    elif isinstance(output_pdf, (bytes, bytearray)):
+      return bytes(output_pdf)
+    else:
+      return bytes(pdf.output())
+  except Exception:
+    return bytes(pdf.output())
 
 
 def generer_zip_bulletins_classe(classe, periode):
@@ -1745,7 +1696,7 @@ def generer_pdf_liste_eleves_classe(classe):
   headers = ["Nom Complet de l'Élève", "Classe", "Date de Naissance"]
 
   for i, h in enumerate(headers):
-    pdf.cell(col_widths[i], 7, h, 1, 0, "C", True)
+    pdf.cell(col_widths[i], 7, nettoyer_texte_pdf(h), 1, 0, "C", True)
   pdf.ln()
 
   pdf.set_font(font_family, "", 8)
@@ -1755,37 +1706,22 @@ def generer_pdf_liste_eleves_classe(classe):
 
   if not df_eleves.empty:
     for _, row in df_eleves.iterrows():
-      nom_complet = row.get("Nom Complet", "")
-      nom_complet_str = "" if pd.isna(nom_complet) else str(nom_complet)
-      
-      classe_val = row.get("Classe", "")
-      classe_str = "" if pd.isna(classe_val) else str(classe_val)
-      
-      # Récupération robuste de la date de naissance parmi plusieurs clés potentielles
-      date_val = None
-      for k_date in ["Date de Naissance", "Date Naissance", "Date", "naissance"]:
-        if k_date in row and pd.notna(row[k_date]) and str(row[k_date]).strip() != "":
-          date_val = row[k_date]
-          break
-      
-      date_str = str(date_val).strip() if date_val is not None and str(date_val).lower() != "nat" else "Non renseignée"
-
       pdf.cell(
           col_widths[0],
           6,
-          nom_complet_str[:35],
+          nettoyer_texte_pdf(str(row.get("Nom Complet", ""))[:35]),
           1,
           0,
           "L",
           fill,
       )
       pdf.cell(
-          col_widths[1], 6, classe_str[:20], 1, 0, "C", fill
+          col_widths[1], 6, nettoyer_texte_pdf(str(row.get("Classe", ""))[:20]), 1, 0, "C", fill
       )
       pdf.cell(
           col_widths[2],
           6,
-          date_str[:20],
+          nettoyer_texte_pdf(str(row.get("Date de Naissance", ""))[:20]),
           1,
           0,
           "C",
@@ -1794,7 +1730,7 @@ def generer_pdf_liste_eleves_classe(classe):
       pdf.ln()
       fill = not fill
   else:
-    pdf.cell(190, 6, "Aucun élève répertorié dans cette classe.", 1, 1, "C")
+    pdf.cell(190, 6, nettoyer_texte_pdf("Aucun élève répertorié dans cette classe."), 1, 1, "C")
 
   ajouter_bloc_signatures(
       pdf,
@@ -1802,7 +1738,16 @@ def generer_pdf_liste_eleves_classe(classe):
       chef_nom="Inspecteur IEF Saint-Louis",
   )
   
-  return _obtenir_bytes_pdf(pdf)
+  try:
+    output_pdf = pdf.output(dest='S')
+    if isinstance(output_pdf, str):
+      return output_pdf.encode('latin1', 'replace')
+    elif isinstance(output_pdf, (bytes, bytearray)):
+      return bytes(output_pdf)
+    else:
+      return bytes(pdf.output())
+  except Exception:
+    return bytes(pdf.output())
 
 
 def generer_pdf_liste_absences(classe_filtre="Toutes"):
@@ -1833,7 +1778,7 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
   headers = ["Date", "Classe", "Élève", "Statut", "Motif / Remarque"]
 
   for i, h in enumerate(headers):
-    pdf.cell(col_widths[i], 7, h, 1, 0, "C", True)
+    pdf.cell(col_widths[i], 7, nettoyer_texte_pdf(h), 1, 0, "C", True)
   pdf.ln()
 
   pdf.set_font(font_family, "", 8)
@@ -1843,27 +1788,34 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
 
   if not df_abs.empty:
     for _, row in df_abs.iterrows():
-      pdf.cell(col_widths[0], 6, str(row.get("Date", ""))[:12], 1, 0, "C", fill)
-      pdf.cell(col_widths[1], 6, str(row.get("Classe", ""))[:15], 1, 0, "C", fill)
-      pdf.cell(col_widths[2], 6, str(row.get("Élève", ""))[:25], 1, 0, "L", fill)
-      pdf.cell(col_widths[3], 6, str(row.get("Statut", ""))[:15], 1, 0, "C", fill)
-      pdf.cell(col_widths[4], 6, str(row.get("Motif", ""))[:30], 1, 0, "L", fill)
+      pdf.cell(col_widths[0], 6, nettoyer_texte_pdf(str(row.get("Date", ""))[:12]), 1, 0, "C", fill)
+      pdf.cell(col_widths[1], 6, nettoyer_texte_pdf(str(row.get("Classe", ""))[:15]), 1, 0, "C", fill)
+      pdf.cell(col_widths[2], 6, nettoyer_texte_pdf(str(row.get("Élève", ""))[:25]), 1, 0, "L", fill)
+      pdf.cell(col_widths[3], 6, nettoyer_texte_pdf(str(row.get("Statut", ""))[:15]), 1, 0, "C", fill)
+      pdf.cell(col_widths[4], 6, nettoyer_texte_pdf(str(row.get("Motif", ""))[:30]), 1, 0, "L", fill)
       pdf.ln()
       fill = not fill
   else:
-    pdf.cell(190, 6, "Aucune absence ou retard enregistré.", 1, 1, "C")
+    pdf.cell(190, 6, nettoyer_texte_pdf("Aucune absence ou retard enregistré."), 1, 1, "C")
 
   ajouter_bloc_signatures(
       pdf,
       prof_nom="Surveillant Général",
       chef_nom="Chef d'Établissement",
   )
-  return _obtenir_bytes_pdf(pdf)
+  try:
+    output_pdf = pdf.output(dest='S')
+    if isinstance(output_pdf, str):
+      return output_pdf.encode('latin1', 'replace')
+    elif isinstance(output_pdf, (bytes, bytearray)):
+      return bytes(output_pdf)
+    else:
+      return bytes(pdf.output())
+  except Exception:
+    return bytes(pdf.output())
 
 
 def generer_pdf_edt(classe, df_edt):
-  if not classe or pd.isna(classe) or str(classe).upper() == "NAN":
-    classe = "6ème A"
   pdf = FPDF(orientation="L", unit="mm", format="A4")
   try:
     font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
@@ -1872,34 +1824,43 @@ def generer_pdf_edt(classe, df_edt):
 
   pdf.add_page()
   ajouter_entete_senegal_officiel(
-      pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {str(classe).upper()}"
+      pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {classe}"
   )
 
   pdf.set_font(font_family, "B", 8)
   pdf.set_fill_color(14, 165, 233)
   pdf.set_text_color(255, 255, 255)
 
-  col_w = 21
-  pdf.cell(28, 7, "Jour / Heure", 1, 0, "C", True)
+  col_w = 22
+  pdf.cell(30, 7, nettoyer_texte_pdf("Jour / Heure"), 1, 0, "C", True)
   for col in df_edt.columns:
-    pdf.cell(col_w, 7, str(col)[:8], 1, 0, "C", True)
+    pdf.cell(col_w, 7, nettoyer_texte_pdf(str(col)[:8]), 1, 0, "C", True)
   pdf.ln()
 
   pdf.set_font(font_family, "", 7)
   pdf.set_text_color(0, 0, 0)
 
   for jour in df_edt.index:
-    pdf.cell(28, 6, str(jour), 1, 0, "C", True)
+    pdf.cell(30, 6, nettoyer_texte_pdf(str(jour)), 1, 0, "C", True)
     for col in df_edt.columns:
       val = str(df_edt.loc[jour, col])
-      pdf.cell(col_w, 6, val[:11], 1, 0, "C", True)
+      pdf.cell(col_w, 6, nettoyer_texte_pdf(val[:12]), 1, 0, "C", True)
     pdf.ln()
 
   ajouter_bloc_signatures(
       pdf, prof_nom="Chef d'Établissement", chef_nom="Inspecteur IA Saint-Louis"
   )
 
-  return _obtenir_bytes_pdf(pdf)
+  try:
+    output_pdf = pdf.output(dest='S')
+    if isinstance(output_pdf, str):
+      return output_pdf.encode('latin1', 'replace')
+    elif isinstance(output_pdf, (bytes, bytearray)):
+      return bytes(output_pdf)
+    else:
+      return bytes(pdf.output())
+  except Exception:
+    return bytes(pdf.output())
 
 def generer_pdf_cahier_textes(df_ct, classe="Global"):
   pdf = FPDF()
@@ -1921,7 +1882,7 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
   headers = ["Date", "Classe", "Matière", "Contenu de la leçon", "Devoirs / Travail"]
 
   for i, h in enumerate(headers):
-    pdf.cell(col_widths[i], 7, h, 1, 0, "C", True)
+    pdf.cell(col_widths[i], 7, nettoyer_texte_pdf(h), 1, 0, "C", True)
   pdf.ln()
 
   pdf.set_font(font_family, "", 7)
@@ -1930,12 +1891,12 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
   pdf.set_fill_color(240, 249, 255)
 
   for _, row in df_ct.iterrows():
-    pdf.cell(col_widths[0], 6, str(row.get("Date", ""))[:10], 1, 0, "C", fill)
-    pdf.cell(col_widths[1], 6, str(row.get("Classe", ""))[:12], 1, 0, "C", fill)
-    pdf.cell(col_widths[2], 6, str(row.get("Matière", ""))[:15], 1, 0, "L", fill)
-    pdf.cell(col_widths[3], 6, str(row.get("Contenu", ""))[:35], 1, 0, "L", fill)
+    pdf.cell(col_widths[0], 6, nettoyer_texte_pdf(str(row.get("Date", ""))[:10]), 1, 0, "C", fill)
+    pdf.cell(col_widths[1], 6, nettoyer_texte_pdf(str(row.get("Classe", ""))[:12]), 1, 0, "C", fill)
+    pdf.cell(col_widths[2], 6, nettoyer_texte_pdf(str(row.get("Matière", ""))[:15]), 1, 0, "L", fill)
+    pdf.cell(col_widths[3], 6, nettoyer_texte_pdf(str(row.get("Contenu", ""))[:35]), 1, 0, "L", fill)
     pdf.cell(
-        col_widths[4], 6, str(row.get("Travail à faire", ""))[:30], 1, 0, "L", fill
+        col_widths[4], 6, nettoyer_texte_pdf(str(row.get("Travail à faire", ""))[:30]), 1, 0, "L", fill
     )
     pdf.ln()
     fill = not fill
@@ -1946,7 +1907,16 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
       chef_nom="L'Inspecteur Pédagogique",
   )
 
-  return _obtenir_bytes_pdf(pdf)
+  try:
+    output_pdf = pdf.output(dest='S')
+    if isinstance(output_pdf, str):
+      return output_pdf.encode('latin1', 'replace')
+    elif isinstance(output_pdf, (bytes, bytearray)):
+      return bytes(output_pdf)
+    else:
+      return bytes(pdf.output())
+  except Exception:
+    return bytes(pdf.output())
 
 
 # ==========================================
