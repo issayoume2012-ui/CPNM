@@ -2965,7 +2965,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             )
             sauvegarder_lot_vers_supabase("eleves_db", st.session_state.eleves_db, on_conflict_cols="id")
 
-              st.success(f"✅ Élève {nc_el} inscrit et enregistré sur Supabase !")
+            st.success(f"✅ Élève {nc_el} inscrit et enregistré sur Supabase !")
             st.rerun()
 
       st.markdown("---")
