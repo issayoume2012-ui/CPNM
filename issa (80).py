@@ -2845,13 +2845,17 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             and not st.session_state.admin_white_list.empty
         ):
           for _, r in st.session_state.admin_white_list.iterrows():
-            if str(r.get("Email", "")).strip().lower() == a_email.strip().lower():
+            if (
+                str(r.get("Email", "")).strip().lower()
+                == a_email.strip().lower()
+            ):
               if verifier_mot_de_passe(a_pass, str(r.get("Mot de passe", ""))):
                 match_a = True
                 break
 
         if match_a or (
-            a_email.strip().lower() == ADMIN_EMAIL.lower() and a_pass == "cpnm2026"
+            a_email.strip().lower() == ADMIN_EMAIL.lower()
+            and a_pass == "cpnm2026"
         ):
           st.session_state.authenticated_admin = True
           st.success("Connexion administrateur réussie !")
@@ -2874,18 +2878,25 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
     st.markdown("---")
 
-    ta_eleves, ta_profs, ta_parents_wl, ta_classes, ta_coeff, ta_edt, ta_msg_admin, ta_sauv = (
-        st.tabs([
-            "👨‍🎓 Gestion des Élèves",
-            "👨‍🏫 Liste Blanche Enseignants",
-            "👨‍👩‍👧 Liste Blanche Parents",
-            "🏫 Structure & Classes",
-            "⚖️ Coefficients & Matières",
-            "📅 Grille des Emplois du Temps",
-            "💬 Messages aux / des Parents",
-            "💾 Session Locale",
-        ])
-    )
+    (
+        ta_eleves,
+        ta_profs,
+        ta_parents_wl,
+        ta_classes,
+        ta_coeff,
+        ta_edt,
+        ta_msg_admin,
+        ta_sauv,
+    ) = st.tabs([
+        "👨‍🎓 Gestion des Élèves",
+        "👨‍🏫 Liste Blanche Enseignants",
+        "👨‍👩‍👧 Liste Blanche Parents",
+        "🏫 Structure & Classes",
+        "⚖️ Coefficients & Matières",
+        "📅 Grille des Emplois du Temps",
+        "💬 Messages aux / des Parents",
+        "💾 Session Locale",
+    ])
 
     with ta_eleves:
       st.markdown("### 👨‍🎓 Inscription & Gestion des Élèves")
@@ -3007,13 +3018,23 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
     with ta_parents_wl:
       st.markdown("### 👨‍👩‍👧 Gestion de la Liste Blanche des Parents")
-      st.info("Définissez ici les numéros de téléphone et emails autorisés à se connecter à l'Espace Parents pour suivre leurs enfants.")
-      
+      st.info(
+          "Définissez ici les numéros de téléphone et emails autorisés à se"
+          " connecter à l'Espace Parents pour suivre leurs enfants."
+      )
+
       with st.form("form_add_parent_wl", clear_on_submit=True):
         col_pw1, col_pw2, col_pw3 = st.columns(3)
         with col_pw1:
-          p_tel = st.text_input("Téléphone ou Email du Parent", placeholder="+22177...")
-          p_annee = st.number_input("Année de Naissance Élève", min_value=2000, max_value=2025, value=2012)
+          p_tel = st.text_input(
+              "Téléphone ou Email du Parent", placeholder="+22177..."
+          )
+          p_annee = st.number_input(
+              "Année de Naissance Élève",
+              min_value=2000,
+              max_value=2025,
+              value=2012,
+          )
         with col_pw2:
           p_prenom_el = st.text_input("Prénom Élève")
           p_nom_el = st.text_input("Nom Élève")
@@ -3023,7 +3044,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
               st.session_state.classes_db["Classe"].unique()
               if "classes_db" in st.session_state
               else ["6ème A"],
-              key="select_classe_parent_wl"
+              key="select_classe_parent_wl",
           )
 
         if st.form_submit_button("➕ Ajouter à la Liste Blanche des Parents"):
@@ -3035,19 +3056,30 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                 "Année Naissance": int(p_annee),
                 "Classe": cl_parent,
             }
-            if "parents_white_list" not in st.session_state or st.session_state.parents_white_list.empty:
+            if (
+                "parents_white_list" not in st.session_state
+                or st.session_state.parents_white_list.empty
+            ):
               st.session_state.parents_white_list = pd.DataFrame([new_pw])
             else:
               st.session_state.parents_white_list = pd.concat(
-                  [st.session_state.parents_white_list, pd.DataFrame([new_pw])],
+                  [
+                      st.session_state.parents_white_list,
+                      pd.DataFrame([new_pw]),
+                  ],
                   ignore_index=True,
               )
-            st.success(f"✅ Parent de {p_prenom_el} {p_nom_el} ajouté avec succès !")
+            st.success(
+                f"✅ Parent de {p_prenom_el} {p_nom_el} ajouté avec succès !"
+            )
             st.rerun()
 
       st.markdown("---")
       st.markdown("#### Liste Blanche Actuelle des Parents")
-      if "parents_white_list" in st.session_state and not st.session_state.parents_white_list.empty:
+      if (
+          "parents_white_list" in st.session_state
+          and not st.session_state.parents_white_list.empty
+      ):
         edited_parents_wl = st.data_editor(
             st.session_state.parents_white_list,
             num_rows="dynamic",
@@ -3061,12 +3093,94 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
       else:
         st.info("Aucun parent dans la liste blanche pour le moment.")
 
+    # -------------------------------------------------------------------
+    # ONGLET 4 : STRUCTURE & CLASSES (MODIFIÉ AVEC AJOUT/ÉDITION/SUPPRESSION)
+    # -------------------------------------------------------------------
     with ta_classes:
       st.markdown("### 🏫 Structure des Classes & Périodes")
-      st.dataframe(st.session_state.classes_db, use_container_width=True)
 
-      st.markdown("#### Périodes Académiques par Cycle")
-      st.dataframe(st.session_state.periodes_db, use_container_width=True)
+      # 1. FORMULAIRE D'AJOUT D'UNE CLASSE
+      with st.expander("➕ Ajouter une nouvelle classe", expanded=True):
+        with st.form("form_add_new_class", clear_on_submit=True):
+          col_ac1, col_ac2, col_ac3 = st.columns(3)
+          with col_ac1:
+            new_c_name = st.text_input(
+                "Nom de la Classe", placeholder="ex: 5ème B, CM1"
+            )
+          with col_ac2:
+            new_c_cycle = st.selectbox(
+                "Cycle d'enseignement", ["Collège", "Élémentaire", "Maternelle"]
+            )
+          with col_ac3:
+            new_c_resp = st.text_input(
+                "Professeur Responsable", placeholder="ex: Prof. Math"
+            )
+
+          if st.form_submit_button("➕ Enregistrer la Classe"):
+            if new_c_name.strip():
+              rec_c = {
+                  "Classe": new_c_name.strip(),
+                  "Cycle": new_c_cycle,
+                  "Professeur Responsable": (
+                      new_c_resp.strip() if new_c_resp.strip() else "Non attribué"
+                  ),
+              }
+              if (
+                  "classes_db" not in st.session_state
+                  or st.session_state.classes_db.empty
+              ):
+                st.session_state.classes_db = pd.DataFrame([rec_c])
+              else:
+                st.session_state.classes_db = pd.concat(
+                    [st.session_state.classes_db, pd.DataFrame([rec_c])],
+                    ignore_index=True,
+                )
+              st.success(f"✅ Classe {new_c_name} ajoutée avec succès !")
+              st.rerun()
+            else:
+              st.error("Le nom de la classe est obligatoire.")
+
+      # 2. ÉDITION / SUPPRESSION DES CLASSES
+      st.markdown(
+          "#### ✏️ Modification & Suppression des Classes (Éditeur en direct)"
+      )
+      if (
+          "classes_db" in st.session_state
+          and not st.session_state.classes_db.empty
+      ):
+        edited_classes_db = st.data_editor(
+            st.session_state.classes_db,
+            num_rows="dynamic",  # Permet d'insérer ou supprimer des lignes directement
+            use_container_width=True,
+            key="editor_classes_db_admin",
+        )
+        if st.button("💾 Sauvegarder la Liste des Classes"):
+          st.session_state.classes_db = edited_classes_db
+          st.success("✅ Structure des classes mise à jour localement !")
+          st.rerun()
+      else:
+        st.info("Aucune classe répertoriée.")
+
+      st.markdown("---")
+
+      # 3. PÉRIODES ACADÉMIQUES
+      st.markdown("#### 📅 Périodes Académiques par Cycle")
+      if (
+          "periodes_db" in st.session_state
+          and not st.session_state.periodes_db.empty
+      ):
+        edited_periodes_db = st.data_editor(
+            st.session_state.periodes_db,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_periodes_db_admin",
+        )
+        if st.button("💾 Sauvegarder les Périodes Académiques"):
+          st.session_state.periodes_db = edited_periodes_db
+          st.success("✅ Périodes académiques mises à jour !")
+          st.rerun()
+      else:
+        st.info("Aucune période configurée.")
 
     with ta_coeff:
       st.markdown("### ⚖️ Coefficients & Matières")
@@ -3148,10 +3262,12 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
 
     with ta_sauv:
-        st.markdown("### 💾 Gestion de la Session Locale")
-        st.success("Statut de l'application : **Mode 100% Local (Sans Supabase)**")
-        st.info("Toutes les modifications sont enregistrées en mémoire de session de manière totalement sécurisée et rapide.")
-
+      st.markdown("### 💾 Gestion de la Session Locale")
+      st.success("Statut de l'application : **Mode 100% Local (Sans Supabase)**")
+      st.info(
+          "Toutes les modifications sont enregistrées en mémoire de session de"
+          " manière totalement sécurisée et rapide."
+      )
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
     st.markdown(
         '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
