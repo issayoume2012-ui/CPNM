@@ -1,18 +1,3 @@
-# --- BIBLIOTHÈQUES STANDARDS (Python) ---
-import base64
-from datetime import datetime
-import io
-import json
-import os
-import zipfile
-import unicodedata
-import numpy as np
-import pandas as pd
-from fpdf import FPDF
-import streamlit as st
-import bcrypt
-from supabase import create_client, Client
-
 # ==========================================
 # 0. CONFIGURATION DE LA CONNEXION SUPABASE
 # ==========================================
@@ -21,7 +6,7 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 
 @st.cache_resource
 def init_supabase() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
+    return create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
 
 supabase = init_supabase()
 
@@ -43,7 +28,6 @@ def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_con
     """Insère ou met à jour un enregistrement unique de manière sécurisée."""
     try:
         cleaned = {k: (v if pd.notna(v) else None) for k, v in enregistrement.items()}
-        # Si on_conflict_col est vide, on fait un insert simple, sinon un upsert
         if on_conflict_col:
             supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
         else:
@@ -63,7 +47,6 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
                 if on_conflict_cols:
                     supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
                 else:
-                    # Si pas de colonne de conflit, on insère proprement
                     supabase.table(nom_table).upsert(cleaned).execute()
     except Exception as e:
         st.error(f"Erreur de sauvegarde lot sur {nom_table} : {e}")
