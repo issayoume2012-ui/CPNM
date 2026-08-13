@@ -15,6 +15,24 @@ import bcrypt
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ LOCALE (SANS SUPABASE)
 # ==========================================
+import pandas as pd
+import streamlit as st
+from supabase import Client, create_client
+
+# Configuration des variables Supabase
+SUPABASE_URL = "https://gxzprztufqvblwoyqihd.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
+
+# Initialisation du client Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# Test de connexion à Supabase
+try:
+    # Test de lecture sur la table eleves
+    response = supabase.table("eleves").select("*").execute()
+    st.success("Connexion à Supabase réussie !")
+except Exception as e:
+    st.error(f"Erreur de connexion à Supabase : {e}")
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
     salt = bcrypt.gensalt()
