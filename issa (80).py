@@ -12,6 +12,7 @@ from fpdf import FPDF
 import streamlit as st  # <-- C'est ici qu'on importe Streamlit sous l'alias 'st'
 import bcrypt
 from supabase import create_client, Client
+
 # ==========================================
 # 0. CONFIGURATION DE LA CONNEXION SUPABASE
 # ==========================================
@@ -23,6 +24,23 @@ def init_supabase() -> Client:
     return create_client(SUPABASE_URL.strip(), SUPABASE_KEY.strip())
 
 supabase = init_supabase()
+
+def charger_depuis_supabase(nom_table: str, colonnes_defaut: dict) -> pd.DataFrame:
+    try:
+        response = supabase.table(nom_table).select("*").execute()
+        data = response.data
+        if data:
+            df = pd.DataFrame(data)
+            for col in colonnes_defaut:
+                if col not in df.columns:
+                    df[col] = colonnes_defaut[col]
+            return df
+    except Exception as e:
+        st.error(f"Erreur de chargement depuis la table {nom_table} : {e}")
+    return pd.DataFrame(columns=list(colonnes_defaut.keys()))
+
+charger__supabase = charger_depuis_supabase
+
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
     """Sauvegarde sécurisée avec bascule automatique sur l'insertion directe si l'upsert bloque."""
     try:
@@ -38,18 +56,16 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
             
             if cleaned:
                 try:
-                    # Tentative d'upsert si une colonne de conflit est fournie
                     if on_conflict_cols:
                         supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
                     else:
                         supabase.table(nom_table).upsert(cleaned).execute()
                 except Exception:
-                    # Secours absolu : si l'upsert échoue à cause des contraintes, on tente un insert simple ligne par ligne
                     for row in cleaned:
                         try:
                             supabase.table(nom_table).insert(row).execute()
                         except Exception:
-                            pass # Ignore les doublons stricts pour ne pas casser l'appli
+                            pass
     except Exception as e:
         st.error(f"Erreur critique de sauvegarde sur {nom_table} : {e}")
 
@@ -72,7 +88,9 @@ def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_con
 
 def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
     """Fonction de compatibilité globale."""
-    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="")
+    conflict = "nom_complet" if nom_table == "eleves_db" else ""
+    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols=conflict)
+
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
 # ==========================================
@@ -89,12 +107,12 @@ def verifier_mot_de_passe(password: str, hashed: str) -> bool:
         return False
 
 def normaliser_texte(texte):
-    """Normalise une chaîne de caractères pour une recherche universelle (insensible aux accents, casse, espaces)."""
+    """Normalise une chaîne de caractères pour une recherche universelle."""
     if not texte: return ""
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
 def nettoyer_texte_pdf(texte):
-    """Nettoie et encode le texte pour garantir la compatibilité PDF sans erreur d'affichage."""
+    """Nettoie et encode le texte pour garantir la compatibilité PDF."""
     if not texte: return ""
     return str(texte).encode('latin-1', 'replace').decode('latin-1')
 
@@ -128,7 +146,6 @@ def synchroniser_listes_blanches():
 # ==========================================
 # 0. BIS. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
-
 SCEAU_SENEGAL_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz"
     "AAAOxAAADsQBlSsOGwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ2V3ZgZ3AAAAYklE"
@@ -714,7 +731,6 @@ if "absences_db" not in st.session_state:
   })
 
 synchroniser_listes_blanches()
-
 # ==========================================
 # 3. FONCTIONS MÉTIER & UTILITAIRES
 # ==========================================
