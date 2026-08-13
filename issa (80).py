@@ -1,3 +1,18 @@
+# --- BIBLIOTHÈQUES STANDARDS (Python) ---
+import base64
+from datetime import datetime
+import io
+import json
+import os
+import zipfile
+import unicodedata
+import numpy as np
+import pandas as pd
+from fpdf import FPDF
+import streamlit as st  # <-- C'est ici qu'on importe Streamlit sous l'alias 'st'
+import bcrypt
+from supabase import create_client, Client
+
 # ==========================================
 # 0. CONFIGURATION DE LA CONNEXION SUPABASE
 # ==========================================
