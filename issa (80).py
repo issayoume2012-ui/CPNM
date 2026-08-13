@@ -3210,10 +3210,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             use_container_width=True,
             key="editor_periodes_db_admin",
         )
-        if st.button("💾 Sauvegarder sur Supabase"):
-          st.session_state.periodes_db = edited_periodes_db
-          sauvegarder_vers_supabase("periodes_db", st.session_state.periodes_db)
-          st.success("✅ Périodes académiques mises à jour sur Supabase !")
+        if st.button("💾 Enregistrer sur Supabase", key="btn_save_coeff_admin"):
+          st.session_state.coefficients_db = edited_coeff
+          sauvegarder_lot_vers_supabase("coefficients_db", st.session_state.coefficients_db, on_conflict_cols="id")
+          st.success("✅ Grille mise à jour sur Supabase !")
           st.rerun()
       else:
         st.info("Aucune période configurée.")
