@@ -19,44 +19,54 @@ import pandas as pd
 import streamlit as st
 from supabase import Client, create_client
 
+# Configuration de la page Streamlit (Mode centré/large propre)
+# st.set_page_config(page_title="Gestion - École Président Nelson Mandela", layout="wide")
+
 # Configuration des variables Supabase
 SUPABASE_URL = "https://gxzprztufqvblwoyqihd.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-st.title("Gestion des Élèves - Supabase")
+st.title("🎓 Gestion des Élèves - Supabase")
 
-# --- FORMULAIRE D'AJOUT D'UN ÉLÈVE ---
-with st.form("form_ajout_eleve"):
-    st.subheader("Ajouter un nouvel élève")
-    prenom = st.text_input("Prénom", value="Issa")
-    nom = st.text_input("Nom", value="Youme")
-    nom_complet = f"{prenom} {nom}"
-    date_naissance = st.date_input("Date de naissance")
-    classe = st.text_input("Classe", value="6eme A")
-    
-    submit_button = st.form_submit_button("Enregistrer dans Supabase")
+# Utilisation de colonnes pour contraindre la largeur et éviter l'effet "étiré"
+col_gauche, col_centre, col_droite = st.columns([1, 2, 1])
 
-    if submit_button:
-        # Données à envoyer
-        nouveau_data = {
-            "nom_complet": nom_complet,
-            "prenom": prenom,
-            "nom": nom,
-            "date_de_naissance": str(date_naissance),
-            "classe": classe,
-            "photo": ""
-        }
+with col_centre:
+    # --- FORMULAIRE D'AJOUT D'UN ÉLÈVE ---
+    with st.form("form_ajout_eleve", clear_on_submit=True):
+        st.subheader("Ajouter un nouvel élève")
+        prenom = st.text_input("Prénom", value="")
+        nom = st.text_input("Nom", value="")
+        date_naissance = st.date_input("Date de naissance")
+        classe = st.text_input("Classe", value="6eme A")
         
-        # Insertion dans Supabase
-        response = supabase.table("eleves").insert(nouveau_data).execute()
-        st.success(f"Élève {nom_complet} enregistré avec succès dans Supabase !")
-        st.rerun()
+        submit_button = st.form_submit_button("Enregistrer dans Supabase")
 
-# --- AFFICHAGE DES ÉLÈVES DEPUIS SUPABASE ---
+        if submit_button:
+            if prenom and nom:
+                nom_complet = f"{prenom} {nom}"
+                nouveau_data = {
+                    "nom_complet": nom_complet,
+                    "prenom": prenom,
+                    "nom": nom,
+                    "date_de_naissance": str(date_naissance),
+                    "classe": classe,
+                    "photo": ""
+                }
+                
+                # Insertion dans Supabase
+                supabase.table("eleves").insert(nouveau_data).execute()
+                st.success(f"Élève {nom_complet} enregistré avec succès !")
+                st.rerun()
+            else:
+                st.error("Veuillez remplir au moins le prénom et le nom.")
+
 st.divider()
-st.subheader("Liste des élèves enregistrés dans Supabase")
+
+# --- AFFICHAGE DE LA LISTE ---
+st.subheader("📋 Liste des élèves enregistrés dans Supabase")
 
 try:
     response = supabase.table("eleves").select("*").execute()
@@ -64,7 +74,8 @@ try:
     
     if len(data) > 0:
         df_eleves = pd.DataFrame(data)
-        st.dataframe(df_eleves)
+        # On affiche le tableau proprement sans qu'il s'étale de force sur 3 kilomètres
+        st.dataframe(df_eleves, use_container_width=True)
     else:
         st.info("Aucun élève pour le moment. Utilisez le formulaire ci-dessus.")
 
