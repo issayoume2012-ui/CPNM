@@ -43,11 +43,12 @@ def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_con
     """Insère ou met à jour un enregistrement unique de manière sécurisée sans supprimer le reste de la table."""
     try:
         cleaned = {k: (v if pd.notna(v) else None) for k, v in enregistrement.items()}
-        # Utilisation de l'upsert ciblé de Supabase basé sur une colonne clé (ex: id, email, ou combinaison)
         supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
     except Exception as e:
         print(f"Erreur lors de la sauvegarde ciblée sur {nom_table}: {e}")
+
 charger__supabase = charger_depuis_supabase
+
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str):
     """Sauvegarde un ensemble de lignes en mode upsert ciblé sans vider toute la table."""
     try:
@@ -58,6 +59,10 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
                 supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
     except Exception as e:
         print(f"Erreur lors de la sauvegarde du lot sur {nom_table}: {e}")
+
+def sauvegarder_vers_supabase(nom_table: str, df: pd.DataFrame):
+    """Fonction de compatibilité globale pour rediriger vers la sauvegarde par lot."""
+    sauvegarder_lot_vers_supabase(nom_table, df, on_conflict_cols="id")
 # ==========================================
 # 0. GESTION DE LA SÉCURITÉ DISTANTE
 # ==========================================
