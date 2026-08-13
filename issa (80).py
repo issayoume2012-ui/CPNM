@@ -2192,17 +2192,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           )
 
           if st.button("💾 Enregistrer sur Supabase", key="btn_save_edited_notes"):
-            if not df_temp_notes.empty and "Classe" in df_temp_notes.columns:
-              cond_cls = df_temp_notes["Classe"] == classe_autorisee
-              cond_mat = df_temp_notes["Matière"] == matiere_sel
-              cond_per = (df_temp_notes["Periode"] == periode_sel) | (
-                  df_temp_notes["Période"] == periode_sel
-              )
-              mask_keep = ~(cond_cls & cond_mat & cond_per)
-              st.session_state.notes_db = df_temp_notes[mask_keep].reset_index(
-                  drop=True
-              )
-
             edited_notes["Classe"] = classe_autorisee
             edited_notes["Matière"] = matiere_sel
             edited_notes["Periode"] = periode_sel
@@ -2213,17 +2202,33 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
               edited_notes["Devoir1"] = 0.0
               edited_notes["Devoir2"] = 0.0
 
-            st.session_state.notes_db = pd.concat(
-                [st.session_state.notes_db, edited_notes], ignore_index=True
-            )
-            sauvegarder_vers_supabase("notes_db", st.session_state.notes_db)
+            # Sauvegarde ciblée ligne par ligne pour éviter d'écraser le travail des autres professeurs
+            for _, row_data in edited_notes.iterrows():
+                dict_ligne = row_data.to_dict()
+                
+                dict_sql = {
+                    "classe": dict_ligne.get("Classe"),
+                    "matiere": dict_ligne.get("Matière", dict_ligne.get("Matiere")),
+                    "periode": dict_ligne.get("Periode", dict_ligne.get("Période")),
+                    "eleve": dict_ligne.get("Eleve"),
+                    "devoir1": dict_ligne.get("Devoir1", 0.0),
+                    "devoir2": dict_ligne.get("Devoir2", 0.0),
+                    "composition": dict_ligne.get("Composition", 0.0),
+                    "baremenote": dict_ligne.get("BaremeNote", 20.0)
+                }
+
+                sauvegarder_ligne_vers_supabase(
+                    "notes_db", 
+                    dict_sql, 
+                    on_conflict_col="classe,matiere,periode,eleve"
+                )
+
             enregistrer_log_action(
                 prof_connecte,
                 "EDIT_NOTES",
-                f"Modifications enregistrées pour {matiere_sel}"
-                f" ({classe_autorisee})",
+                f"Modifications enregistrées pour {matiere_sel} ({classe_autorisee})"
             )
-            st.success("✅ Notes synchronisées avec Supabase avec succès !")
+            st.success("✅ Notes synchronisées avec Supabase de manière sécurisée !")
             st.rerun()
         else:
           st.warning(
