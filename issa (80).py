@@ -26,13 +26,40 @@ SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 # Initialisation du client Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Test de connexion à Supabase
+def initialiser_donnees_eleves():
+    """Vérifie si la table est vide et y insère des données par défaut si besoin."""
+    # On récupère les données actuelles
+    response = supabase.table("eleves").select("*").execute()
+    
+    # Si la liste est vide, on insère une donnée exemple
+    if len(response.data) == 0:
+        st.warning("La table est vide, insertion des données initiales...")
+        data_initiale = {
+            "nom_complet": "Exemple Élève",
+            "prenom": "Jean",
+            "nom": "Dupont",
+            "date_de_naissance": "2010-01-01",
+            "classe": "6eme A",
+            "photo": ""
+        }
+        supabase.table("eleves").insert(data_initiale).execute()
+        st.success("Données initiales insérées avec succès !")
+        st.rerun() # Rafraîchir pour afficher les données
+
+# Test de connexion et initialisation
 try:
-    # Test de lecture sur la table eleves
     response = supabase.table("eleves").select("*").execute()
     st.success("Connexion à Supabase réussie !")
+    
+    # Appel de la fonction de vérification
+    initialiser_donnees_eleves()
+    
+    # Affichage des données (si vous voulez voir le tableau)
+    if len(response.data) > 0:
+        st.write("Données actuelles dans la base :", pd.DataFrame(response.data))
+
 except Exception as e:
-    st.error(f"Erreur de connexion à Supabase : {e}")
+    st.error(f"Erreur lors de l'accès à Supabase : {e}")
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
     salt = bcrypt.gensalt()
