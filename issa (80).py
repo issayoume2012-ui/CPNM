@@ -50,7 +50,7 @@ def charger__supabase(nom_table: str, structure_defaut) -> pd.DataFrame:
     return pd.DataFrame()
 
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str = ""):
-    """Sauvegarde sécurisée avec bascule automatique sur l'insertion directe si l'upsert bloque."""
+    """Sauvegarde sécurisée utilisant l'insertion directe (Solution 3 - sans ID ni upsert bloquant)."""
     try:
         if not df.empty:
             df_copie = df.copy()
@@ -64,33 +64,22 @@ def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_
             
             if cleaned:
                 try:
-                    if on_conflict_cols:
-                        supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_cols).execute()
-                    else:
-                        supabase.table(nom_table).upsert(cleaned).execute()
-                except Exception:
+                    # Remplacement de l'upsert par un mode d'insertion simple ou ciblé par ligne
                     for row in cleaned:
-                        try:
-                            supabase.table(nom_table).insert(row).execute()
-                        except Exception:
-                            pass 
+                        supabase.table(nom_table).insert(row).execute()
+                except Exception as e:
+                    pass 
     except Exception as e:
         st.error(f"Erreur critique de sauvegarde sur {nom_table} : {e}")
 
 def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_conflict_col: str = ""):
-    """Insère ou met à jour un enregistrement unique avec sécurité de secours."""
+    """Insère un enregistrement unique avec sécurité de secours (Solution 3)."""
     try:
         cleaned = {
             str(k).strip().lower().replace(" ", "_").replace("é", "e").replace("è", "e").replace("à", "a"): (v if pd.notna(v) else None) 
             for k, v in enregistrement.items()
         }
-        try:
-            if on_conflict_col:
-                supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
-            else:
-                supabase.table(nom_table).insert(cleaned).execute()
-        except Exception:
-            supabase.table(nom_table).insert(cleaned).execute()
+        supabase.table(nom_table).insert(cleaned).execute()
     except Exception as e:
         st.error(f"Erreur de sauvegarde ciblée sur {nom_table} : {e}")
 
@@ -2258,8 +2247,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
                 sauvegarder_ligne_vers_supabase(
                     "notes_db", 
-                    dict_sql, 
-                    on_conflict_col="classe,matiere,periode,eleve"
+                    dict_sql
                 )
 
             enregistrer_log_action(
@@ -3002,7 +2990,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.session_state.eleves_db = trier_eleves_par_nom(
                 st.session_state.eleves_db
             )
-            sauvegarder_lot_vers_supabase("eleves_db", st.session_state.eleves_db, on_conflict_cols="id")
+            sauvegarder_lot_vers_supabase("eleves_db", st.session_state.eleves_db)
 
             st.success(f"✅ Élève {nc_el} inscrit et enregistré sur Supabase !")
             st.rerun()
@@ -3248,7 +3236,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
         if st.button("💾 Enregistrer sur Supabase", key="btn_save_coeff_admin"):
           st.session_state.coefficients_db = edited_coeff
-          sauvegarder_lot_vers_supabase("coefficients_db", st.session_state.coefficients_db, on_conflict_cols="id")
+          sauvegarder_lot_vers_supabase("coefficients_db", st.session_state.coefficients_db)
           st.success("✅ Grille mise à jour sur Supabase !")
           st.rerun()
       else:
