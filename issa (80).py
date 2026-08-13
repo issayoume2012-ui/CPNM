@@ -23,43 +23,53 @@ from supabase import Client, create_client
 SUPABASE_URL = "https://gxzprztufqvblwoyqihd.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
 
-# Initialisation du client Supabase
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def initialiser_donnees_eleves():
-    """Vérifie si la table est vide et y insère des données par défaut si besoin."""
-    # On récupère les données actuelles
-    response = supabase.table("eleves").select("*").execute()
+st.title("Gestion des Élèves - Supabase")
+
+# --- FORMULAIRE D'AJOUT D'UN ÉLÈVE ---
+with st.form("form_ajout_eleve"):
+    st.subheader("Ajouter un nouvel élève")
+    prenom = st.text_input("Prénom", value="Issa")
+    nom = st.text_input("Nom", value="Youme")
+    nom_complet = f"{prenom} {nom}"
+    date_naissance = st.date_input("Date de naissance")
+    classe = st.text_input("Classe", value="6eme A")
     
-    # Si la liste est vide, on insère une donnée exemple
-    if len(response.data) == 0:
-        st.warning("La table est vide, insertion des données initiales...")
-        data_initiale = {
-            "nom_complet": "Exemple Élève",
-            "prenom": "Jean",
-            "nom": "Dupont",
-            "date_de_naissance": "2010-01-01",
-            "classe": "6eme A",
+    submit_button = st.form_submit_button("Enregistrer dans Supabase")
+
+    if submit_button:
+        # Données à envoyer
+        nouveau_data = {
+            "nom_complet": nom_complet,
+            "prenom": prenom,
+            "nom": nom,
+            "date_de_naissance": str(date_naissance),
+            "classe": classe,
             "photo": ""
         }
-        supabase.table("eleves").insert(data_initiale).execute()
-        st.success("Données initiales insérées avec succès !")
-        st.rerun() # Rafraîchir pour afficher les données
+        
+        # Insertion dans Supabase
+        response = supabase.table("eleves").insert(nouveau_data).execute()
+        st.success(f"Élève {nom_complet} enregistré avec succès dans Supabase !")
+        st.rerun()
 
-# Test de connexion et initialisation
+# --- AFFICHAGE DES ÉLÈVES DEPUIS SUPABASE ---
+st.divider()
+st.subheader("Liste des élèves enregistrés dans Supabase")
+
 try:
     response = supabase.table("eleves").select("*").execute()
-    st.success("Connexion à Supabase réussie !")
+    data = response.data
     
-    # Appel de la fonction de vérification
-    initialiser_donnees_eleves()
-    
-    # Affichage des données (si vous voulez voir le tableau)
-    if len(response.data) > 0:
-        st.write("Données actuelles dans la base :", pd.DataFrame(response.data))
+    if len(data) > 0:
+        df_eleves = pd.DataFrame(data)
+        st.dataframe(df_eleves)
+    else:
+        st.info("Aucun élève pour le moment. Utilisez le formulaire ci-dessus.")
 
 except Exception as e:
-    st.error(f"Erreur lors de l'accès à Supabase : {e}")
+    st.error(f"Erreur lors de la récupération des données : {e}")
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
     salt = bcrypt.gensalt()
