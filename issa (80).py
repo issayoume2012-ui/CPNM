@@ -47,7 +47,7 @@ def sauvegarder_ligne_vers_supabase(nom_table: str, enregistrement: dict, on_con
         supabase.table(nom_table).upsert(cleaned, on_conflict=on_conflict_col).execute()
     except Exception as e:
         print(f"Erreur lors de la sauvegarde ciblée sur {nom_table}: {e}")
-
+charger__supabase = charger_depuis_supabase
 def sauvegarder_lot_vers_supabase(nom_table: str, df: pd.DataFrame, on_conflict_cols: str):
     """Sauvegarde un ensemble de lignes en mode upsert ciblé sans vider toute la table."""
     try:
