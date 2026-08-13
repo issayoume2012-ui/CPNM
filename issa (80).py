@@ -3269,174 +3269,187 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
           " manière totalement sécurisée et rapide."
       )
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
-    st.markdown(
-        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
-        " Globaux, Téléchargements & Assistant Pédagogique</div>",
-        unsafe_allow_html=True,
-    )
+  st.markdown(
+      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
+      " Globaux, Téléchargements & Pilotage Administratif</div>",
+      unsafe_allow_html=True,
+  )
 
-    tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_assistant = st.tabs([
+  # --- VÉRIFICATION DE LA CONNEXION ADMINISTRATEUR ---
+  if not st.session_state.get("authenticated_admin", False):
+    st.error("🔒 Accès restreint : Vous devez être connecté en tant qu'Administrateur pour accéder à cet espace.")
+    st.info("Veuillez vous rendre dans l'onglet **🔒 Espace Administration (Sécurisé)** pour vous authentifier.")
+  else:
+    tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_stats = st.tabs([
         "📄 Édition & Téléchargement des Bulletins",
         "📋 Fiches Officielles de Classe (Tri Nom)",
         "📉 Registre des Absences",
         "📑 Registre Général des Cahiers de Texte",
-        "🤖 Assistant Pédagogique IA Mandela",
+        "📊 Synthèse & Tableaux de Bord Statistiques",
     ])
 
     with tr_bulletins:
-        st.markdown("### 📄 Génération & Téléchargement des Bulletins par Élève")
-        cls_rep = st.selectbox(
-            "Sélectionner la classe",
-            st.session_state.classes_db["Classe"].unique(),
-            key="rep_cls_sel",
-        )
-        pers_rep = obtenir_periodes_pour_classe(cls_rep)
+      st.markdown("### 📄 Génération & Téléchargement des Bulletins par Élève")
+      cls_rep = st.selectbox(
+          "Sélectionner la classe",
+          st.session_state.classes_db["Classe"].unique(),
+          key="rep_cls_sel",
+      )
+      pers_rep = obtenir_periodes_pour_classe(cls_rep)
 
-        if pers_rep:
-            per_rep = st.selectbox(
-                "Sélectionner la période", pers_rep, key="rep_per_sel"
-            )
-
-            df_el_rep = pd.DataFrame()
-            if (
-                "eleves_db" in st.session_state
-                and "Classe" in st.session_state.eleves_db.columns
-            ):
-                df_el_rep = trier_eleves_par_nom(
-                    st.session_state.eleves_db[
-                        st.session_state.eleves_db["Classe"] == cls_rep
-                    ]
-                )
-
-            if not df_el_rep.empty:
-                list_el_rep = df_el_rep["Nom Complet"].tolist()
-                el_rep_sel = st.selectbox(
-                    "Sélectionner un élève spécifique", list_el_rep, key="rep_el_sel"
-                )
-
-                bul_data_individual = calculer_bulletin_eleve(
-                    cls_rep, el_rep_sel, per_rep
-                )
-
-                st.markdown(
-                    f"#### Bulletin de : **{el_rep_sel}** ({cls_rep} - {per_rep})"
-                )
-                st.dataframe(
-                    pd.DataFrame(bul_data_individual["lignes"]),
-                    use_container_width=True,
-                )
-
-                col_dl_b1, col_dl_b2 = st.columns(2)
-                with col_dl_b1:
-                    pdf_indiv_bytes = generer_pdf_bulletin(bul_data_individual)
-                    st.download_button(
-                        f"📥 Télécharger le Bulletin de {el_rep_sel} (PDF)",
-                        data=pdf_indiv_bytes,
-                        file_name=f"Bulletin_{cls_rep}_{el_rep_sel}_{per_rep}.pdf",
-                        mime="application/pdf",
-                    )
-
-                with col_dl_b2:
-                    zip_class_bytes = generer_zip_bulletins_classe(cls_rep, per_rep)
-                    st.download_button(
-                        f"📦 Télécharger Tous les Bulletins de {cls_rep} (.ZIP)",
-                        data=zip_class_bytes,
-                        file_name=f"Bulletins_{cls_rep}_{per_rep}.zip",
-                        mime="application/zip",
-                    )
-            else:
-                st.warning("Aucun élève dans cette classe.")
-
-    with tr_listes:
-        st.markdown("### 📋 Imprimer les Fiches de Classe (Tri Alphabétique Nom)")
-        cls_fiche = st.selectbox(
-            "Sélectionner la classe pour la fiche",
-            st.session_state.classes_db["Classe"].unique(),
-            key="fiche_cls_sel",
+      if pers_rep:
+        per_rep = st.selectbox(
+            "Sélectionner la période", pers_rep, key="rep_per_sel"
         )
 
-        pdf_fiche_bytes = generer_pdf_liste_eleves_classe(cls_fiche)
-        st.download_button(
-            f"📥 Télécharger la Liste Officielle de {cls_fiche} (PDF)",
-            data=pdf_fiche_bytes,
-            file_name=f"Liste_Eleves_{cls_fiche}.pdf",
-            mime="application/pdf",
-        )
+        df_el_rep = pd.DataFrame()
+        if (
+            "eleves_db" in st.session_state
+            and "Classe" in st.session_state.eleves_db.columns
+        ):
+          df_el_rep = trier_eleves_par_nom(
+              st.session_state.eleves_db[
+                  st.session_state.eleves_db["Classe"] == cls_rep
+              ]
+          )
 
-    with tr_absences:
-        st.markdown("### 📉 Registre des Absences et Retards & Téléchargement PDF")
-        cls_abs_sel = st.selectbox(
-            "Filtrer par classe",
-            ["Toutes"] + list(st.session_state.classes_db["Classe"].unique()),
-            key="abs_report_cls_sel",
-        )
+        if not df_el_rep.empty:
+          list_el_rep = df_el_rep["Nom Complet"].tolist()
+          el_rep_sel = st.selectbox(
+              "Sélectionner un élève spécifique", list_el_rep, key="rep_el_sel"
+          )
 
-        df_abs_disp = (
-            st.session_state.absences_db
-            if "absences_db" in st.session_state
-            else pd.DataFrame()
-        )
-        if not df_abs_disp.empty and cls_abs_sel != "Toutes" and "Classe" in df_abs_disp.columns:
-            df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
+          bul_data_individual = calculer_bulletin_eleve(
+              cls_rep, el_rep_sel, per_rep
+          )
 
-        if not df_abs_disp.empty:
-            st.dataframe(df_abs_disp, use_container_width=True)
-            pdf_abs_bytes = generer_pdf_liste_absences(cls_abs_sel)
+          st.markdown(
+              f"#### Bulletin de : **{el_rep_sel}** ({cls_rep} - {per_rep})"
+          )
+          st.dataframe(
+              pd.DataFrame(bul_data_individual["lignes"]),
+              use_container_width=True,
+          )
+
+          col_dl_b1, col_dl_b2 = st.columns(2)
+          with col_dl_b1:
+            pdf_indiv_bytes = generer_pdf_bulletin(bul_data_individual)
             st.download_button(
-                f"📥 Télécharger la Liste des Absences ({cls_abs_sel}) (PDF)",
-                data=pdf_abs_bytes,
-                file_name=f"Registre_Absences_{cls_abs_sel}.pdf",
+                f"📥 Télécharger le Bulletin de {el_rep_sel} (PDF)",
+                data=pdf_indiv_bytes,
+                file_name=f"Bulletin_{cls_rep}_{el_rep_sel}_{per_rep}.pdf",
                 mime="application/pdf",
             )
+
+          with col_dl_b2:
+            zip_class_bytes = generer_zip_bulletins_classe(cls_rep, per_rep)
+            st.download_button(
+                f"📦 Télécharger Tous les Bulletins de {cls_rep} (.ZIP)",
+                data=zip_class_bytes,
+                file_name=f"Bulletins_{cls_rep}_{per_rep}.zip",
+                mime="application/zip",
+            )
         else:
-            st.info("Aucune absence ou retard répertorié pour cette sélection.")
+          st.warning("Aucun élève dans cette classe.")
+
+    with tr_listes:
+      st.markdown("### 📋 Imprimer les Fiches de Classe (Tri Alphabétique Nom)")
+      cls_fiche = st.selectbox(
+          "Sélectionner la classe pour la fiche",
+          st.session_state.classes_db["Classe"].unique(),
+          key="fiche_cls_sel",
+      )
+
+      pdf_fiche_bytes = generer_pdf_liste_eleves_classe(cls_fiche)
+      st.download_button(
+          f"📥 Télécharger la Liste Officielle de {cls_fiche} (PDF)",
+          data=pdf_fiche_bytes,
+          file_name=f"Liste_Eleves_{cls_fiche}.pdf",
+          mime="application/pdf",
+      )
+
+    with tr_absences:
+      st.markdown("### 📉 Registre des Absences et Retards & Téléchargement PDF")
+      cls_abs_sel = st.selectbox(
+          "Filtrer par classe",
+          ["Toutes"] + list(st.session_state.classes_db["Classe"].unique()),
+          key="abs_report_cls_sel",
+      )
+
+      df_abs_disp = (
+          st.session_state.absences_db
+          if "absences_db" in st.session_state
+          else pd.DataFrame()
+      )
+      if not df_abs_disp.empty and cls_abs_sel != "Toutes" and "Classe" in df_abs_disp.columns:
+        df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
+
+      if not df_abs_disp.empty:
+        st.dataframe(df_abs_disp, use_container_width=True)
+        pdf_abs_bytes = generer_pdf_liste_absences(cls_abs_sel)
+        st.download_button(
+            f"📥 Télécharger la Liste des Absences ({cls_abs_sel}) (PDF)",
+            data=pdf_abs_bytes,
+            file_name=f"Registre_Absences_{cls_abs_sel}.pdf",
+            mime="application/pdf",
+        )
+      else:
+        st.info("Aucune absence ou retard répertorié pour cette sélection.")
 
     with tr_cahier:
-        st.markdown("### 📑 Registre Général des Cahiers de Texte")
+      st.markdown("### 📑 Registre Général des Cahiers de Texte")
+      
+      with st.form("form_cahier_texte_admin"):
+        d_ct = st.date_input("Date du cours")
+        classe_autorisee = st.selectbox("Classe", st.session_state.classes_db["Classe"].unique(), key="ct_cls")
+        m_ct = st.text_input("Matière")
+        c_ct = st.text_area("Contenu de la séance")
+        t_ct = st.text_area("Travail à faire")
         
-        with st.form("form_cahier_texte_admin"):
-            d_ct = st.date_input("Date du cours")
-            classe_autorisee = st.selectbox("Classe", st.session_state.classes_db["Classe"].unique(), key="ct_cls")
-            m_ct = st.text_input("Matière")
-            c_ct = st.text_area("Contenu de la séance")
-            t_ct = st.text_area("Travail à faire")
-            
-            if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
-                new_ct = {
-                    "Professeur": "Administration",
-                    "Date": str(d_ct),
-                    "Classe": classe_autorisee,
-                    "Matière": m_ct,
-                    "Contenu": c_ct,
-                    "Travail à faire": t_ct,
-                }
-                
-                df_new_ct = pd.DataFrame([new_ct])
-                if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
-                    st.session_state.cahier_textes = df_new_ct
-                else:
-                    st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
-                
-                st.success("✅ Cahier de texte enregistré localement avec succès !")
-                
-                import time
-                time.sleep(1.5)
-                st.rerun()
+        if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
+          new_ct = {
+              "Professeur": "Administration",
+              "Date": str(d_ct),
+              "Classe": classe_autorisee,
+              "Matière": m_ct,
+              "Contenu": c_ct,
+              "Travail à faire": t_ct,
+          }
+          
+          df_new_ct = pd.DataFrame([new_ct])
+          if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
+            st.session_state.cahier_textes = df_new_ct
+          else:
+            st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, df_new_ct], ignore_index=True)
+          
+          st.success("✅ Cahier de texte enregistré localement avec succès !")
+          
+          import time
+          time.sleep(1.5)
+          st.rerun()
 
-    with tr_assistant:
-        st.markdown("### 🤖 Assistant Pédagogique Intelligent Nelson Mandela")
-        q_ia = st.text_input(
-            "Posez une question sur le fonctionnement pédagogique ou l'organisation",
-            key="input_q_ia_admin"
-        )
-        if q_ia:
-            rep_ia = assistant_ia_repondre(q_ia)
-            st.markdown(
-                f"""
-                <div style="background-color: #FFFFFF; padding: 20px; border-radius: 18px; border-left: 6px solid #0EA5E9; margin-top: 15px;">
-                    <h5 style="color: #0EA5E9; margin: 0 0 8px 0;">Réponse de l'Assistant :</h5>
-                    <p style="margin: 0; color: #0F172A; font-size: 1.05rem;">{rep_ia}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    # --- NOUVEL ONGLET ADÉQUAT : SYNTHÈSE & STATISTIQUES ADMINISTRATIVES ---
+    with tr_stats:
+      st.markdown("### 📊 Synthèse & Tableaux de Bord Statistiques")
+      
+      col_st1, col_st2, col_st3 = st.columns(3)
+      
+      nb_eleves = len(st.session_state.eleves_db) if "eleves_db" in st.session_state else 0
+      nb_classes = len(st.session_state.classes_db) if "classes_db" in st.session_state else 0
+      nb_absences = len(st.session_state.absences_db) if "absences_db" in st.session_state else 0
+      
+      with col_st1:
+        st.metric("Total Élèves Inscrits", nb_eleves)
+      with col_st2:
+        st.metric("Total Classes Actives", nb_classes)
+      with col_st3:
+        st.metric("Total Incidents / Absences", nb_absences)
+        
+      st.markdown("---")
+      st.markdown("#### 🏫 Répartition des Élèves par Classe")
+      if "eleves_db" in st.session_state and not st.session_state.eleves_db.empty and "Classe" in st.session_state.eleves_db.columns:
+        df_eff = st.session_state.eleves_db["Classe"].value_counts().reset_index()
+        df_eff.columns = ["Classe", "Effectif Élèves"]
+        st.dataframe(df_eff, use_container_width=True)
+      else:
+        st.info("Données insuffisantes pour afficher la répartition par classe.")
