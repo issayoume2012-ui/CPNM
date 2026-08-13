@@ -21,15 +21,14 @@ SUPABASE_URL = st.secrets.get("SUPABASE_URL", os.environ.get("SUPABASE_URL", "ht
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", os.environ.get("SUPABASE_KEY", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNpa3hoam9wb2lscHVpY2N4ZXVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2MjA1MDcsImV4cCI6MjEwMjE5NjUwN30.-6A6YYue0XBnltT9rjHu1Uw2LutnvmJrgELc1G4ShHA"))
 
 @st.cache_resource
+@st.cache_resource
 def initialiser_supabase() -> Client:
-    global py_client
-    if py_client is None:
-        try:
-            py_client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        except Exception as e:
-            st.error(f"Erreur de connexion à Supabase PostgreSQL : {e}")
-            py_client = None
-    return py_client
+    try:
+        client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        return client
+    except Exception as e:
+        st.error(f"Erreur de connexion à Supabase PostgreSQL : {e}")
+        return None
 
 supabase = initialiser_supabase()
 
