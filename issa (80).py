@@ -55,9 +55,13 @@ def trier_eleves_par_nom(df):
     if df is None or df.empty: return df
     df_copy = df.copy()
     if "Nom" in df_copy.columns and "Prénom" in df_copy.columns:
-        df_copy["Nom_Sort"] = df_copy["Nom"].astype(str).str.strip().str.upper()
-        df_copy["Prenom_Sort"] = df_copy["Prénom"].astype(str).str.strip().str.upper()
-        df_copy = df_copy.sort_values(by=["Nom_Sort", "Prenom_Sort"]).drop(columns=["Nom_Sort", "Prenom_Sort"])
+        df_copy["Nom"] = df_copy["Nom"].fillna("").astype(str)
+        df_copy["Prénom"] = df_copy["Prénom"].fillna("").astype(str)
+        df_copy["Nom_Sort"] = df_copy["Nom"].str.strip().str.upper()
+        df_copy["Prenom_Sort"] = df_copy["Prénom"].str.strip().str.upper()
+        df_copy = df_copy.sort_values(by=["Nom_Sort", "Prenom_Sort"]).drop(columns=["Nom_Sort", "Prenom_Sort"], errors="ignore")
+    elif "Nom Complet" in df_copy.columns:
+        df_copy = df_copy.sort_values(by="Nom Complet")
     return df_copy.reset_index(drop=True)
 
 def synchroniser_listes_blanches():
@@ -900,7 +904,7 @@ def obtenir_cycle_classe(classe_nom):
       and "Classe" in st.session_state.classes_db.columns
   ):
     res = st.session_state.classes_db[
-        st.session_state.classes_db["Classe"].str.strip().str.upper()
+        st.session_state.classes_db["Classe"].astype(str).str.strip().str.upper()
         == classe_str.upper()
     ]
     if not res.empty and pd.notna(res.iloc[0].get("Cycle")):
@@ -1010,7 +1014,8 @@ def obtenir_coefficient_matiere(classe, matiere):
   ):
     c_db = st.session_state.coefficients_db
     if "Classe" in c_db.columns and "Matière" in c_db.columns:
-      res = c_db[(c_db["Classe"] == classe) & (c_db["Matière"] == matiere)]
+      cls_target = str(classe).strip().upper()
+      res = c_db[(c_db["Classe"].astype(str).str.strip().str.upper() == cls_target) & (c_db["Matière"] == matiere)]
       if not res.empty and pd.notna(res.iloc[0].get("Coefficient")):
         return float(res.iloc[0]["Coefficient"])
 
@@ -1044,7 +1049,8 @@ def obtenir_bareme_matiere(classe, matiere):
   ):
     c_db = st.session_state.coefficients_db
     if "Classe" in c_db.columns and "Matière" in c_db.columns:
-      res = c_db[(c_db["Classe"] == classe) & (c_db["Matière"] == matiere)]
+      cls_target = str(classe).strip().upper()
+      res = c_db[(c_db["Classe"].astype(str).str.strip().str.upper() == cls_target) & (c_db["Matière"] == matiere)]
       if (
           not res.empty
           and "Barème" in res.columns
@@ -1503,25 +1509,25 @@ def calculer_bulletin_eleve(classe, eleve, periode):
   }
 
 def get_pdf_bytes(pdf) -> bytes:
-  """Fonction robuste pour extraire les octets d'un objet FPDF / FPDF2 sans échec."""
+  """Fonction ultra-robuste pour extraire les octets d'un objet FPDF / FPDF2 sans échec."""
   try:
-    # Pour fpdf2 moderne, pdf.output() sans argument retourne directement des octets/bytearray
     res = pdf.output()
     if isinstance(res, (bytes, bytearray)):
       return bytes(res)
     elif isinstance(res, str):
-      return res.encode('latin1')
+      return res.encode('latin1', errors='ignore')
   except Exception:
     pass
   try:
     res = pdf.output(dest='S')
     if isinstance(res, str):
-      return res.encode('latin1')
+      return res.encode('latin1', errors='ignore')
     elif isinstance(res, (bytes, bytearray)):
       return bytes(res)
   except Exception:
     pass
   return b""
+
 def generer_pdf_bulletin(bul_data):
   pdf = FPDF()
   try:
@@ -1667,22 +1673,12 @@ def generer_pdf_bulletin(bul_data):
       chef_nom="Inspecteur / Directeur IEF Saint-Louis",
   )
 
-  # Utilisation directe de output(dest='S').encode('latin1') pour garantir un rendu valide dans Streamlit
-  try:
-    pdf_output = pdf.output(dest='S')
-    if isinstance(pdf_output, str):
-      return pdf_output.encode('latin1', errors='ignore')
-    elif isinstance(pdf_output, (bytes, bytearray)):
-      return bytes(pdf_output)
-  except Exception:
-    pass
   return get_pdf_bytes(pdf)
 
 
 def generer_zip_bulletins_classe(classe, periode):
   eleves_df = st.session_state.eleves_db
   if eleves_df is not None and not eleves_df.empty and "Classe" in eleves_df.columns:
-    # Filtrage robuste insensible à la casse et aux espaces
     cls_target = str(classe).strip().upper()
     eleves = eleves_df[eleves_df["Classe"].astype(str).str.strip().str.upper() == cls_target]
   else:
@@ -1698,12 +1694,15 @@ def generer_zip_bulletins_classe(classe, periode):
   zip_buffer = io.BytesIO()
   with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
     for eleve in eleves_list:
-      bul_data = calculer_bulletin_eleve(classe, eleve, periode)
-      pdf_bytes = generer_pdf_bulletin(bul_data)
-      filename = (
-          f"Bulletin_{classe}_{eleve.replace(' ', '_')}_{periode.replace(' ', '_')}.pdf"
-      )
-      zip_file.writestr(filename, pdf_bytes)
+      try:
+        bul_data = calculer_bulletin_eleve(classe, eleve, periode)
+        pdf_bytes = generer_pdf_bulletin(bul_data)
+        if pdf_bytes:
+          safe_eleve = str(eleve).replace(" ", "_").replace("/", "_")
+          filename = f"Bulletin_{classe}_{safe_eleve}_{periode.replace(' ', '_')}.pdf"
+          zip_file.writestr(filename, pdf_bytes)
+      except Exception as e:
+        print(f"Erreur ZIP pour {eleve}: {e}")
   return zip_buffer.getvalue()
 
 
@@ -1715,8 +1714,9 @@ def generer_pdf_liste_eleves_classe(classe):
     df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
   else:
     if "Classe" in st.session_state.eleves_db.columns:
+      cls_target = str(classe).strip().upper()
       df_eleves = st.session_state.eleves_db[
-          st.session_state.eleves_db["Classe"] == classe
+          st.session_state.eleves_db["Classe"].astype(str).str.strip().str.upper() == cls_target
       ]
     else:
       df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
@@ -1793,7 +1793,8 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
       else pd.DataFrame()
   )
   if not df_abs.empty and classe_filtre != "Toutes" and "Classe" in df_abs.columns:
-    df_abs = df_abs[df_abs["Classe"] == classe_filtre]
+    cls_target = str(classe_filtre).strip().upper()
+    df_abs = df_abs[df_abs["Classe"].astype(str).str.strip().str.upper() == cls_target]
 
   pdf = FPDF()
   try:
@@ -1851,7 +1852,6 @@ def generer_pdf_edt(classe, df_edt):
 
   pdf.add_page()
   
-  # Correction du nom de classe si vide ou "nan"
   nom_cls_affiche = str(classe).upper() if classe and str(classe).strip().lower() != "nan" else "CLASSE"
   ajouter_entete_senegal_officiel(
       pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {nom_cls_affiche}"
@@ -1861,7 +1861,6 @@ def generer_pdf_edt(classe, df_edt):
   pdf.set_fill_color(14, 165, 233)
   pdf.set_text_color(255, 255, 255)
 
-  # Ordre chronologique de référence souhaité
   ordre_heures_ref = [
       "08h-09h", "09h-10h", "10h-11h", 
       "11h00-11h30", "11h30-12h", 
@@ -1869,10 +1868,8 @@ def generer_pdf_edt(classe, df_edt):
       "15h-16h", "16h-17h", "17h-18h", "18h-19h"
   ]
   
-  # Filtrer et ordonner les colonnes présentes dans le dataframe selon l'ordre chronologique
   cols_disponibles = list(df_edt.columns)
   colonnes_triees = [h for h in ordre_heures_ref if h in cols_disponibles]
-  # Ajouter les colonnes restantes si l'utilisateur en a ajouté d'autres
   for c in cols_disponibles:
     if c not in colonnes_triees:
       colonnes_triees.append(c)
@@ -1882,7 +1879,6 @@ def generer_pdf_edt(classe, df_edt):
   largeur_disponible = 277 - largeur_jour
   col_w = max(15, largeur_disponible / nb_cols) if nb_cols > 0 else 20
 
-  # En-tête du tableau
   pdf.cell(largeur_jour, 7, "Jour / Heure", 1, 0, "C", True)
   for col in colonnes_triees:
     pdf.cell(col_w, 7, str(col)[:10], 1, 0, "C", True)
@@ -1893,7 +1889,6 @@ def generer_pdf_edt(classe, df_edt):
   fill = False
   pdf.set_fill_color(240, 249, 255)
 
-  # Remplissage des lignes par jour
   for jour in df_edt.index:
     pdf.cell(largeur_jour, 8, str(jour), 1, 0, "C", True)
     for col in colonnes_triees:
@@ -2308,9 +2303,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             "eleves_db" in st.session_state
             and "Classe" in st.session_state.eleves_db.columns
         ):
+          cls_target = str(classe_autorisee).strip().upper()
           df_eleves_classe = trier_eleves_par_nom(
               st.session_state.eleves_db[
-                  st.session_state.eleves_db["Classe"] == classe_autorisee
+                  st.session_state.eleves_db["Classe"].astype(str).str.strip().str.upper() == cls_target
               ]
           )
 
@@ -2589,9 +2585,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           "eleves_db" in st.session_state
           and "Classe" in st.session_state.eleves_db.columns
       ):
+        cls_target = str(classe_autorisee).strip().upper()
         df_el_app = trier_eleves_par_nom(
             st.session_state.eleves_db[
-                st.session_state.eleves_db["Classe"] == classe_autorisee
+                st.session_state.eleves_db["Classe"].astype(str).str.strip().str.upper() == cls_target
             ]
         )
 
@@ -2652,9 +2649,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             "eleves_db" in st.session_state
             and "Classe" in st.session_state.eleves_db.columns
         ):
+          cls_target = str(classe_autorisee).strip().upper()
           df_el_vs = trier_eleves_par_nom(
               st.session_state.eleves_db[
-                  st.session_state.eleves_db["Classe"] == classe_autorisee
+                  st.session_state.eleves_db["Classe"].astype(str).str.strip().str.upper() == cls_target
               ]
           )
 
@@ -2774,7 +2772,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         st.dataframe(ct_sub, use_container_width=True)
 
     with t_edt_prof:
-      # --- Ordre chronologique de référence ---
       ordre_heures_ref = [
           "08h-09h", "09h-10h", "10h-11h", 
           "11h00-11h30", "11h30-12h", 
@@ -2782,12 +2779,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           "15h-16h", "16h-17h", "17h-18h", "18h-19h"
       ]
 
-      # Récupération sécurisée du nom de la classe
       cls_nom_affiche = str(classe_autorisee).upper() if 'classe_autorisee' in locals() and classe_autorisee and str(classe_autorisee).strip().lower() != "nan" else "CLASSE"
 
       st.markdown(f"### 📅 Emploi du Temps Officiel ({cls_nom_affiche})")
 
-      # Récupération et réorganisation de la grille d'emploi du temps
       edt_df = get_or_create_edt(classe_autorisee)
       cols_dispo = list(edt_df.columns)
       colonnes_triees = [h for h in ordre_heures_ref if h in cols_dispo]
@@ -2795,7 +2790,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
           if c not in colonnes_triees:
               colonnes_triees.append(c)
 
-      # Affichage du DataFrame avec les colonnes triées dans l'ordre chronologique
       st.dataframe(edt_df[colonnes_triees], use_container_width=True)
 
       pdf_edt_p = generer_pdf_edt(classe_autorisee, edt_df[colonnes_triees])
@@ -3006,7 +3000,6 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         )
 
     with tp_edt:
-      # --- Ordre chronologique de référence ---
       ordre_heures_ref = [
           "08h-09h", "09h-10h", "10h-11h", 
           "11h00-11h30", "11h30-12h", 
@@ -3014,12 +3007,10 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
           "15h-16h", "16h-17h", "17h-18h", "18h-19h"
       ]
 
-      # Récupération sécurisée du nom de la classe
       cls_nom_affiche = str(classe_p).upper() if 'classe_p' in locals() and classe_p and str(classe_p).strip().lower() != "nan" else "CLASSE"
 
       st.markdown(f"### 📅 Emploi du Temps Officiel ({cls_nom_affiche})")
 
-      # Récupération et réorganisation de la grille d'emploi du temps
       edt_df = get_or_create_edt(classe_p)
       cols_dispo = list(edt_df.columns)
       colonnes_triees = [h for h in ordre_heures_ref if h in cols_dispo]
@@ -3027,7 +3018,6 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
           if c not in colonnes_triees:
               colonnes_triees.append(c)
 
-      # Affichage du DataFrame avec les colonnes triées dans l'ordre chronologique
       st.dataframe(edt_df[colonnes_triees], use_container_width=True)
 
       pdf_edt_parent = generer_pdf_edt(classe_p, edt_df[colonnes_triees])
@@ -3583,7 +3573,8 @@ elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
             else pd.DataFrame()
         )
         if not df_abs_disp.empty and cls_abs_sel != "Toutes" and "Classe" in df_abs_disp.columns:
-            df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
+            cls_target = str(cls_abs_sel).strip().upper()
+            df_abs_disp = df_abs_disp[df_abs_disp["Classe"].astype(str).str.strip().str.upper() == cls_target]
 
         if not df_abs_disp.empty:
             st.dataframe(df_abs_disp, use_container_width=True)
