@@ -14,8 +14,15 @@ import bcrypt
 from supabase import create_client, Client
 
 # ==========================================
-# 0. CONFIGURATION SUPABASE & SÉCURITÉ
+# 0. CONFIGURATION DE LA PAGE & SUPABASE
 # ==========================================
+st.set_page_config(
+    page_title="Sénégal - Portail Éducatif National École Président Nelson Mandela",
+    page_icon="🇸🇳",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
 SUPABASE_URL = "https://gxzprzTufqvblwoyqihd.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
 
@@ -24,6 +31,15 @@ def init_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 supabase: Client = init_supabase()
+
+# ==========================================
+# 0. BIS. INITIALISATION SÉCURISÉE DU SESSION_STATE
+# ==========================================
+if "espace_actif" not in st.session_state:
+    st.session_state.espace_actif = "🏫 Administration XXL & Rapports"
+
+if "authenticated_admin" not in st.session_state:
+    st.session_state.authenticated_admin = False
 
 def sync_to_supabase(table_name, df):
     """Synchronise un DataFrame avec une table Supabase."""
@@ -413,7 +429,6 @@ if st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
         st.info(
             "Données insuffisantes pour afficher la répartition par classe."
         )
-
 # ==========================================
 # 0. BIS. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
