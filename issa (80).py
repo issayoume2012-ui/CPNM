@@ -12,21 +12,18 @@ import streamlit as st
 import bcrypt
 from supabase import create_client, Client
 
-# --- CONFIGURATION SUPABASE ---
-# Récupération sécurisée via secrets Streamlit ou variables locales
+# --- CONFIGURATION & CONNEXION SUPABASE ---
+# L'URL exacte du projet Supabase
+DEFAULT_URL = "https://gxzprzrufqvblwoyqihd.supabase.co"
+DEFAULT_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
+
 try:
     SUPABASE_URL = st.secrets["supabase"]["SUPABASE_URL"]
     SUPABASE_KEY = st.secrets["supabase"]["SUPABASE_KEY"]
 except Exception:
-    # Valeurs par défaut si exécuté en local sans secrets.toml
-    SUPABASE_URL = "https://gxzprzrufqvblwoyqihd.supabase.co"
-    SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
+    SUPABASE_URL = DEFAULT_URL
+    SUPABASE_KEY = DEFAULT_KEY
 
-@st.cache_resource
-def init_supabase() -> Client:
-    return create_client(SUPABASE_URL, SUPABASE_KEY)
-
-supabase = init_supabase()
 @st.cache_resource
 def init_supabase() -> Client:
     return create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -35,7 +32,6 @@ supabase = init_supabase()
 
 # --- INITIALISATION ET SYNCHRONISATION SUPABASE / SESSION STATE ---
 
-# Helper pour convertir les résultats Supabase en DataFrame
 def charger_table_supabase(table_name: str, cols_mapping: dict = None) -> pd.DataFrame:
     try:
         res = supabase.table(table_name).select("*").execute()
@@ -197,13 +193,6 @@ def nettoyer_texte_pdf(texte):
     return str(texte).encode('latin-1', 'replace').decode('latin-1')
 
 ADMIN_EMAIL = "cpnm@gmail.com"
-SCEAU_SENEGAL_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz"
-    "AAAOxAAADsQBlSsOGwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ2V3ZgZ3AAAAYklE"
-    "EQVR4nO3BMQEAAADCoPVPbQwfoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAICXAcB4AAEq99A1"
-    "AAAAAElFTkSuQmCC"
-)
 
 def trier_eleves_par_nom(df):
     if df is None or df.empty: return df
@@ -445,7 +434,6 @@ def afficher_espace_parents():
         st.info("Veuillez vous authentifier par Téléphone/Email ou Nom de l'élève pour accéder au suivi personnalisé.")
         with st.form("form_login_parent"):
             col_p1, col_p2 = st.columns(2)
-            # Champs pré-remplis avec 771234567 et Issa
             with col_p1: par_ident = st.text_input("Numéro de téléphone ou Email du Parent", value="771234567")
             with col_p2: nom_eleve_par = st.text_input("Nom ou Prénom de l'élève", value="issa")
             btn_par_login = st.form_submit_button("Accéder au Portail Parent")
@@ -517,7 +505,7 @@ def afficher_espace_parents():
                 for _, row in df_taf_p.iterrows():
                     st.markdown(
                         f"""
-                        <div class="work-card">
+                        <div style="background-color: #F8FAFC; padding: 15px; border-radius: 10px; margin-bottom: 15px;">
                             <h4 style="color: #0EA5E9; margin: 0 0 10px 0;">{row.get('Titre', 'Devoir')} ({row.get('Matière', 'Général')})</h4>
                             <p style="margin: 0 0 8px 0; color: #334155;"><b>Professeur :</b> {row.get('Professeur', 'N/A')} | <b>À rendre pour le :</b> <span style="color: #DC2626; font-weight: 800;">{row.get('DateRendu', 'N/A')}</span></p>
                             <p style="margin: 0; color: #0F172A; font-size: 1.05rem;">{row.get('Consignes', '')}</p>
@@ -579,7 +567,7 @@ def afficher_espace_parents():
                             "Urgent": urgent_m
                         }
 
-                        # Insertion distante dans la base de données PostgreSQL (Supabase)
+                        # Insertion distante dans Supabase
                         try:
                             supabase.table("messages_parents").insert({
                                 "id": msg_id,
