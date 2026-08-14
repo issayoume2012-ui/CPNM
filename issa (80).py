@@ -26,6 +26,7 @@ st.set_page_config(
 # ==========================================
 # 0. CONFIGURATION SUPABASE & SÉCURITÉ
 # ==========================================
+
 SUPABASE_URL = "https://gxzprzTufqvblwoyqihd.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
 
