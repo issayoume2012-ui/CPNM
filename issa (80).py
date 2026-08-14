@@ -11,6 +11,12 @@ from fpdf import FPDF
 import streamlit as st
 import bcrypt
 
+# --- INITIALISATION DU SESSION STATE ---
+if "messages_parents_db" not in st.session_state:
+    st.session_state.messages_parents_db = pd.DataFrame(columns=[
+        "ID", "Emetteur", "RoleEmetteur", "DateEnvoi", "Classe", "Objet", "Message", "Urgent"
+    ])
+
 # --- FONCTIONS UTILITAIRES DE BASE ---
 def normaliser_texte(texte):
     if not texte: return ""
@@ -400,3 +406,7 @@ def afficher_espace_parents():
                         st.session_state.messages_parents_db = pd.concat([st.session_state.messages_parents_db, pd.DataFrame([nouveau_msg])], ignore_index=True)
                         st.success("✅ Message transmis avec succès !")
                     else: st.error("Veuillez remplir l'objet et le message.")
+
+# --- POINT D'ENTRÉE DU SCRIPT STREAMLIT ---
+if __name__ == "__main__":
+    afficher_espace_parents()
