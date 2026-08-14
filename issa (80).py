@@ -23,10 +23,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# ==========================================
-# 0. CONFIGURATION SUPABASE & SÉCURITÉ
-# ==========================================
-
 SUPABASE_URL = "https://gxzprzTufqvblwoyqihd.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
 
@@ -40,7 +36,7 @@ supabase: Client = init_supabase()
 # 0. BIS. INITIALISATION SÉCURISÉE DU SESSION_STATE
 # ==========================================
 if "espace_actif" not in st.session_state:
-    st.session_state.espace_actif = "🏫 Administration XXL & Rapports"
+    st.session_state.espace_actif = "Rapport Global"
 
 if "authenticated_admin" not in st.session_state:
     st.session_state.authenticated_admin = False
@@ -49,7 +45,7 @@ def sync_to_supabase(table_name, df):
     """Synchronise un DataFrame avec une table Supabase."""
     try:
         data = df.to_dict(orient="records")
-        response = supabase.table(table_name).upsert(data).execute()
+        supabase.table(table_name).upsert(data).execute()
         return True
     except Exception as e:
         st.error(f"Erreur de synchronisation avec Supabase ({table_name}) : {e}")
@@ -78,8 +74,17 @@ def normaliser_texte(texte):
 
 def nettoyer_texte_pdf(texte):
     """Nettoie et encode le texte pour garantir la compatibilité PDF sans erreur d'affichage."""
-    if not texte: return ""
-    return str(texte).encode('latin-1', 'replace').decode('latin-1')
+    if not isinstance(texte, str):
+        texte = str(texte) if texte is not None else ""
+    return (
+        texte.replace("€", "EUR")
+        .replace("’", "'")
+        .replace("‘", "'")
+        .replace("“", '"')
+        .replace("”", '"')
+        .replace("–", "-")
+        .replace("—", "-")
+    )
 
 ADMIN_EMAIL = "cpnm@gmail.com"
 
@@ -120,323 +125,8 @@ def synchroniser_listes_blanches():
 
 
 # ==========================================
-# SECTION ADMINISTRATIVE XXL & RAPPORTS
-# ==========================================
-if st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
-  st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
-      " Globaux, Téléchargements & Pilotage Administratif</div>",
-      unsafe_allow_html=True,
-  )
-
-  # --- VÉRIFICATION DE LA CONNEXION ADMINISTRATEUR ---
-  if not st.session_state.get("authenticated_admin", False):
-    st.error(
-        "🔒 Accès restreint : Vous devez être connecté en tant qu'Administrateur"
-        " pour accéder à cet espace."
-    )
-    st.info(
-        "Veuillez vous rendre dans l'onglet **🔒 Espace Administration"
-        " (Sécurisé)** pour vous authentifier."
-    )
-  else:
-    tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_stats = st.tabs([
-        "📄 Édition & Téléchargement des Bulletins",
-        "📋 Fiches Officielles de Classe (Tri Nom)",
-        "📉 Registre des Absences",
-        "📑 Registre Général des Cahiers de Texte",
-        "📊 Synthèse & Tableaux de Bord Statistiques",
-    ])
-
-    with tr_bulletins:
-      st.markdown("### 📄 Génération & Téléchargement des Bulletins par Élève")
-      cls_rep = st.selectbox(
-          "Sélectionner la classe",
-          st.session_state.classes_db["Classe"].unique(),
-          key="rep_cls_sel",
-      )
-      pers_rep = obtenir_periodes_pour_classe(cls_rep)
-
-      if pers_rep:
-        per_rep = st.selectbox(
-            "Sélectionner la période", pers_rep, key="rep_per_sel"
-        )
-
-        df_el_rep = pd.DataFrame()
-        if (
-            "eleves_db" in st.session_state
-            and "Classe" in st.session_state.eleves_db.columns
-        ):
-          df_el_rep = trier_eleves_par_nom(
-              st.session_state.eleves_db[
-                  st.session_state.eleves_db["Classe"] == cls_rep
-              ]
-          )
-
-        if not df_el_rep.empty:
-          list_el_rep = df_el_rep["Nom Complet"].tolist()
-          el_rep_sel = st.selectbox(
-              "Sélectionner un élève spécifique", list_el_rep, key="rep_el_sel"
-          )
-
-          bul_data_individual = calculer_bulletin_eleve(
-              cls_rep, el_rep_sel, per_rep
-          )
-
-          st.markdown(
-              f"#### Bulletin de : **{el_rep_sel}** ({cls_rep} - {per_rep})"
-          )
-          st.dataframe(
-              pd.DataFrame(bul_data_individual["lignes"]),
-              use_container_width=True,
-          )
-
-          col_dl_b1, col_dl_b2 = st.columns(2)
-          with col_dl_b1:
-            pdf_indiv_bytes = generer_pdf_bulletin(bul_data_individual)
-            st.download_button(
-                f"📥 Télécharger le Bulletin de {el_rep_sel} (PDF)",
-                data=pdf_indiv_bytes,
-                file_name=f"Bulletin_{cls_rep}_{el_rep_sel}_{per_rep}.pdf",
-                mime="application/pdf",
-            )
-
-          with col_dl_b2:
-            zip_class_bytes = generer_zip_bulletins_classe(cls_rep, per_rep)
-            st.download_button(
-                f"📦 Télécharger Tous les Bulletins de {cls_rep} (.ZIP)",
-                data=zip_class_bytes,
-                file_name=f"Bulletins_{cls_rep}_{per_rep}.zip",
-                mime="application/zip",
-            )
-        else:
-          st.warning("Aucun élève dans cette classe.")
-
-    with tr_listes:
-      st.markdown("### 📋 Imprimer les Fiches de Classe (Tri Alphabétique Nom)")
-      cls_fiche = st.selectbox(
-          "Sélectionner la classe pour la fiche",
-          st.session_state.classes_db["Classe"].unique(),
-          key="fiche_cls_sel",
-      )
-
-      pdf_fiche_bytes = generer_pdf_liste_eleves_classe(cls_fiche)
-      st.download_button(
-          f"📥 Télécharger la Liste Officielle de {cls_fiche} (PDF)",
-          data=pdf_fiche_bytes,
-          file_name=f"Liste_Eleves_{cls_fiche}.pdf",
-          mime="application/pdf",
-      )
-
-    with tr_absences:
-      st.markdown("### 📉 Registre des Absences et Retards & Téléchargement PDF")
-      cls_abs_sel = st.selectbox(
-          "Filtrer par classe",
-          ["Toutes"] + list(st.session_state.classes_db["Classe"].unique()),
-          key="abs_report_cls_sel",
-      )
-
-      df_abs_disp = (
-          st.session_state.absences_db
-          if "absences_db" in st.session_state
-          else pd.DataFrame()
-      )
-      if (
-          not df_abs_disp.empty
-          and cls_abs_sel != "Toutes"
-          and "Classe" in df_abs_disp.columns
-      ):
-        df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
-
-      if not df_abs_disp.empty:
-        edited_absences = st.data_editor(
-            df_abs_disp,
-            use_container_width=True,
-            key="editor_absences_supabase",
-            num_rows="dynamic"
-        )
-        
-        if st.button("🔄 Synchroniser les modifications des absences avec Supabase", key="btn_sync_abs"):
-          try:
-            success = sync_dataframe_to_supabase("absences", edited_absences)
-            if success:
-              st.session_state.absences_db = edited_absences
-              enregistrer_log_action("Admin", "Synchronisation", "Mise à jour du registre des absences")
-              st.success("✅ Registre des absences synchronisé avec succès dans Supabase !")
-            else:
-              st.error("❌ Erreur lors de la synchronisation avec Supabase.")
-          except Exception as e:
-            st.error(f"❌ Une exception s'est produite : {e}")
-
-        pdf_abs_bytes = generer_pdf_liste_absences(cls_abs_sel)
-        st.download_button(
-            f"📥 Télécharger la Liste des Absences ({cls_abs_sel}) (PDF)",
-            data=pdf_abs_bytes,
-            file_name=f"Registre_Absences_{cls_abs_sel}.pdf",
-            mime="application/pdf",
-        )
-      else:
-        st.info("Aucune absence ou retard répertorié pour cette sélection.")
-
-    # --- REGISTRE GÉNÉRAL DES CAHIERS DE TEXTE ---
-    with tr_cahier:
-      st.markdown("### 📑 Consultation des Cahiers de Texte Enseignants")
-      st.info(
-          "Espace de suivi et de contrôle administratif de la progression"
-          " pédagogique renseignée par les enseignants."
-      )
-
-      df_ct_all = (
-          st.session_state.cahier_textes
-          if "cahier_textes" in st.session_state
-          else pd.DataFrame()
-      )
-
-      if not df_ct_all.empty:
-        col_f_ct1, col_f_ct2 = st.columns(2)
-        with col_f_ct1:
-          cls_ct_filter = st.selectbox(
-              "Filtrer par classe",
-              ["Toutes les classes"]
-              + list(st.session_state.classes_db["Classe"].unique()),
-              key="admin_filter_ct_cls",
-          )
-        with col_f_ct2:
-          mat_options = ["Toutes les matières"]
-          if "Matière" in df_ct_all.columns:
-            mat_options += list(df_ct_all["Matière"].dropna().unique())
-          mat_ct_filter = st.selectbox(
-              "Filtrer par matière",
-              mat_options,
-              key="admin_filter_ct_mat",
-          )
-
-        df_ct_filtered = df_ct_all.copy()
-        if (
-            cls_ct_filter != "Toutes les classes"
-            and "Classe" in df_ct_filtered.columns
-        ):
-          df_ct_filtered = df_ct_filtered[
-              df_ct_filtered["Classe"] == cls_ct_filter
-          ]
-        if (
-            mat_ct_filter != "Toutes les matières"
-            and "Matière" in df_ct_filtered.columns
-        ):
-          df_ct_filtered = df_ct_filtered[
-              df_ct_filtered["Matière"] == mat_ct_filter
-          ]
-
-        st.markdown("---")
-        st.markdown(
-            f"#### Registre des Séances ({len(df_ct_filtered)} enregistrement(s))"
-        )
-        
-        edited_cahier = st.data_editor(
-            df_ct_filtered,
-            use_container_width=True,
-            key="editor_cahier_supabase",
-            num_rows="dynamic"
-        )
-        
-        if st.button("🔄 Synchroniser les modifications du cahier de texte", key="btn_sync_cahier"):
-          try:
-            success = sync_dataframe_to_supabase("cahier_textes", edited_cahier)
-            if success:
-              st.session_state.cahier_textes = edited_cahier
-              enregistrer_log_action("Admin", "Synchronisation", "Mise à jour du cahier de textes")
-              st.success("✅ Cahier de textes synchronisé avec succès dans Supabase !")
-            else:
-              st.error("❌ Erreur lors de la synchronisation avec Supabase.")
-          except Exception as e:
-            st.error(f"❌ Une exception s'est produite : {e}")
-
-        csv_ct = df_ct_filtered.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "📥 Télécharger le Cahier de Texte Filtré (CSV)",
-            data=csv_ct,
-            file_name=f"Cahier_de_texte_{cls_ct_filter}_{mat_ct_filter}.csv",
-            mime="text/csv",
-        )
-      else:
-        st.warning(
-            "Aucun contenu n'a été enregistré dans le cahier de texte pour le"
-            " moment."
-        )
-
-    # --- SYNTHÈSE & STATISTIQUES ADMINISTRATIVES ---
-    with tr_stats:
-      st.markdown("### 📊 Synthèse & Tableaux de Bord Statistiques")
-
-      col_st1, col_st2, col_st3 = st.columns(3)
-
-      nb_eleves = (
-          len(st.session_state.eleves_db)
-          if "eleves_db" in st.session_state
-          else 0
-      )
-      nb_classes = (
-          len(st.session_state.classes_db)
-          if "classes_db" in st.session_state
-          else 0
-      )
-      nb_absences = (
-          len(st.session_state.absences_db)
-          if "absences_db" in st.session_state
-          else 0
-      )
-
-      with col_st1:
-        st.metric("Total Élèves Inscrits", nb_eleves)
-      with col_st2:
-        st.metric("Total Classes Actives", nb_classes)
-      with col_st3:
-        st.metric("Total Incidents / Absences", nb_absences)
-
-      st.markdown("---")
-      st.markdown("#### 🏫 Répartition des Élèves par Classe")
-      if (
-          "eleves_db" in st.session_state
-          and not st.session_state.eleves_db.empty
-          and "Classe" in st.session_state.eleves_db.columns
-      ):
-        df_eff = (
-            st.session_state.eleves_db["Classe"]
-            .value_counts()
-            .reset_index()
-        )
-        df_eff.columns = ["Classe", "Effectif Élèves"]
-        
-        edited_eleves = st.data_editor(
-            st.session_state.eleves_db,
-            use_container_width=True,
-            key="editor_eleves_db_supabase",
-            num_rows="dynamic"
-        )
-        
-        if st.button("🔄 Synchroniser la base élèves et effectifs avec Supabase", key="btn_sync_eleves"):
-          try:
-            success = sync_dataframe_to_supabase("eleves", edited_eleves)
-            if success:
-              st.session_state.eleves_db = edited_eleves
-              enregistrer_log_action("Admin", "Synchronisation", "Mise à jour de la base des élèves")
-              st.success("✅ Base des élèves et répartition synchronisées avec Supabase avec succès !")
-              st.rerun()
-            else:
-              st.error("❌ Échec de la synchronisation de la base élèves avec Supabase.")
-          except Exception as e:
-            st.error(f"❌ Une erreur est survenue : {e}")
-            
-        st.markdown("##### Aperçu consolidé de la répartition")
-        st.dataframe(df_eff, use_container_width=True)
-      else:
-        st.info(
-            "Données insuffisantes pour afficher la répartition par classe."
-        )
-# ==========================================
 # 0. BIS. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
-
 SCEAU_SENEGAL_B64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAABHNCSVQICAgIfAhkiAAAAAlwSFlz"
     "AAAOxAAADsQBlSsOGwAAABl0RVh0U29mdHdhcmUAd3d3Lmlua3NjYXBlLm9yZ2V3ZgZ3AAAAYklE"
@@ -479,17 +169,8 @@ def assistant_ia_repondre(question: str) -> str:
     )
 
 # ==========================================
-# 1. CONFIGURATION DE LA PAGE & DESIGN XXL
+# 1. DESIGN XXL & STYLISME CSS
 # ==========================================
-st.set_page_config(
-    page_title=(
-        "Sénégal - Portail Éducatif National École Président Nelson Mandela"
-    ),
-    page_icon="🇸🇳",
-    layout="wide",
-    initial_sidebar_state="collapsed",
-)
-
 st.markdown(
     """
     <style>
@@ -580,27 +261,6 @@ st.markdown(
         animation: pulseGlow 3s infinite;
     }
 
-    .logo-frame-container img {
-        max-width: 100%;
-        max-height: 100%;
-        object-fit: contain;
-        border-radius: 14px;
-    }
-
-    .emblem-box {
-        background: #F0F9FF;
-        border: 4px solid #0EA5E9;
-        border-radius: 50%;
-        width: 115px;
-        height: 115px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        box-shadow: 0 10px 25px rgba(14, 165, 233, 0.35);
-        flex-shrink: 0;
-        animation: pulseGlow 3s infinite;
-    }
-
     .animated-card {
         border: 2px solid rgba(186, 230, 253, 0.9);
         padding: 40px 24px;
@@ -652,31 +312,6 @@ st.markdown(
         font-weight: 600 !important;
     }
 
-    .stTextInput input:focus, .stSelectbox select:focus, .stNumberInput input:focus {
-        border-color: #0EA5E9 !important;
-        box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.25) !important;
-    }
-
-    .work-card {
-        background: #FFFFFF;
-        border: 2px solid #BAE6FD;
-        border-left: 6px solid #0EA5E9;
-        border-radius: 18px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
-    }
-
-    .msg-card {
-        background: #FFFFFF;
-        border: 2px solid #C7D2FE;
-        border-left: 6px solid #4F46E5;
-        border-radius: 18px;
-        padding: 20px;
-        margin-bottom: 20px;
-        box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
-    }
-
     h1, h2, h3, h4, h5, h6, label, p, span {
         color: #0F172A !important;
     }
@@ -692,11 +327,12 @@ hide_streamlit_style = """
     </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
+
 # ==========================================
 # 2. INITIALISATION EXHAUSTIVE ET SYNCHRONISATION SUPABASE
 # ==========================================
 if "espace_actif" not in st.session_state:
-    st.session_state.espace_actif = "🏠 Accueil"
+    st.session_state.espace_actif = "Rapport Global"
 
 if "authenticated_admin" not in st.session_state:
     st.session_state.authenticated_admin = False
@@ -998,22 +634,14 @@ if "absences_db" not in st.session_state:
         st.session_state.absences_db = pd.DataFrame(columns=["Date", "Classe", "Élève", "Statut", "Motif"], data=[])
 
 synchroniser_listes_blanches()
+
 # ==========================================
-# 3. FONCTIONS MÉTIER & UTILITAIRES
+# 3. FONCTIONS MÉTIER & UTILITAIRES DE CALCUL
 # ==========================================
-
-import io
-import base64
-import os
-import pandas as pd
-
-
 def obtenir_cycle_classe(classe_nom):
     if not classe_nom:
         return "Élémentaire"
-
     classe_str = str(classe_nom).strip()
-
     if (
         "classes_db" in st.session_state
         and not st.session_state.classes_db.empty
@@ -1030,36 +658,16 @@ def obtenir_cycle_classe(classe_nom):
     if any(
         c in classe_clean
         for c in [
-            "6ÈME",
-            "6EME",
-            "5ÈME",
-            "5EME",
-            "4ÈME",
-            "4EME",
-            "3ÈME",
-            "3EME",
-            "COLLÈGE",
-            "COLLEGE",
+            "6ÈME", "6EME", "5ÈME", "5EME", "4ÈME", "4EME", "3ÈME", "3EME", "COLLÈGE", "COLLEGE"
         ]
     ):
         return "Collège"
     if any(
         classe_clean.startswith(prefix)
-        for prefix in [
-            "CI",
-            "CP",
-            "CE1",
-            "CE2",
-            "CM1",
-            "CM2",
-            "ÉLÉMENTAIRE",
-            "ELEMENTAIRE",
-        ]
+        for prefix in ["CI", "CP", "CE1", "CE2", "CM1", "CM2", "ÉLÉMENTAIRE", "ELEMENTAIRE"]
     ):
         return "Élémentaire"
-
     return "Élémentaire"
-
 
 def est_cycle_elementaire(cycle_or_classe):
     if not cycle_or_classe:
@@ -1071,7 +679,6 @@ def est_cycle_elementaire(cycle_or_classe):
         return False
     return est_cycle_elementaire(obtenir_cycle_classe(cycle_or_classe))
 
-
 def obtenir_periodes_pour_classe(classe_nom):
     cycle = obtenir_cycle_classe(classe_nom)
     if "periodes_db" in st.session_state and not st.session_state.periodes_db.empty:
@@ -1082,7 +689,6 @@ def obtenir_periodes_pour_classe(classe_nom):
             if "Période" in df_p.columns
             else ("Periode" if "Periode" in df_p.columns else None)
         )
-
         if col_cycle and col_periode:
             filtre = (
                 df_p[
@@ -1102,7 +708,6 @@ def obtenir_periodes_pour_classe(classe_nom):
     else:
         return ["1er Semestre", "2ème Semestre"]
 
-
 def obtenir_appreciation(moyenne, cycle="Collège", bareme=20):
     if pd.isna(moyenne):
         return "N/A"
@@ -1121,7 +726,6 @@ def obtenir_appreciation(moyenne, cycle="Collège", bareme=20):
         return "Insuffisant"
     else:
         return "Faible"
-
 
 def obtenir_coefficient_matiere(classe, matiere):
     if (
@@ -1153,9 +757,7 @@ def obtenir_coefficient_matiere(classe, matiere):
             and pd.notna(res.iloc[0].get("Coefficient"))
         ):
             return float(res.iloc[0]["Coefficient"])
-
     return 1.0
-
 
 def obtenir_bareme_matiere(classe, matiere):
     if (
@@ -1191,19 +793,11 @@ def obtenir_bareme_matiere(classe, matiere):
             and pd.notna(res.iloc[0].get("Barème"))
         ):
             return float(res.iloc[0]["Barème"])
-
     return 50.0 if est_cycle_elementaire(cycle_classe) else 20.0
-
 
 def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     try:
-        font_family = (
-            "DejaVu"
-            if "DejaVu" in pdf.core_fonts
-            or hasattr(pdf, "fonts")
-            and "DejaVu" in pdf.fonts
-            else "Arial"
-        )
+        font_family = "DejaVu" if "DejaVu" in pdf.core_fonts or hasattr(pdf, "fonts") and "DejaVu" in pdf.fonts else "Arial"
     except Exception:
         font_family = "Arial"
 
@@ -1224,26 +818,9 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     pdf.set_font(font_family, "B", 9)
     pdf.cell(0, 4, nettoyer_texte_pdf("MINISTÈRE DE L'ÉDUCATION NATIONALE"), 0, 1, "C")
     pdf.set_font(font_family, "B", 9)
-    pdf.cell(
-        0,
-        4,
-        nettoyer_texte_pdf("INSPECTION D'ACADÉMIE DE SAINT-LOUIS (IA SAINT-LOUIS)"),
-        0,
-        1,
-        "C",
-    )
+    pdf.cell(0, 4, nettoyer_texte_pdf("INSPECTION D'ACADÉMIE DE SAINT-LOUIS (IA SAINT-LOUIS)"), 0, 1, "C")
     pdf.set_font(font_family, "B", 9)
-    pdf.cell(
-        0,
-        4,
-        nettoyer_texte_pdf(
-            "INSPECTION DE L'ÉDUCATION ET DE LA FORMATION DE SAINT-LOUIS (IEF SAINT-LOUIS)"
-        ),
-        0,
-        1,
-        "C",
-    )
-
+    pdf.cell(0, 4, nettoyer_texte_pdf("INSPECTION DE L'ÉDUCATION ET DE LA FORMATION DE SAINT-LOUIS (IEF SAINT-LOUIS)"), 0, 1, "C")
     pdf.set_font(font_family, "B", 10)
     pdf.cell(0, 5, nettoyer_texte_pdf("ÉCOLE PRÉSIDENT NELSON MANDELA"), 0, 1, "C")
 
@@ -1256,25 +833,12 @@ def ajouter_entete_senegal_officiel(pdf, titre_document=""):
     pdf.set_draw_color(14, 165, 233)
     if hasattr(pdf, "set_line_width"):
         pdf.set_line_width(0.8)
-    elif hasattr(pdf, "set_linewidth"):
-        pdf.set_linewidth(0.8)
     pdf.line(10, 38, 200, 38)
     pdf.ln(5)
 
-
-def ajouter_bloc_signatures(
-    pdf,
-    prof_nom="Le Professeur",
-    chef_nom="Le Chef d'Établissement / IEF",
-):
+def ajouter_bloc_signatures(pdf, prof_nom="Le Professeur", chef_nom="Le Chef d'Établissement / IEF"):
     try:
-        font_family = (
-            "DejaVu"
-            if "DejaVu" in pdf.core_fonts
-            or hasattr(pdf, "fonts")
-            and "DejaVu" in pdf.fonts
-            else "Arial"
-        )
+        font_family = "DejaVu" if "DejaVu" in pdf.core_fonts or hasattr(pdf, "fonts") and "DejaVu" in pdf.fonts else "Arial"
     except Exception:
         font_family = "Arial"
 
@@ -1289,10 +853,7 @@ def ajouter_bloc_signatures(
     pdf.set_font(font_family, "I", 7)
     pdf.cell(90, 15, nettoyer_texte_pdf("Sceau numérique & Empreinte d'excellence"), "LRB", 0, "C")
     pdf.cell(10, 15, "", 0, 0, "C")
-    pdf.cell(
-        90, 15, nettoyer_texte_pdf("Cachet officiel de l'Établissement d'Excellence"), "LRB", 1, "C"
-    )
-
+    pdf.cell(90, 15, nettoyer_texte_pdf("Cachet officiel de l'Établissement d'Excellence"), "LRB", 1, "C")
 
 def calculer_bulletin_eleve(classe, eleve, periode):
     cycle_classe = obtenir_cycle_classe(classe)
@@ -1315,9 +876,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         m_def = st.session_state.matieres_def
         if "Cycle" in m_def.columns:
             m_c_def = (
-                m_def[m_def["Cycle"].apply(est_cycle_elementaire) == is_elem][
-                    "Matière"
-                ]
+                m_def[m_def["Cycle"].apply(est_cycle_elementaire) == is_elem]["Matière"]
                 .dropna()
                 .tolist()
             )
@@ -1332,9 +891,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
     if not notes_df.empty and "Classe" in notes_df.columns:
         cond_cls = notes_df["Classe"] == classe
         if "Periode" in notes_df.columns and "Période" in notes_df.columns:
-            cond_per = (notes_df["Periode"] == periode) | (
-                notes_df["Période"] == periode
-            )
+            cond_per = (notes_df["Periode"] == periode) | (notes_df["Période"] == periode)
         elif "Periode" in notes_df.columns:
             cond_per = notes_df["Periode"] == periode
         elif "Période" in notes_df.columns:
@@ -1342,9 +899,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         else:
             cond_per = True
 
-        m_notes = (
-            notes_df[cond_cls & cond_per]["Matière"].dropna().unique().tolist()
-        )
+        m_notes = notes_df[cond_cls & cond_per]["Matière"].dropna().unique().tolist()
         matieres_set.update(m_notes)
 
     if not matieres_set:
@@ -1355,7 +910,6 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         )
 
     liste_matieres = sorted(list(matieres_set))
-
     notes_classe_periode = pd.DataFrame()
     if not notes_df.empty and "Classe" in notes_df.columns:
         if "Periode" in notes_df.columns:
@@ -1384,8 +938,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
 
         note_row = (
             notes_classe_periode[notes_classe_periode["Eleve"] == eleve]
-            if not notes_classe_periode.empty
-            and "Eleve" in notes_classe_periode.columns
+            if not notes_classe_periode.empty and "Eleve" in notes_classe_periode.columns
             else pd.DataFrame()
         )
         note_mat = (
@@ -1396,21 +949,9 @@ def calculer_bulletin_eleve(classe, eleve, periode):
 
         d1, d2, comp = 0.0, 0.0, 0.0
         if not note_mat.empty:
-            d1_val = (
-                note_mat.iloc[0]["Devoir1"]
-                if "Devoir1" in note_mat.columns
-                else 0.0
-            )
-            d2_val = (
-                note_mat.iloc[0]["Devoir2"]
-                if "Devoir2" in note_mat.columns
-                else 0.0
-            )
-            comp_val = (
-                note_mat.iloc[0]["Composition"]
-                if "Composition" in note_mat.columns
-                else 0.0
-            )
+            d1_val = note_mat.iloc[0]["Devoir1"] if "Devoir1" in note_mat.columns else 0.0
+            d2_val = note_mat.iloc[0]["Devoir2"] if "Devoir2" in note_mat.columns else 0.0
+            comp_val = note_mat.iloc[0]["Composition"] if "Composition" in note_mat.columns else 0.0
 
             d1 = float(d1_val) if pd.notna(d1_val) else 0.0
             d2 = float(d2_val) if pd.notna(d2_val) else 0.0
@@ -1449,9 +990,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
 
     if is_elem:
         if total_bareme_global > 0:
-            moyenne_generale = round(
-                (total_points_global / total_bareme_global) * 10.0, 2
-            )
+            moyenne_generale = round((total_points_global / total_bareme_global) * 10.0, 2)
         else:
             moyenne_generale = 0.0
     else:
@@ -1468,9 +1007,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         and "Classe" in st.session_state.eleves_db.columns
     ):
         df_sorted_el = trier_eleves_par_nom(
-            st.session_state.eleves_db[
-                st.session_state.eleves_db["Classe"] == classe
-            ]
+            st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe]
         )
         tous_eleves = df_sorted_el["Nom Complet"].tolist()
 
@@ -1481,8 +1018,7 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         bareme_tot_el = 0.0
         notes_el_p = (
             notes_classe_periode[notes_classe_periode["Eleve"] == el]
-            if not notes_classe_periode.empty
-            and "Eleve" in notes_classe_periode.columns
+            if not notes_classe_periode.empty and "Eleve" in notes_classe_periode.columns
             else pd.DataFrame()
         )
         for mat in liste_matieres:
@@ -1494,15 +1030,9 @@ def calculer_bulletin_eleve(classe, eleve, periode):
                 else pd.DataFrame()
             )
             if not n_m.empty:
-                d1_val = (
-                    n_m.iloc[0]["Devoir1"] if "Devoir1" in n_m.columns else 0.0
-                )
-                d2_val = (
-                    n_m.iloc[0]["Devoir2"] if "Devoir2" in n_m.columns else 0.0
-                )
-                comp_val = (
-                    n_m.iloc[0]["Composition"] if "Composition" in n_m.columns else 0.0
-                )
+                d1_val = n_m.iloc[0]["Devoir1"] if "Devoir1" in n_m.columns else 0.0
+                d2_val = n_m.iloc[0]["Devoir2"] if "Devoir2" in n_m.columns else 0.0
+                comp_val = n_m.iloc[0]["Composition"] if "Composition" in n_m.columns else 0.0
                 d1 = float(d1_val) if pd.notna(d1_val) else 0.0
                 d2 = float(d2_val) if pd.notna(d2_val) else 0.0
                 comp = float(comp_val) if pd.notna(comp_val) else 0.0
@@ -1519,13 +1049,9 @@ def calculer_bulletin_eleve(classe, eleve, periode):
                 round((pts / bareme_tot_el) * 10.0, 2) if bareme_tot_el > 0 else 0.0
             )
         else:
-            moyennes_classe[el] = (
-                round(pts / coefs, 2) if coefs > 0 else 0.0
-            )
+            moyennes_classe[el] = round(pts / coefs, 2) if coefs > 0 else 0.0
 
-    classement_trie = sorted(
-        moyennes_classe.items(), key=lambda x: x[1], reverse=True
-    )
+    classement_trie = sorted(moyennes_classe.items(), key=lambda x: x[1], reverse=True)
     rang = "-"
     for idx, (el_nom, _) in enumerate(classement_trie, 1):
         if el_nom == eleve:
@@ -1553,50 +1079,15 @@ def calculer_bulletin_eleve(classe, eleve, periode):
             ]
 
     abs_just, abs_non_just, retards, heures_p, obs, decision = (
-        0,
-        0,
-        0,
-        0,
-        "RAS",
-        "Encouragements",
+        0, 0, 0, 0, "RAS", "Encouragements"
     )
     if not vs_row.empty:
-        abs_just = (
-            int(vs_row.iloc[0]["AbsencesJustifiees"])
-            if "AbsencesJustifiees" in vs_row.columns
-            and pd.notna(vs_row.iloc[0]["AbsencesJustifiees"])
-            else 0
-        )
-        abs_non_just = (
-            int(vs_row.iloc[0]["AbsencesNonJustifiees"])
-            if "AbsencesNonJustifiees" in vs_row.columns
-            and pd.notna(vs_row.iloc[0]["AbsencesNonJustifiees"])
-            else 0
-        )
-        retards = (
-            int(vs_row.iloc[0]["Retards"])
-            if "Retards" in vs_row.columns
-            and pd.notna(vs_row.iloc[0]["Retards"])
-            else 0
-        )
-        heures_p = (
-            int(vs_row.iloc[0]["HeuresPerdues"])
-            if "HeuresPerdues" in vs_row.columns
-            and pd.notna(vs_row.iloc[0]["HeuresPerdues"])
-            else 0
-        )
-        obs = (
-            str(vs_row.iloc[0]["Observations"])
-            if "Observations" in vs_row.columns
-            and pd.notna(vs_row.iloc[0]["Observations"])
-            else "RAS"
-        )
-        decision = (
-            str(vs_row.iloc[0]["DecisionConseil"])
-            if "DecisionConseil" in vs_row.columns
-            and pd.notna(vs_row.iloc[0]["DecisionConseil"])
-            else "Encouragements"
-        )
+        abs_just = int(vs_row.iloc[0]["AbsencesJustifiees"]) if "AbsencesJustifiees" in vs_row.columns and pd.notna(vs_row.iloc[0]["AbsencesJustifiees"]) else 0
+        abs_non_just = int(vs_row.iloc[0]["AbsencesNonJustifiees"]) if "AbsencesNonJustifiees" in vs_row.columns and pd.notna(vs_row.iloc[0]["AbsencesNonJustifiees"]) else 0
+        retards = int(vs_row.iloc[0]["Retards"]) if "Retards" in vs_row.columns and pd.notna(vs_row.iloc[0]["Retards"]) else 0
+        heures_p = int(vs_row.iloc[0]["HeuresPerdues"]) if "HeuresPerdues" in vs_row.columns and pd.notna(vs_row.iloc[0]["HeuresPerdues"]) else 0
+        obs = str(vs_row.iloc[0]["Observations"]) if "Observations" in vs_row.columns and pd.notna(vs_row.iloc[0]["Observations"]) else "RAS"
+        decision = str(vs_row.iloc[0]["DecisionConseil"]) if "DecisionConseil" in vs_row.columns and pd.notna(vs_row.iloc[0]["DecisionConseil"]) else "Encouragements"
 
     return {
         "eleve": eleve,
@@ -1617,59 +1108,14 @@ def calculer_bulletin_eleve(classe, eleve, periode):
         "observations": obs,
         "decision": decision,
     }
+
 # ==========================================
-# 4. MODULE DE GÉNÉRATION DES DOCUMENTS PDF & SUPABASE SYNC
+# 4. MODULE DE GÉNÉRATION DES DOCUMENTS PDF
 # ==========================================
-
-import streamlit as st
-import pandas as pd
-import io
-import base64
-import os
-import zipfile
-from fpdf import FPDF
-
-# --- FONCTION UTILITAIRE DE NETTOYAGE ---
-def nettoyer_texte_pdf(texte):
-    if not isinstance(texte, str):
-        texte = str(texte) if texte is not None else ""
-    # Remplacement des caractères spéciaux posant problème avec fpdf
-    return (
-        texte.replace("€", "EUR")
-        .replace("’", "'")
-        .replace("‘", "'")
-        .replace("“", '"')
-        .replace("”", '"')
-        .replace("–", "-")
-        .replace("—", "-")
-    )
-
-
-# --- FONCTION DE SYNCHRONISATION EN TEMPS RÉEL AVEC SUPABASE ---
-def synchroniser_avec_supabase(table_name, data_dict):
-    """
-    Permet de synchroniser en temps réel (insertion ou mise à jour) les données 
-    avec Supabase si le client est configuré dans st.session_state.
-    """
-    if "supabase_client" in st.session_state and st.session_state.supabase_client is not None:
-        try:
-            supabase = st.session_state.supabase_client
-            # Exemple d'upsert basé sur une clé unique ou insertion directe
-            supabase.table(table_name).upsert(data_dict).execute()
-        except Exception as e:
-            # Enregistrement discret de l'erreur ou affichage d'un avertissement non bloquant
-            print(f"Erreur de synchronisation Supabase ({table_name}) : {e}")
-
-
 def generer_pdf_bulletin(bul_data):
     pdf = FPDF()
     try:
-        if os.path.exists("DejaVuSans.ttf"):
-            pdf.add_font("DejaVu", "", "DejaVuSans.ttf", uni=True)
-            pdf.add_font("DejaVu", "B", "DejaVuSans-Bold.ttf", uni=True)
-            font_family = "DejaVu"
-        else:
-            font_family = "Arial"
+        font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
     except Exception:
         font_family = "Arial"
 
@@ -1697,15 +1143,7 @@ def generer_pdf_bulletin(bul_data):
         headers = ["Matière", "Barème", "Note obtenue", "Appréciation"]
     else:
         col_widths = [65, 18, 18, 18, 22, 22, 27]
-        headers = [
-            "Matière",
-            "Coef",
-            "Dev 1",
-            "Dev 2",
-            "Comp",
-            "Moy/20",
-            "Appréciation",
-        ]
+        headers = ["Matière", "Coef", "Dev 1", "Dev 2", "Comp", "Moy/20", "Appréciation"]
 
     for i, h in enumerate(headers):
         pdf.cell(col_widths[i], 7, nettoyer_texte_pdf(h), 1, 0, "C", True)
@@ -1738,29 +1176,19 @@ def generer_pdf_bulletin(bul_data):
     pdf.set_fill_color(224, 242, 254)
     if is_elem:
         pdf.cell(
-            0,
-            6,
+            0, 6,
             nettoyer_texte_pdf(
-                f"Moyenne Générale : {bul_data['moyenne_generale']} / {bul_data['total_bareme']}"
-                f" | Total Points : {bul_data['total_points']}"
+                f"Moyenne Générale : {bul_data['moyenne_generale']} / {bul_data['total_bareme']} | Total Points : {bul_data['total_points']}"
             ),
-            1,
-            1,
-            "L",
-            True,
+            1, 1, "L", True,
         )
     else:
         pdf.cell(
-            0,
-            6,
+            0, 6,
             nettoyer_texte_pdf(
-                f"Moyenne Générale : {bul_data['moyenne_generale']} / 20"
-                f" | Total Points : {bul_data['total_points']}"
+                f"Moyenne Générale : {bul_data['moyenne_generale']} / 20 | Total Points : {bul_data['total_points']}"
             ),
-            1,
-            1,
-            "L",
-            True,
+            1, 1, "L", True,
         )
     pdf.ln(3)
 
@@ -1768,36 +1196,21 @@ def generer_pdf_bulletin(bul_data):
     pdf.cell(0, 5, nettoyer_texte_pdf("BILAN DE LA VIE SCOLAIRE ET DISCIPLINE"), 0, 1, "L")
     pdf.set_font(font_family, "", 9)
     pdf.cell(
-        0,
-        5,
+        0, 5,
         nettoyer_texte_pdf(
-            "Absences justifiées : "
-            f"{bul_data['abs_just']} | Absences non justifiées :"
-            f" {bul_data['abs_non_just']} | Retards : {bul_data['retards']} |"
-            f" Heures perdues : {bul_data['heures_perdues']}h"
+            f"Absences justifiées : {bul_data['abs_just']} | Absences non justifiées : {bul_data['abs_non_just']} | Retards : {bul_data['retards']} | Heures perdues : {bul_data['heures_perdues']}h"
         ),
-        1,
-        1,
-        "L",
+        1, 1, "L",
     )
     pdf.cell(
-        0,
-        5,
-        nettoyer_texte_pdf(
-            "Observations / Appréciation générale :"
-            f" {bul_data['observations']}"
-        ),
-        1,
-        1,
-        "L",
+        0, 5,
+        nettoyer_texte_pdf(f"Observations / Appréciation générale : {bul_data['observations']}"),
+        1, 1, "L",
     )
     pdf.cell(
-        0,
-        5,
+        0, 5,
         nettoyer_texte_pdf(f"Décision du Conseil de Classe : {bul_data['decision']}"),
-        1,
-        1,
-        "L",
+        1, 1, "L",
     )
 
     ajouter_bloc_signatures(
@@ -1805,15 +1218,6 @@ def generer_pdf_bulletin(bul_data):
         prof_nom="Professeur Principal",
         chef_nom="Inspecteur / Directeur IEF Saint-Louis",
     )
-
-    # Déclencher une synchronisation en arrière-plan vers Supabase (optionnel/trace du calcul de bulletin)
-    synchroniser_avec_supabase("bulletins_generes", {
-        "eleve": bul_data["eleve"],
-        "classe": bul_data["classe"],
-        "periode": bul_data["periode"],
-        "moyenne": bul_data["moyenne_generale"],
-        "rang": bul_data["rang"]
-    })
 
     try:
         output_pdf = pdf.output(dest='S')
@@ -1825,7 +1229,6 @@ def generer_pdf_bulletin(bul_data):
             return bytes(pdf.output())
     except Exception:
         return bytes(pdf.output())
-
 
 def generer_zip_bulletins_classe(classe, periode):
     eleves_df = st.session_state.eleves_db
@@ -1846,29 +1249,20 @@ def generer_zip_bulletins_classe(classe, periode):
         for eleve in eleves_list:
             bul_data = calculer_bulletin_eleve(classe, eleve, periode)
             pdf_bytes = generer_pdf_bulletin(bul_data)
-            filename = (
-                f"Bulletin_{classe}_{eleve.replace(' ', '_')}_{periode.replace(' ', '_')}.pdf"
-            )
+            filename = f"Bulletin_{classe}_{eleve.replace(' ', '_')}_{periode.replace(' ', '_')}.pdf"
             zip_file.writestr(filename, pdf_bytes)
     return zip_buffer.getvalue()
 
-
 def generer_pdf_liste_eleves_classe(classe):
-    if (
-        "eleves_db" not in st.session_state
-        or st.session_state.eleves_db.empty
-    ):
+    if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
         df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
     else:
         if "Classe" in st.session_state.eleves_db.columns:
-            df_eleves = st.session_state.eleves_db[
-                st.session_state.eleves_db["Classe"] == classe
-            ]
+            df_eleves = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe]
         else:
             df_eleves = pd.DataFrame(columns=["Nom Complet", "Classe", "Date de Naissance"])
 
     df_eleves = trier_eleves_par_nom(df_eleves)
-
     pdf = FPDF()
     try:
         font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
@@ -1876,9 +1270,7 @@ def generer_pdf_liste_eleves_classe(classe):
         font_family = "Arial"
 
     pdf.add_page()
-    ajouter_entete_senegal_officiel(
-        pdf, f"FICHE OFFICIELLE DE LA CLASSE : {classe} (Tri Alphabétique Nom)"
-    )
+    ajouter_entete_senegal_officiel(pdf, f"FICHE OFFICIELLE DE LA CLASSE : {classe} (Tri Alphabétique Nom)")
 
     pdf.set_font(font_family, "B", 9)
     pdf.set_fill_color(14, 165, 233)
@@ -1898,37 +1290,15 @@ def generer_pdf_liste_eleves_classe(classe):
 
     if not df_eleves.empty:
         for _, row in df_eleves.iterrows():
-            pdf.cell(
-                col_widths[0],
-                6,
-                nettoyer_texte_pdf(str(row.get("Nom Complet", ""))[:35]),
-                1,
-                0,
-                "L",
-                fill,
-            )
-            pdf.cell(
-                col_widths[1], 6, nettoyer_texte_pdf(str(row.get("Classe", ""))[:20]), 1, 0, "C", fill
-            )
-            pdf.cell(
-                col_widths[2],
-                6,
-                nettoyer_texte_pdf(str(row.get("Date de Naissance", ""))[:20]),
-                1,
-                0,
-                "C",
-                fill,
-            )
+            pdf.cell(col_widths[0], 6, nettoyer_texte_pdf(str(row.get("Nom Complet", ""))[:35]), 1, 0, "L", fill)
+            pdf.cell(col_widths[1], 6, nettoyer_texte_pdf(str(row.get("Classe", ""))[:20]), 1, 0, "C", fill)
+            pdf.cell(col_widths[2], 6, nettoyer_texte_pdf(str(row.get("Date de Naissance", ""))[:20]), 1, 0, "C", fill)
             pdf.ln()
             fill = not fill
     else:
         pdf.cell(190, 6, nettoyer_texte_pdf("Aucun élève répertorié dans cette classe."), 1, 1, "C")
 
-    ajouter_bloc_signatures(
-        pdf,
-        prof_nom="Responsable de Scolarité",
-        chef_nom="Inspecteur IEF Saint-Louis",
-    )
+    ajouter_bloc_signatures(pdf, prof_nom="Responsable de Scolarité", chef_nom="Inspecteur IEF Saint-Louis")
     
     try:
         output_pdf = pdf.output(dest='S')
@@ -1941,13 +1311,8 @@ def generer_pdf_liste_eleves_classe(classe):
     except Exception:
         return bytes(pdf.output())
 
-
 def generer_pdf_liste_absences(classe_filtre="Toutes"):
-    df_abs = (
-        st.session_state.absences_db
-        if "absences_db" in st.session_state
-        else pd.DataFrame()
-    )
+    df_abs = st.session_state.absences_db if "absences_db" in st.session_state else pd.DataFrame()
     if not df_abs.empty and classe_filtre != "Toutes" and "Classe" in df_abs.columns:
         df_abs = df_abs[df_abs["Classe"] == classe_filtre]
 
@@ -1958,9 +1323,7 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
         font_family = "Arial"
 
     pdf.add_page()
-    ajouter_entete_senegal_officiel(
-        pdf, f"REGISTRE OFFICIEL DES ABSENCES & RETARDS - {classe_filtre.upper()}"
-    )
+    ajouter_entete_senegal_officiel(pdf, f"REGISTRE OFFICIEL DES ABSENCES & RETARDS - {classe_filtre.upper()}")
 
     pdf.set_font(font_family, "B", 9)
     pdf.set_fill_color(14, 165, 233)
@@ -1990,11 +1353,7 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
     else:
         pdf.cell(190, 6, nettoyer_texte_pdf("Aucune absence ou retard enregistré."), 1, 1, "C")
 
-    ajouter_bloc_signatures(
-        pdf,
-        prof_nom="Surveillant Général",
-        chef_nom="Chef d'Établissement",
-    )
+    ajouter_bloc_signatures(pdf, prof_nom="Surveillant Général", chef_nom="Chef d'Établissement")
     try:
         output_pdf = pdf.output(dest='S')
         if isinstance(output_pdf, str):
@@ -2006,208 +1365,10 @@ def generer_pdf_liste_absences(classe_filtre="Toutes"):
     except Exception:
         return bytes(pdf.output())
 
-
-def generer_pdf_edt(classe, df_edt):
-    pdf = FPDF(orientation="L", unit="mm", format="A4")
-    try:
-        font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
-    except Exception:
-        font_family = "Arial"
-
-    pdf.add_page()
-    ajouter_entete_senegal_officiel(
-        pdf, f"EMPLOI DU TEMPS OFFICIEL DE LA CLASSE : {classe}"
-    )
-
-    pdf.set_font(font_family, "B", 8)
-    pdf.set_fill_color(14, 165, 233)
-    pdf.set_text_color(255, 255, 255)
-
-    col_w = 22
-    pdf.cell(30, 7, nettoyer_texte_pdf("Jour / Heure"), 1, 0, "C", True)
-    for col in df_edt.columns:
-        pdf.cell(col_w, 7, nettoyer_texte_pdf(str(col)[:8]), 1, 0, "C", True)
-    pdf.ln()
-
-    pdf.set_font(font_family, "", 7)
-    pdf.set_text_color(0, 0, 0)
-
-    for jour in df_edt.index:
-        pdf.cell(30, 6, nettoyer_texte_pdf(str(jour)), 1, 0, "C", True)
-        for col in df_edt.columns:
-            val = str(df_edt.loc[jour, col])
-            pdf.cell(col_w, 6, nettoyer_texte_pdf(val[:12]), 1, 0, "C", True)
-        pdf.ln()
-
-    ajouter_bloc_signatures(
-        pdf, prof_nom="Chef d'Établissement", chef_nom="Inspecteur IA Saint-Louis"
-    )
-
-    try:
-        output_pdf = pdf.output(dest='S')
-        if isinstance(output_pdf, str):
-            return output_pdf.encode('latin1', 'replace')
-        elif isinstance(output_pdf, (bytes, bytearray)):
-            return bytes(output_pdf)
-        else:
-            return bytes(pdf.output())
-    except Exception:
-        return bytes(pdf.output())
-
-def generer_pdf_cahier_textes(df_ct, classe="Global"):
-    pdf = FPDF()
-    try:
-        font_family = "DejaVu" if os.path.exists("DejaVuSans.ttf") else "Arial"
-    except Exception:
-        font_family = "Arial"
-
-    pdf.add_page()
-    ajouter_entete_senegal_officiel(
-        pdf, f"REGISTRE ET CAHIER DE TEXTES - {classe.upper()}"
-    )
-
-    pdf.set_font(font_family, "B", 8)
-    pdf.set_fill_color(14, 165, 233)
-    pdf.set_text_color(255, 255, 255)
-
-    col_widths = [25, 30, 30, 55, 50]
-    headers = ["Date", "Classe", "Matière", "Contenu de la leçon", "Devoirs / Travail"]
-
-    for i, h in enumerate(headers):
-        pdf.cell(col_widths[i], 7, nettoyer_texte_pdf(h), 1, 0, "C", True)
-    pdf.ln()
-
-    pdf.set_font(font_family, "", 7)
-    pdf.set_text_color(0, 0, 0)
-    fill = False
-    pdf.set_fill_color(240, 249, 255)
-
-    for _, row in df_ct.iterrows():
-        pdf.cell(col_widths[0], 6, nettoyer_texte_pdf(str(row.get("Date", ""))[:10]), 1, 0, "C", fill)
-        pdf.cell(col_widths[1], 6, nettoyer_texte_pdf(str(row.get("Classe", ""))[:12]), 1, 0, "C", fill)
-        pdf.cell(col_widths[2], 6, nettoyer_texte_pdf(str(row.get("Matière", ""))[:15]), 1, 0, "L", fill)
-        pdf.cell(col_widths[3], 6, nettoyer_texte_pdf(str(row.get("Contenu", ""))[:35]), 1, 0, "L", fill)
-        pdf.cell(
-            col_widths[4], 6, nettoyer_texte_pdf(str(row.get("Travail à faire", ""))[:30]), 1, 0, "L", fill
-        )
-        pdf.ln()
-        fill = not fill
-
-    ajouter_bloc_signatures(
-        pdf,
-        prof_nom="L'Enseignant Concerné",
-        chef_nom="L'Inspecteur Pédagogique",
-    )
-
-    try:
-        output_pdf = pdf.output(dest='S')
-        if isinstance(output_pdf, str):
-            return output_pdf.encode('latin1', 'replace')
-        elif isinstance(output_pdf, (bytes, bytearray)):
-            return bytes(output_pdf)
-        else:
-            return bytes(pdf.output())
-    except Exception:
-        return bytes(pdf.output())
-import streamlit as st
-from supabase import create_client, Client
-
 # ==========================================
-# 1. CONFIGURATION DE LA PAGE & SUPABASE
+# 5. EN-TÊTE INSTITUTIONNEL & NAVIGATION GLOBALE (RAPPORT GLOBAL)
 # ==========================================
-st.set_page_config(
-    page_title="École Président Nelson Mandela",
-    page_icon="🇸🇳",
-    layout="wide",
-)
-
-# Initialisation de Supabase (récupéré depuis st.secrets)
-@st.cache_resource
-def init_supabase() -> Client:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    return create_client(url, key)
-
-supabase = init_supabase()
-
-# Initialisation des variables d'état global
-if "espace_actif" not in st.session_state:
-    st.session_state.espace_actif = "🏠 Accueil"
-
-# ==========================================
-# 2. FONCTIONS UTILITAIRES & BASE64
-# ==========================================
-def obtenir_logo_base64():
-    # Remplacez par votre logique ou chemin de logo si nécessaire, ou retournez None
-    return None
-
-# ==========================================
-# 3. STYLISME CSS PERSONNALISÉ (DESIGN XXL)
-# ==========================================
-st.markdown("""
-<style>
-    .header-institutionnel {
-        background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
-        padding: 25px;
-        border-radius: 12px;
-        color: white;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        margin-bottom: 25px;
-    }
-    .header-inner {
-        display: flex;
-        align-items: center;
-        gap: 20px;
-    }
-    .emblem-box {
-        background: #334155;
-        padding: 15px;
-        border-radius: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-    .ministere-title {
-        font-size: 0.9rem;
-        font-weight: 700;
-        letter-spacing: 1px;
-        color: #38BDF8;
-    }
-    .ia-ief-sub {
-        font-size: 0.8rem;
-        color: #94A3B8;
-        margin: 4px 0;
-    }
-    .ecole-title {
-        font-size: 1.8rem;
-        font-weight: 900;
-        color: #F8FAFC;
-    }
-    .animated-card {
-        background: white;
-        padding: 25px;
-        border-radius: 12px;
-        border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-        height: 100%;
-        text-align: center;
-    }
-    .animated-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# ==========================================
-# 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL
-# ==========================================
-logo_data_uri = obtenir_logo_base64()
-if logo_data_uri:
-    logo_element_html = f'<img src="{logo_data_uri}" alt="Logo Mandela" />'
-else:
-    logo_element_html = '<div class="emblem-box"><span style="font-size: 3.2rem;">🇸🇳</span></div>'
+logo_element_html = '<div class="emblem-box"><span style="font-size: 3.2rem;">🇸🇳</span></div>'
 
 header_complet_html = f"""
 <div class="header-institutionnel">
@@ -2225,18 +1386,18 @@ header_complet_html = f"""
 """
 st.markdown(header_complet_html, unsafe_allow_html=True)
 
-if st.session_state.espace_actif != "🏠 Accueil":
+if st.session_state.espace_actif != "Rapport Global":
     col_ret1, col_ret2 = st.columns([1, 5])
     with col_ret1:
-        if st.button("⬅️ Retour Accueil"):
-            st.session_state.espace_actif = "🏠 Accueil"
+        if st.button("⬅️ Retour Rapport Global"):
+            st.session_state.espace_actif = "Rapport Global"
             st.rerun()
     st.markdown("---")
 
 # ==========================================
-# 5. ACCUEIL ET REDIRECTION SÉLECTIVE
+# 6. ROUTAGE DES ESPACES SECONDAIRES & SUPABASE (RAPPORT GLOBAL / ACCUEIL)
 # ==========================================
-if st.session_state.espace_actif == "🏠 Accueil":
+if st.session_state.espace_actif == "Rapport Global":
     st.markdown("""
         <div style="text-align: center; padding: 15px 0 35px 0;">
             <h1 style="color: #0F172A; font-weight: 900; font-size: 2.8rem;">Éduquer • Instruire • Promouvoir les Vertus Africaines</h1>
@@ -2254,7 +1415,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">👨‍🏫</h1>
                 <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Espace Professeurs</h3>
-                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Encadrement d'excellence : saisie rigoureuse des notes, suivi des présences, cahier de texte et assignation des travaux à faire avec pièces jointes.</p>
+                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Encadrement d'excellence : saisie rigoureuse des notes, suivi des présences, cahier de texte et assignation des travaux à faire.</p>
             </div>
             """, unsafe_allow_html=True)
         if st.button("Accéder Professeur", key="btn_p"):
@@ -2266,7 +1427,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">👨‍👩‍👧</h1>
                 <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Espace Parents</h3>
-                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Partenariat école-famille : suivi des travaux à faire avec supports photos/vidéos, consultation des emplois du temps, vie scolaire et annonces officielles.</p>
+                <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Partenariat école-famille : suivi des travaux à faire, consultation des emplois du temps, vie scolaire et annonces officielles.</p>
             </div>
             """, unsafe_allow_html=True)
         if st.button("Accéder Parent", key="btn_pa"):
@@ -2289,7 +1450,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
         st.markdown("""
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">🏫</h1>
-                <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Rapports Globaux</h3>
+                <h3 style="color: #0EA5E9; margin: 12px 0; font-weight: 800;">Administration XXL & Rapports</h3>
                 <p style="font-size: 0.95rem; color: #475569; font-weight: 600;">Tableaux de bord d'excellence, téléchargement des bulletins PDF officiels et assistant pédagogique intelligent.</p>
             </div>
             """, unsafe_allow_html=True)
@@ -2297,21 +1458,241 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.session_state.espace_actif = "🏫 Administration XXL & Rapports"
             st.rerun()
 
-# ==========================================
-# 6. ROUTAGE DES ESPACES SECONDAIRES & SUPABASE
-# ==========================================
+elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
+    st.markdown(
+        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports Globaux, Téléchargements & Pilotage Administratif</div>',
+        unsafe_allow_html=True,
+    )
+
+    if not st.session_state.get("authenticated_admin", False):
+        st.error("🔒 Accès restreint : Vous devez être connecté en tant qu'Administrateur pour accéder à cet espace.")
+        st.info("Veuillez vous rendre dans l'onglet **🔒 Espace Administration (Sécurisé)** pour vous authentifier.")
+    else:
+        tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_stats = st.tabs([
+            "📄 Édition & Téléchargement des Bulletins",
+            "📋 Fiches Officielles de Classe (Tri Nom)",
+            "📉 Registre des Absences",
+            "📑 Registre Général des Cahiers de Texte",
+            "📊 Synthèse & Tableaux de Bord Statistiques",
+        ])
+
+        with tr_bulletins:
+            st.markdown("### 📄 Génération & Téléchargement des Bulletins par Élève")
+            if "classes_db" in st.session_state and not st.session_state.classes_db.empty:
+                cls_rep = st.selectbox("Sélectionner la classe", st.session_state.classes_db["Classe"].unique(), key="rep_cls_sel")
+                pers_rep = obtenir_periodes_pour_classe(cls_rep)
+
+                if pers_rep:
+                    per_rep = st.selectbox("Sélectionner la période", pers_rep, key="rep_per_sel")
+                    df_el_rep = pd.DataFrame()
+                    if "eleves_db" in st.session_state and "Classe" in st.session_state.eleves_db.columns:
+                        df_el_rep = trier_eleves_par_nom(
+                            st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_rep]
+                        )
+
+                    if not df_el_rep.empty:
+                        list_el_rep = df_el_rep["Nom Complet"].tolist()
+                        el_rep_sel = st.selectbox("Sélectionner un élève spécifique", list_el_rep, key="rep_el_sel")
+
+                        bul_data_individual = calculer_bulletin_eleve(cls_rep, el_rep_sel, per_rep)
+
+                        st.markdown(f"#### Bulletin de : **{el_rep_sel}** ({cls_rep} - {per_rep})")
+                        st.dataframe(pd.DataFrame(bul_data_individual["lignes"]), use_container_width=True)
+
+                        col_dl_b1, col_dl_b2 = st.columns(2)
+                        with col_dl_b1:
+                            pdf_indiv_bytes = generer_pdf_bulletin(bul_data_individual)
+                            st.download_button(
+                                f"📥 Télécharger le Bulletin de {el_rep_sel} (PDF)",
+                                data=pdf_indiv_bytes,
+                                file_name=f"Bulletin_{cls_rep}_{el_rep_sel}_{per_rep}.pdf",
+                                mime="application/pdf",
+                            )
+
+                        with col_dl_b2:
+                            zip_class_bytes = generer_zip_bulletins_classe(cls_rep, per_rep)
+                            st.download_button(
+                                f"📦 Télécharger Tous les Bulletins de {cls_rep} (.ZIP)",
+                                data=zip_class_bytes,
+                                file_name=f"Bulletins_{cls_rep}_{per_rep}.zip",
+                                mime="application/zip",
+                            )
+                    else:
+                        st.warning("Aucun élève dans cette classe.")
+
+        with tr_listes:
+            st.markdown("### 📋 Imprimer les Fiches de Classe (Tri Alphabétique Nom)")
+            if "classes_db" in st.session_state and not st.session_state.classes_db.empty:
+                cls_fiche = st.selectbox("Sélectionner la classe pour la fiche", st.session_state.classes_db["Classe"].unique(), key="fiche_cls_sel")
+                pdf_fiche_bytes = generer_pdf_liste_eleves_classe(cls_fiche)
+                st.download_button(
+                    f"📥 Télécharger la Liste Officielle de {cls_fiche} (PDF)",
+                    data=pdf_fiche_bytes,
+                    file_name=f"Liste_Eleves_{cls_fiche}.pdf",
+                    mime="application/pdf",
+                )
+
+        with tr_absences:
+            st.markdown("### 📉 Registre des Absences et Retards & Téléchargement PDF")
+            cls_abs_sel = st.selectbox(
+                "Filtrer par classe",
+                ["Toutes"] + list(st.session_state.classes_db["Classe"].unique()) if "classes_db" in st.session_state else ["Toutes"],
+                key="abs_report_cls_sel",
+            )
+
+            df_abs_disp = st.session_state.absences_db if "absences_db" in st.session_state else pd.DataFrame()
+            if not df_abs_disp.empty and cls_abs_sel != "Toutes" and "Classe" in df_abs_disp.columns:
+                df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
+
+            if not df_abs_disp.empty:
+                edited_absences = st.data_editor(
+                    df_abs_disp,
+                    use_container_width=True,
+                    key="editor_absences_supabase",
+                    num_rows="dynamic"
+                )
+                
+                if st.button("🔄 Synchroniser les modifications des absences avec Supabase", key="btn_sync_abs"):
+                    try:
+                        success = sync_dataframe_to_supabase("absences", edited_absences)
+                        if success:
+                            st.session_state.absences_db = edited_absences
+                            enregistrer_log_action("Admin", "Synchronisation", "Mise à jour du registre des absences")
+                            st.success("✅ Registre des absences synchronisé avec succès dans Supabase !")
+                        else:
+                            st.error("❌ Erreur lors de la synchronisation avec Supabase.")
+                    except Exception as e:
+                        st.error(f"❌ Une exception s'est produite : {e}")
+
+                pdf_abs_bytes = generer_pdf_liste_absences(cls_abs_sel)
+                st.download_button(
+                    f"📥 Télécharger la Liste des Absences ({cls_abs_sel}) (PDF)",
+                    data=pdf_abs_bytes,
+                    file_name=f"Registre_Absences_{cls_abs_sel}.pdf",
+                    mime="application/pdf",
+                )
+            else:
+                st.info("Aucune absence ou retard répertorié pour cette sélection.")
+
+        with tr_cahier:
+            st.markdown("### 📑 Consultation des Cahiers de Texte Enseignants")
+            df_ct_all = st.session_state.cahier_textes if "cahier_textes" in st.session_state else pd.DataFrame()
+
+            if not df_ct_all.empty:
+                col_f_ct1, col_f_ct2 = st.columns(2)
+                with col_f_ct1:
+                    cls_options = ["Toutes les classes"]
+                    if "classes_db" in st.session_state and not st.session_state.classes_db.empty:
+                        cls_options += list(st.session_state.classes_db["Classe"].unique())
+                    cls_ct_filter = st.selectbox("Filtrer par classe", cls_options, key="admin_filter_ct_cls")
+                with col_f_ct2:
+                    mat_options = ["Toutes les matières"]
+                    if "Matière" in df_ct_all.columns:
+                        mat_options += list(df_ct_all["Matière"].dropna().unique())
+                    mat_ct_filter = st.selectbox("Filtrer par matière", mat_options, key="admin_filter_ct_mat")
+
+                df_ct_filtered = df_ct_all.copy()
+                if cls_ct_filter != "Toutes les classes" and "Classe" in df_ct_filtered.columns:
+                    df_ct_filtered = df_ct_filtered[df_ct_filtered["Classe"] == cls_ct_filter]
+                if mat_ct_filter != "Toutes les matières" and "Matière" in df_ct_filtered.columns:
+                    df_ct_filtered = df_ct_filtered[df_ct_filtered["Matière"] == mat_ct_filter]
+
+                st.markdown("---")
+                st.markdown(f"#### Registre des Séances ({len(df_ct_filtered)} enregistrement(s))")
+                
+                edited_cahier = st.data_editor(
+                    df_ct_filtered,
+                    use_container_width=True,
+                    key="editor_cahier_supabase",
+                    num_rows="dynamic"
+                )
+                
+                if st.button("🔄 Synchroniser les modifications du cahier de texte", key="btn_sync_cahier"):
+                    try:
+                        success = sync_dataframe_to_supabase("cahier_textes", edited_cahier)
+                        if success:
+                            st.session_state.cahier_textes = edited_cahier
+                            enregistrer_log_action("Admin", "Synchronisation", "Mise à jour du cahier de textes")
+                            st.success("✅ Cahier de textes synchronisé avec succès dans Supabase !")
+                        else:
+                            st.error("❌ Erreur lors de la synchronisation avec Supabase.")
+                    except Exception as e:
+                        st.error(f"❌ Une exception s'est produite : {e}")
+
+                csv_ct = df_ct_filtered.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    "📥 Télécharger le Cahier de Texte Filtré (CSV)",
+                    data=csv_ct,
+                    file_name=f"Cahier_de_texte_{cls_ct_filter}_{mat_ct_filter}.csv",
+                    mime="text/csv",
+                )
+            else:
+                st.warning("Aucun contenu n'a été enregistré dans le cahier de texte pour le moment.")
+
+        with tr_stats:
+            st.markdown("### 📊 Synthèse & Tableaux de Bord Statistiques")
+            col_st1, col_st2, col_st3 = st.columns(3)
+
+            nb_eleves = len(st.session_state.eleves_db) if "eleves_db" in st.session_state else 0
+            nb_classes = len(st.session_state.classes_db) if "classes_db" in st.session_state else 0
+            nb_absences = len(st.session_state.absences_db) if "absences_db" in st.session_state else 0
+
+            with col_st1:
+                st.metric("Total Élèves Inscrits", nb_eleves)
+            with col_st2:
+                st.metric("Total Classes Actives", nb_classes)
+            with col_st3:
+                st.metric("Total Incidents / Absences", nb_absences)
+
+            st.markdown("---")
+            st.markdown("#### 🏫 Répartition des Élèves par Classe")
+            if (
+                "eleves_db" in st.session_state
+                and not st.session_state.eleves_db.empty
+                and "Classe" in st.session_state.eleves_db.columns
+            ):
+                df_eff = st.session_state.eleves_db["Classe"].value_counts().reset_index()
+                df_eff.columns = ["Classe", "Effectif Élèves"]
+                
+                edited_eleves = st.data_editor(
+                    st.session_state.eleves_db,
+                    use_container_width=True,
+                    key="editor_eleves_db_supabase",
+                    num_rows="dynamic"
+                )
+                
+                if st.button("🔄 Synchroniser la base élèves et effectifs avec Supabase", key="btn_sync_eleves"):
+                    try:
+                        success = sync_dataframe_to_supabase("eleves", edited_eleves)
+                        if success:
+                            st.session_state.eleves_db = edited_eleves
+                            enregistrer_log_action("Admin", "Synchronisation", "Mise à jour de la base des élèves")
+                            st.success("✅ Base des élèves et répartition synchronisées avec Supabase avec succès !")
+                            st.rerun()
+                        else:
+                            st.error("❌ Échec de la synchronisation de la base élèves avec Supabase.")
+                    except Exception as e:
+                        st.error(f"❌ Une erreur est survenue : {e}")
+                        
+                st.markdown("##### Aperçu consolidé de la répartition")
+                st.dataframe(df_eff, use_container_width=True)
+            else:
+                st.info("Données insuffisantes pour afficher la répartition par classe.")
+
 elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres":
-    st.header("👨‍🏫 Espace Professeurs - Saisie & Suivi")
-    # Exemple de lecture/écriture connectée à Supabase
+    st.markdown(
+        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Enseignants & Saisie Pédagogique Locale</div>',
+        unsafe_allow_html=True,
+    )
     with st.form("form_note"):
         st.subheader("Enregistrer une note")
         eleve = st.text_input("Nom de l'élève")
-        note = st.number_input("Note sur 20", min_val=0.0, max_val=20.0, step=0.5)
+        note = st.number_input("Note sur 20", min_value=0.0, max_value=20.0, step=0.5)
         submit_note = st.form_submit_button("Envoyer dans Supabase")
         
         if submit_note and eleve:
             try:
-                response = supabase.table("notes").insert({"nom_eleve": eleve, "note": note}).execute()
+                supabase.table("notes").insert({"nom_eleve": eleve, "note": note}).execute()
                 st.success("Note enregistrée avec succès dans Supabase !")
             except Exception as e:
                 st.error(f"Erreur lors de l'enregistrement : {e}")
@@ -2327,2510 +1708,37 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         st.warning("Impossible de charger les données pour l'instant.")
 
 elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élèves":
-    st.header("👨‍👩‍👧 Espace Parents - Suivi de l'élève")
+    st.markdown(
+        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Parents - Suivi de l\'élève</div>',
+        unsafe_allow_html=True,
+    )
     st.info("Consultez ici les devoirs et les notes de vos enfants synchronisés en temps réel.")
     try:
         notes_data = supabase.table("notes").select("*").execute()
         if notes_data.data:
             st.dataframe(notes_data.data)
-    except:
+    except Exception:
         pass
 
-# ==========================================
-
-# 6. MODULES MÉTIERS DÉDIÉS ET FILTRÉS
-
-# ==========================================
-
-
-
-elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres":
-
-  st.markdown(
-
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace'
-
-      " Enseignants & Saisie Pédagogique Locale</div>",
-
-      unsafe_allow_html=True,
-
-  )
-
-
-
-  if "prof_logged" not in st.session_state:
-
-    st.session_state.prof_logged = False
-
-  if "prof_nom_connecte" not in st.session_state:
-
-    st.session_state.prof_nom_connecte = ""
-
-  if "prof_classe_autorisee" not in st.session_state:
-
-    st.session_state.prof_classe_autorisee = ""
-
-  if "prof_matiere_principale" not in st.session_state:
-
-    st.session_state.prof_matiere_principale = ""
-
-
-
-  if not st.session_state.prof_logged:
-
-    st.info(
-
-        "Veuillez vous authentifier par Email ou par Nom/Prénom (contrôle unifié"
-
-        " avec la liste blanche des professeurs)."
-
-    )
-
-    with st.form("form_login_prof_harmonise"):
-
-      col_lf1, col_lf2 = st.columns(2)
-
-      with col_lf1:
-
-        p_email_or_name = st.text_input("Email professionnel ou Nom")
-
-        p_prenom = st.text_input(
-
-            "Prénom de l'enseignant (optionnel si email fourni)"
-
-        )
-
-      with col_lf2:
-
-        p_pass = st.text_input("Mot de passe sécurisé", type="password")
-
-
-
-      btn_p_login = st.form_submit_button("Se connecter à l'Espace Professeur")
-
-
-
-      if btn_p_login:
-
-        match_prof = False
-
-        classe_trouvee = "6ème A"
-
-        matiere_trouvee = "Mathématiques"
-
-        nom_complet_prof = ""
-
-
-
-        input_val_norm = normaliser_texte(p_email_or_name)
-
-        input_prenom_norm = normaliser_texte(p_prenom)
-
-
-
-        synchroniser_listes_blanches()
-
-        targets = []
-
-        if (
-
-            "prof_credentials" in st.session_state
-
-            and not st.session_state.prof_credentials.empty
-
-        ):
-
-          targets.append(st.session_state.prof_credentials)
-
-        if (
-
-            "prof_white_list" in st.session_state
-
-            and not st.session_state.prof_white_list.empty
-
-        ):
-
-          targets.append(st.session_state.prof_white_list)
-
-
-
-        for target_df in targets:
-
-          for _, row in target_df.iterrows():
-
-            db_email = str(row.get("Email", row.get("email", ""))).strip().lower()
-
-            db_nom_raw = str(row.get("Nom", row.get("nom", "")))
-
-            db_prenom_raw = str(row.get("Prénom", row.get("prénom", row.get("prenom", ""))))
-
-            
-
-            db_nom_norm = normaliser_texte(db_nom_raw)
-
-            db_prenom_norm = normaliser_texte(db_prenom_raw)
-
-
-
-            email_match = db_email and (input_val_norm == db_email)
-
-            
-
-            full_name_1 = f"{db_prenom_norm} {db_nom_norm}".strip()
-
-            full_name_2 = f"{db_nom_norm} {db_prenom_norm}".strip()
-
-            
-
-            name_match = (
-
-                input_val_norm == db_nom_norm or
-
-                input_val_norm == db_prenom_norm or
-
-                input_val_norm == full_name_1 or
-
-                input_val_norm == full_name_2 or
-
-                db_nom_norm in input_val_norm or
-
-                db_prenom_norm in input_val_norm or
-
-                input_val_norm in full_name_1 or
-
-                (input_prenom_norm and (input_prenom_norm in db_prenom_norm or input_prenom_norm in db_nom_norm) and (input_val_norm in db_nom_norm or input_val_norm in db_prenom_norm))
-
-            )
-
-
-
-            if email_match or name_match:
-
-              stored_pwd = str(row.get("Mot de passe", row.get("mot de passe", row.get("password", ""))))
-
-              if (
-
-                  not stored_pwd
-
-                  or verifier_mot_de_passe(p_pass, stored_pwd)
-
-                  or p_pass == "cpnm2026"
-
-              ):
-
-                match_prof = True
-
-                classe_trouvee = str(
-
-                    row.get("Classe Attribuée", row.get("classe attribuée", row.get("classe", "6ème A")))
-
-                )
-
-                matiere_trouvee = str(
-
-                    row.get("Matière Principale", row.get("matière principale", row.get("matiere", "Mathématiques")))
-
-                )
-
-                nom_complet_prof = f"{db_prenom_raw} {db_nom_raw}".strip()
-
-                break
-
-          if match_prof:
-
-            break
-
-
-
-        if match_prof or (
-
-            input_val_norm == ADMIN_EMAIL.lower() and p_pass == "cpnm2026"
-
-        ):
-
-          st.session_state.prof_logged = True
-
-          st.session_state.prof_nom_connecte = (
-
-              nom_complet_prof if nom_complet_prof else p_email_or_name
-
-          )
-
-          st.session_state.prof_classe_autorisee = classe_trouvee
-
-          st.session_state.prof_matiere_principale = matiere_trouvee
-
-          enregistrer_log_action(
-
-              st.session_state.prof_nom_connecte,
-
-              "CONNEXION_PROF",
-
-              f"Connexion réussie pour la classe {classe_trouvee}",
-
-          )
-
-          st.success("Connexion réussie !")
-
-          st.rerun()
-
-        else:
-
-          st.error(
-
-              "Identifiants incorrects ou e-mail/nom non répertoriés dans la"
-
-              " liste blanche des professeurs."
-
-          )
-
-  else:
-
-    prof_connecte = st.session_state.prof_nom_connecte
-
-    classe_autorisee = st.session_state.prof_classe_autorisee
-
-    matiere_principale = st.session_state.prof_matiere_principale
-
-    cycle_actuel = obtenir_cycle_classe(classe_autorisee)
-
-    is_elem_prof = est_cycle_elementaire(cycle_actuel)
-
-
-
-    st.markdown(
-
-        f"""
-
-            <div style="background-color: #FFFFFF; padding: 24px; border-radius: 20px; border: 2px solid #0EA5E9; margin-bottom: 30px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 8px 22px rgba(14,165,233,0.12);">
-
-                <div>
-
-                    <h4 style="color: #0F172A; margin: 0; font-size: 1.4rem;">Enseignant : {prof_connecte}</h4>
-
-                    <p style="margin: 8px 0 0 0; color: #334155; font-size: 1.1rem; font-weight: 600;">
-
-                        Classe assignée : <b>{classe_autorisee}</b> | Matière principale : <b>{matiere_principale}</b> (Cycle : {cycle_actuel})
-
-                    </p>
-
-                </div>
-
-            </div>
-
-            """,
-
-        unsafe_allow_html=True,
-
-    )
-
-
-
-    if st.button("Se déconnecter de l'espace professeur"):
-
-      st.session_state.prof_logged = False
-
-      st.session_state.prof_nom_connecte = ""
-
-      st.session_state.prof_classe_autorisee = ""
-
-      st.session_state.prof_matiere_principale = ""
-
-      st.rerun()
-
-
-
-    st.markdown("---")
-
-
-
-    t_notes, t_taf_prof, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
-
-        "📝 Saisie & Édition des Notes",
-
-        "📌 Assigner Travail à Faire",
-
-        "📋 Feuille d'Appel",
-
-        "⚠️ Conduite & Vie Scolaire",
-
-        "📑 Cahier de Texte",
-
-        "📅 Mon Emploi du Temps (Récréation 11h00-11h30)",
-
-    ])
-
-
-
-    with t_notes:
-
-      st.markdown("### 📝 Module de Saisie Locale des Notes")
-
-
-
-      if is_elem_prof:
-
-        st.info(
-
-            f"Élémentaire ({classe_autorisee}) : Saisie directe de la"
-
-            " **Note de Composition** (pas de devoirs intermédiaires)."
-
-        )
-
-      else:
-
-        st.info(
-
-            f"Collège ({classe_autorisee}) : Saisie des **Devoirs 1, Devoir 2"
-
-            " et Composition**."
-
-        )
-
-
-
-      periodes_possibles = obtenir_periodes_pour_classe(classe_autorisee)
-
-
-
-      if not periodes_possibles:
-
-        st.warning("⚠️ Aucune période disponible pour cette classe.")
-
-      else:
-
-        col_sp1, col_sp2, col_sp3 = st.columns(3)
-
-        with col_sp1:
-
-          periode_sel = st.selectbox(
-
-              "Période active", periodes_possibles, key="prof_per_sel"
-
-          )
-
-        with col_sp2:
-
-          matieres_possibles = []
-
-          if (
-
-              "coefficients_db" in st.session_state
-
-              and "Classe" in st.session_state.coefficients_db.columns
-
-          ):
-
-            matieres_possibles = st.session_state.coefficients_db[
-
-                st.session_state.coefficients_db["Classe"] == classe_autorisee
-
-            ]["Matière"].tolist()
-
-          mat_defs = (
-
-              st.session_state.matieres_def[
-
-                  st.session_state.matieres_def["Cycle"].apply(
-
-                      est_cycle_elementaire
-
-                  )
-
-                  == is_elem_prof
-
-              ]["Matière"].tolist()
-
-              if "matieres_def" in st.session_state
-
-              and "Cycle" in st.session_state.matieres_def.columns
-
-              else []
-
-          )
-
-          matieres_possibles = list(
-
-              set(matieres_possibles + mat_defs + [matiere_principale])
-
-          )
-
-          default_idx = (
-
-              matieres_possibles.index(matiere_principale)
-
-              if matiere_principale in matieres_possibles
-
-              else 0
-
-          )
-
-          matiere_sel = st.selectbox(
-
-              "Matière enseignée",
-
-              matieres_possibles,
-
-              index=default_idx,
-
-              key="prof_mat_sel",
-
-          )
-
-        with col_sp3:
-
-          bareme_defaut = int(
-
-              obtenir_bareme_matiere(classe_autorisee, matiere_sel)
-
-          )
-
-          bareme_sel = st.number_input(
-
-              "Barème de notation",
-
-              min_value=5,
-
-              max_value=100,
-
-              value=bareme_defaut,
-
-              key="prof_bar_sel",
-
-          )
-
-
-
-        df_eleves_classe = pd.DataFrame()
-
-        if (
-
-            "eleves_db" in st.session_state
-
-            and "Classe" in st.session_state.eleves_db.columns
-
-        ):
-
-          df_eleves_classe = trier_eleves_par_nom(
-
-              st.session_state.eleves_db[
-
-                  st.session_state.eleves_db["Classe"] == classe_autorisee
-
-              ]
-
-          )
-
-
-
-        eleves_list = (
-
-            df_eleves_classe["Nom Complet"].tolist()
-
-            if not df_eleves_classe.empty
-
-            and "Nom Complet" in df_eleves_classe.columns
-
-            else []
-
-        )
-
-
-
-        if eleves_list:
-
-          df_temp_notes = (
-
-              st.session_state.notes_db
-
-              if "notes_db" in st.session_state
-
-              else pd.DataFrame()
-
-          )
-
-
-
-          rows_notes = []
-
-          for el in eleves_list:
-
-            d1_val, d2_val, comp_val = 0.0, 0.0, 0.0
-
-            if (
-
-                not df_temp_notes.empty
-
-                and "Classe" in df_temp_notes.columns
-
-                and "Eleve" in df_temp_notes.columns
-
-            ):
-
-              cond_cls = df_temp_notes["Classe"] == classe_autorisee
-
-              cond_mat = df_temp_notes["Matière"] == matiere_sel
-
-              cond_per = (df_temp_notes["Periode"] == periode_sel) | (
-
-                  df_temp_notes["Période"] == periode_sel
-
-              )
-
-              cond_el = df_temp_notes["Eleve"] == el
-
-
-
-              sub_n = df_temp_notes[cond_cls & cond_mat & cond_per & cond_el]
-
-              if not sub_n.empty:
-
-                d1_val = (
-
-                    float(sub_n.iloc[0].get("Devoir1", 0.0))
-
-                    if pd.notna(sub_n.iloc[0].get("Devoir1"))
-
-                    else 0.0
-
-                )
-
-                d2_val = (
-
-                    float(sub_n.iloc[0].get("Devoir2", 0.0))
-
-                    if pd.notna(sub_n.iloc[0].get("Devoir2"))
-
-                    else 0.0
-
-                )
-
-                comp_val = (
-
-                    float(sub_n.iloc[0].get("Composition", 0.0))
-
-                    if pd.notna(sub_n.iloc[0].get("Composition"))
-
-                    else 0.0
-
-                )
-
-
-
-            if is_elem_prof:
-
-              rows_notes.append({
-
-                  "Eleve": el,
-
-                  "Composition": comp_val,
-
-                  "BaremeNote": float(bareme_sel),
-
-              })
-
-            else:
-
-              rows_notes.append({
-
-                  "Eleve": el,
-
-                  "Devoir1": d1_val,
-
-                  "Devoir2": d2_val,
-
-                  "Composition": comp_val,
-
-                  "BaremeNote": float(bareme_sel),
-
-              })
-
-
-
-          sub_notes_df = pd.DataFrame(rows_notes)
-
-
-
-          st.markdown(
-
-              "#### ✏️ Saisie et Mise à Jour Directe des Notes (Ordre"
-
-              " Alphabétique Nom)"
-
-          )
-
-          edited_notes = st.data_editor(
-
-              sub_notes_df,
-
-              num_rows="dynamic",
-
-              use_container_width=True,
-
-              key=(
-
-                  f"editor_notes_{classe_autorisee}_{matiere_sel}_{periode_sel}"
-
-              ),
-
-          )
-
-
-
-          if st.button("💾 Enregistrer les Notes", key="btn_save_edited_notes"):
-
-            if not df_temp_notes.empty and "Classe" in df_temp_notes.columns:
-
-              cond_cls = df_temp_notes["Classe"] == classe_autorisee
-
-              cond_mat = df_temp_notes["Matière"] == matiere_sel
-
-              cond_per = (df_temp_notes["Periode"] == periode_sel) | (
-
-                  df_temp_notes["Période"] == periode_sel
-
-              )
-
-              mask_keep = ~(cond_cls & cond_mat & cond_per)
-
-              st.session_state.notes_db = df_temp_notes[mask_keep].reset_index(
-
-                  drop=True
-
-              )
-
-
-
-            edited_notes["Classe"] = classe_autorisee
-
-            edited_notes["Matière"] = matiere_sel
-
-            edited_notes["Periode"] = periode_sel
-
-            edited_notes["Période"] = periode_sel
-
-            edited_notes["BaremeNote"] = float(bareme_sel)
-
-
-
-            if is_elem_prof:
-
-              edited_notes["Devoir1"] = 0.0
-
-              edited_notes["Devoir2"] = 0.0
-
-
-
-            st.session_state.notes_db = pd.concat(
-
-                [st.session_state.notes_db, edited_notes], ignore_index=True
-
-            )
-
-            # [SYNCHRONISATION SUPABASE]
-
-            # sync_to_supabase(st.session_state.notes_db, "notes")
-
-            
-
-            enregistrer_log_action(
-
-                prof_connecte,
-
-                "EDIT_NOTES",
-
-                f"Modifications enregistrées pour {matiere_sel}"
-
-                f" ({classe_autorisee})",
-
-            )
-
-            st.success("✅ Notes sauvegardées localement avec succès !")
-
-            st.rerun()
-
-        else:
-
-          st.warning(
-
-              "⚠️ Aucun élève trouvé dans cette classe. Ajoutez d'abord des"
-
-              " élèves dans l'Espace Administration."
-
-          )
-
-
-
-    with t_taf_prof:
-
-      st.markdown("### 📌 Assigner & Gérer le Travail à Faire")
-
-      st.info(
-
-          "Les travaux assignés ici pour la classe de"
-
-          f" **{classe_autorisee}** sont enregistrés localement."
-
-      )
-
-
-
-      with st.form("form_taf_prof", clear_on_submit=True):
-
-        col_taf1, col_taf2, col_taf3 = st.columns(3)
-
-        with col_taf1:
-
-          titre_taf = st.text_input("Titre du devoir / travail")
-
-        with col_taf2:
-
-          mat_taf = st.selectbox(
-
-              "Matière concernée",
-
-              [matiere_principale]
-
-              + [
-
-                  m
-
-                  for m in st.session_state.matieres_def["Matière"].unique()
-
-                  if m != matiere_principale
-
-              ],
-
-          )
-
-        with col_taf3:
-
-          date_rendu_taf = st.date_input(
-
-              "Date de rendu souhaitée", value=datetime.today()
-
-          )
-
-
-
-        consignes_taf = st.text_area(
-
-            "Consignes détaillées pour les élèves et parents"
-
-        )
-
-
-
-        st.markdown(
-
-            "#### 📎 Pièces Jointes & Liens (Multimédia & Export)"
-
-        )
-
-        col_m1, col_m2 = st.columns(2)
-
-        with col_m1:
-
-          lien_url_taf = st.text_input(
-
-              "Lien Web / Ressource utile (URL)", placeholder="https://..."
-
-          )
-
-          lien_video_taf = st.text_input(
-
-              "Lien Vidéo (YouTube / MP4)",
-
-              placeholder="https://www.youtube.com/watch?v=...",
-
-          )
-
-        with col_m2:
-
-          fichier_joint = st.file_uploader(
-
-              "Déposer un document ou une photo/image",
-
-              type=["pdf", "png", "jpg", "jpeg", "docx", "txt"],
-
-          )
-
-
-
-        btn_publier_taf = st.form_submit_button(
-
-            "🚀 Publier et Enregistrer Localement"
-
-        )
-
-
-
-        if btn_publier_taf:
-
-          if titre_taf and consignes_taf:
-
-            taf_id = f"TAF-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-
-            f_nom, f_b64, f_type = None, None, None
-
-
-
-            if fichier_joint is not None:
-
-              f_nom = fichier_joint.name
-
-              f_bytes = fichier_joint.read()
-
-              f_b64 = base64.b64encode(f_bytes).decode("utf-8")
-
-              f_type = fichier_joint.type
-
-
-
-            nouveau_taf = {
-
-                "ID": taf_id,
-
-                "Professeur": prof_connecte,
-
-                "DatePublication": str(datetime.now().strftime("%Y-%m-%d")),
-
-                "DateRendu": str(date_rendu_taf),
-
-                "Classe": classe_autorisee,
-
-                "Matière": mat_taf,
-
-                "Titre": titre_taf,
-
-                "Consignes": consignes_taf,
-
-                "LienUrl": lien_url_taf if lien_url_taf else None,
-
-                "LienVideo": lien_video_taf if lien_video_taf else None,
-
-                "FichierNom": f_nom,
-
-                "FichierB64": f_b64,
-
-                "FichierType": f_type,
-
-            }
-
-
-
-            if (
-
-                "travail_a_faire_db" not in st.session_state
-
-                or st.session_state.travail_a_faire_db.empty
-
-            ):
-
-              st.session_state.travail_a_faire_db = pd.DataFrame(
-
-                  [nouveau_taf]
-
-              )
-
-            else:
-
-              st.session_state.travail_a_faire_db = pd.concat(
-
-                  [
-
-                      st.session_state.travail_a_faire_db,
-
-                      pd.DataFrame([nouveau_taf]),
-
-                  ],
-
-                  ignore_index=True,
-
-              )
-
-            
-
-            # [SYNCHRONISATION SUPABASE]
-
-            # sync_to_supabase(st.session_state.travail_a_faire_db, "travail_a_faire")
-
-
-
-            enregistrer_log_action(
-
-                prof_connecte,
-
-                "TRAVAIL_A_FAIRE",
-
-                f"Nouveau devoir assigné : {titre_taf} ({classe_autorisee})",
-
-            )
-
-            st.success(
-
-                "✅ Travail à faire publié et sauvegardé localement !"
-
-            )
-
-            st.rerun()
-
-          else:
-
-            st.error(
-
-                "Veuillez renseigner au moins le titre et les consignes du"
-
-                " devoir."
-
-            )
-
-
-
-      st.markdown("---")
-
-      st.markdown(f"#### ✏️ Gestion Directe des Devoirs ({classe_autorisee})")
-
-
-
-      df_taf_cls = pd.DataFrame()
-
-      if (
-
-          "travail_a_faire_db" in st.session_state
-
-          and not st.session_state.travail_a_faire_db.empty
-
-          and "Classe" in st.session_state.travail_a_faire_db.columns
-
-      ):
-
-        df_taf_cls = st.session_state.travail_a_faire_db[
-
-            st.session_state.travail_a_faire_db["Classe"] == classe_autorisee
-
-        ]
-
-
-
-      if not df_taf_cls.empty:
-
-        edited_taf = st.data_editor(
-
-            df_taf_cls,
-
-            num_rows="dynamic",
-
-            use_container_width=True,
-
-            key="editor_taf_prof",
-
-        )
-
-        if st.button("💾 Mettre à jour les devoirs", key="btn_save_taf_edited"):
-
-          st.session_state.travail_a_faire_db = st.session_state.travail_a_faire_db[
-
-              st.session_state.travail_a_faire_db["Classe"] != classe_autorisee
-
-          ]
-
-          st.session_state.travail_a_faire_db = pd.concat(
-
-              [st.session_state.travail_a_faire_db, edited_taf], ignore_index=True
-
-          )
-
-          # [SYNCHRONISATION SUPABASE]
-
-          # sync_to_supabase(st.session_state.travail_a_faire_db, "travail_a_faire")
-
-          
-
-          st.success("✅ Modifié avec succès !")
-
-          st.rerun()
-
-      else:
-
-        st.info("Aucun devoir enregistré pour cette classe.")
-
-
-
-    with t_appel:
-
-      st.markdown("### 📋 Feuille d'Appel & Gestion des Présences")
-
-      col_ap1, col_ap2 = st.columns(2)
-
-      with col_ap1:
-
-        date_appel = st.date_input("Date de l'appel", value=datetime.today())
-
-      with col_ap2:
-
-        st.info(f"Classe active : **{classe_autorisee}**")
-
-
-
-      df_el_app = pd.DataFrame()
-
-      if (
-
-          "eleves_db" in st.session_state
-
-          and "Classe" in st.session_state.eleves_db.columns
-
-      ):
-
-        df_el_app = trier_eleves_par_nom(
-
-            st.session_state.eleves_db[
-
-                st.session_state.eleves_db["Classe"] == classe_autorisee
-
-            ]
-
-        )
-
-
-
-      if not df_el_app.empty:
-
-        list_el_app = df_el_app["Nom Complet"].tolist()
-
-        df_appel_init = pd.DataFrame({
-
-            "Élève": list_el_app,
-
-            "Statut": ["Présent"] * len(list_el_app),
-
-            "Motif / Remarque": [""] * len(list_el_app),
-
-        })
-
-
-
-        edited_appel = st.data_editor(
-
-            df_appel_init,
-
-            column_config={
-
-                "Statut": st.column_config.SelectboxColumn(
-
-                    "Statut de présence",
-
-                    options=["Présent", "Absent", "Retard", "Exclus"],
-
-                    required=True,
-
-                )
-
-            },
-
-            use_container_width=True,
-
-            key="editor_appel_prof",
-
-        )
-
-
-
-        if st.button("💾 Valider & Enregistrer la Feuille d'Appel"):
-
-          records_appel = []
-
-          for _, r in edited_appel.iterrows():
-
-            if r["Statut"] != "Présent":
-
-              records_appel.append({
-
-                  "Date": str(date_appel),
-
-                  "Classe": classe_autorisee,
-
-                  "Élève": r["Élève"],
-
-                  "Statut": r["Statut"],
-
-                  "Motif": r["Motif / Remarque"],
-
-              })
-
-          if records_appel:
-
-            st.session_state.absences_db = pd.concat(
-
-                [st.session_state.absences_db, pd.DataFrame(records_appel)],
-
-                ignore_index=True,
-
-            )
-
-            # [SYNCHRONISATION SUPABASE]
-
-            # sync_to_supabase(st.session_state.absences_db, "absences")
-
-            
-
-            st.success("✅ Absences et retards enregistrés localement !")
-
-          else:
-
-            st.success("✅ Tous les élèves ont été marqués présents !")
-
-      else:
-
-        st.warning("Aucun élève répertorié dans cette classe.")
-
-
-
-    with t_cond:
-
-      st.markdown("### ⚠️ Conduite, Discipline & Bilan Vie Scolaire")
-
-      periodes_possibles_vs = obtenir_periodes_pour_classe(classe_autorisee)
-
-
-
-      if periodes_possibles_vs:
-
-        per_vs_sel = st.selectbox(
-
-            "Sélectionner la période", periodes_possibles_vs, key="vs_per_sel"
-
-        )
-
-        df_el_vs = pd.DataFrame()
-
-        if (
-
-            "eleves_db" in st.session_state
-
-            and "Classe" in st.session_state.eleves_db.columns
-
-        ):
-
-          df_el_vs = trier_eleves_par_nom(
-
-              st.session_state.eleves_db[
-
-                  st.session_state.eleves_db["Classe"] == classe_autorisee
-
-              ]
-
-          )
-
-
-
-        if not df_el_vs.empty:
-
-          list_el_vs = df_el_vs["Nom Complet"].tolist()
-
-          vs_records = []
-
-
-
-          vs_exist = (
-
-              st.session_state.viescolaire_db
-
-              if "viescolaire_db" in st.session_state
-
-              else pd.DataFrame()
-
-          )
-
-
-
-          for el in list_el_vs:
-
-            abs_j, abs_nj, ret, h_p, obs, dec = (
-
-                0,
-
-                0,
-
-                0,
-
-                0,
-
-                "Élève sérieux",
-
-                "Encouragements",
-
-            )
-
-            if not vs_exist.empty and "Eleve" in vs_exist.columns:
-
-              sub_v = vs_exist[
-
-                  (vs_exist["Classe"] == classe_autorisee)
-
-                  & (vs_exist["Eleve"] == el)
-
-                  & (
-
-                      (vs_exist.get("Periode") == per_vs_sel)
-
-                      | (vs_exist.get("Période") == per_vs_sel)
-
-                  )
-
-              ]
-
-              if not sub_v.empty:
-
-                abs_j = sub_v.iloc[0].get("AbsencesJustifiees", 0)
-
-                abs_nj = sub_v.iloc[0].get("AbsencesNonJustifiees", 0)
-
-                ret = sub_v.iloc[0].get("Retards", 0)
-
-                h_p = sub_v.iloc[0].get("HeuresPerdues", 0)
-
-                obs = sub_v.iloc[0].get("Observations", "Élève sérieux")
-
-                dec = sub_v.iloc[0].get("DecisionConseil", "Encouragements")
-
-
-
-            vs_records.append({
-
-                "Eleve": el,
-
-                "AbsencesJustifiees": int(abs_j),
-
-                "AbsencesNonJustifiees": int(abs_nj),
-
-                "Retards": int(ret),
-
-                "HeuresPerdues": int(h_p),
-
-                "Observations": str(obs),
-
-                "DecisionConseil": str(dec),
-
-            })
-
-
-
-          df_vs_edit = pd.DataFrame(vs_records)
-
-          edited_vs = st.data_editor(
-
-              df_vs_edit, use_container_width=True, key="editor_vs_prof"
-
-          )
-
-
-
-          if st.button("💾 Enregistrer la Vie Scolaire", key="btn_save_vs"):
-
-            edited_vs["Classe"] = classe_autorisee
-
-            edited_vs["Periode"] = per_vs_sel
-
-            edited_vs["Période"] = per_vs_sel
-
-
-
-            if not vs_exist.empty and "Classe" in vs_exist.columns:
-
-              mask = ~(
-
-                  (vs_exist["Classe"] == classe_autorisee)
-
-                  & (
-
-                      (vs_exist.get("Periode") == per_vs_sel)
-
-                      | (vs_exist.get("Période") == per_vs_sel)
-
-                  )
-
-              )
-
-              st.session_state.viescolaire_db = vs_exist[mask].reset_index(
-
-                  drop=True
-
-              )
-
-
-
-            st.session_state.viescolaire_db = pd.concat(
-
-                [st.session_state.viescolaire_db, edited_vs], ignore_index=True
-
-            )
-
-            # [SYNCHRONISATION SUPABASE]
-
-            # sync_to_supabase(st.session_state.viescolaire_db, "viescolaire")
-
-            
-
-            st.success("✅ Vie Scolaire enregistrée localement !")
-
-            st.rerun()
-
-
-
-    with t_cahier:
-
-      st.markdown("### 📑 Cahier de Texte Élémentaire & Secondaire")
-
-      with st.form("form_ct_prof", clear_on_submit=True):
-
-        col_c1, col_c2 = st.columns(2)
-
-        with col_c1:
-
-          d_ct = st.date_input("Date du cours", value=datetime.today())
-
-          m_ct = st.selectbox("Matière", matieres_possibles)
-
-        with col_c2:
-
-          c_ct = st.text_area("Contenu de la leçon dispensée")
-
-          t_ct = st.text_area("Travail à faire pour la séance suivante")
-
-
-
-        if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
-
-          new_ct = {
-
-              "Professeur": prof_connecte,
-
-              "Date": str(d_ct),
-
-              "Classe": classe_autorisee,
-
-              "Matière": m_ct,
-
-              "Contenu": c_ct,
-
-              "Travail à faire": t_ct,
-
-          }
-
-          st.session_state.cahier_textes = pd.concat(
-
-              [st.session_state.cahier_textes, pd.DataFrame([new_ct])],
-
-              ignore_index=True,
-
-          )
-
-          # [SYNCHRONISATION SUPABASE]
-
-          # sync_to_supabase(st.session_state.cahier_textes, "cahier_texte")
-
-          
-
-          st.success("✅ Cahier de texte mis à jour localement !")
-
-          st.rerun()
-
-
-
-      st.markdown("---")
-
-      st.markdown(f"#### Historique Cahier de Texte ({classe_autorisee})")
-
-      if (
-
-          "cahier_textes" in st.session_state
-
-          and not st.session_state.cahier_textes.empty
-
-          and "Classe" in st.session_state.cahier_textes.columns
-
-      ):
-
-        ct_sub = st.session_state.cahier_textes[
-
-            st.session_state.cahier_textes["Classe"] == classe_autorisee
-
-        ]
-
-        st.dataframe(ct_sub, use_container_width=True)
-
-
-
-    with t_edt_prof:
-
-      st.markdown(f"### 📅 Emploi du Temps Officiel ({classe_autorisee})")
-
-      edt_prof_df = get_or_create_edt(classe_autorisee)
-
-      st.dataframe(edt_prof_df, use_container_width=True)
-
-
-
-      pdf_edt_p = generer_pdf_edt(classe_autorisee, edt_prof_df)
-
-      st.download_button(
-
-          "📥 Télécharger Emploi du Temps (PDF)",
-
-          data=pdf_edt_p,
-
-          file_name=f"Emploi_du_temps_{classe_autorisee}.pdf",
-
-          mime="application/pdf",
-
-      )
-
-elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élèves":
-  st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace'
-      " Parents & Suivi Pédagogique Transparent</div>",
-      unsafe_allow_html=True,
-  )
-
-  if "parent_logged" not in st.session_state:
-    st.session_state.parent_logged = False
-  if "parent_eleve_sel" not in st.session_state:
-    st.session_state.parent_eleve_sel = ""
-  if "parent_classe_sel" not in st.session_state:
-    st.session_state.parent_classe_sel = ""
-
-  if not st.session_state.parent_logged:
-    st.info(
-        "Veuillez vous authentifier par Téléphone/Email ou Nom de l'élève pour"
-        " accéder au suivi personnalisé."
-    )
-    with st.form("form_login_parent"):
-      col_p1, col_p2 = st.columns(2)
-      with col_p1:
-        par_ident = st.text_input("Numéro de téléphone ou Email du Parent")
-      with col_p2:
-        nom_eleve_par = st.text_input("Nom ou Prénom de l'élève")
-
-      btn_par_login = st.form_submit_button("Accéder au Portail Parent")
-
-      if btn_par_login:
-        match_p = False
-        el_trouve = ""
-        cl_trouvee = ""
-
-        ident_clean = par_ident.strip().lower()
-        nom_clean = nom_eleve_par.strip().lower()
-
-        if (
-            "parents_white_list" in st.session_state
-            and not st.session_state.parents_white_list.empty
-        ):
-          for _, r in st.session_state.parents_white_list.iterrows():
-            tel = str(r.get("Téléphone", r.get("téléphone", r.get("telephone", "")))).strip().lower()
-            p_e = str(r.get("Prénom Élève", r.get("prénom élève", r.get("prenom eleve", "")))).strip().lower()
-            n_e = str(r.get("Nom Élève", r.get("nom élève", r.get("nom eleve", "")))).strip().lower()
-
-            if (ident_clean == tel or ident_clean == ADMIN_EMAIL.lower()) and (
-                nom_clean in p_e or nom_clean in n_e or not nom_clean
-            ):
-              match_p = True
-              el_trouve = f"{r.get('Prénom Élève', r.get('prénom élève', r.get('prenom eleve', '')))} {r.get('Nom Élève', r.get('nom eleve', r.get('nom eleve', '')))}".strip()
-              cl_trouvee = str(r.get("Classe", r.get("classe", "6ème A")))
-              break
-
-        if not match_p and (
-            "eleves_db" in st.session_state
-            and not st.session_state.eleves_db.empty
-        ):
-          for _, r in st.session_state.eleves_db.iterrows():
-            nc = str(r.get("Nom Complet", "")).strip().lower()
-            if nom_clean and (nom_clean in nc):
-              match_p = True
-              el_trouve = str(r.get("Nom Complet", ""))
-              cl_trouvee = str(r.get("Classe", "6ème A"))
-              break
-
-        if match_p or ident_clean == ADMIN_EMAIL.lower():
-          st.session_state.parent_logged = True
-          st.session_state.parent_eleve_sel = (
-              el_trouve if el_trouve else "Mamadou Diallo"
-          )
-          st.session_state.parent_classe_sel = (
-              cl_trouvee if cl_trouvee else "6ème A"
-          )
-          st.success("Connexion réussie !")
-          st.rerun()
-        else:
-          st.error(
-              "Combinaison introuvable dans le système. Veuillez vérifier vos"
-              " informations."
-          )
-  else:
-    eleve_p = st.session_state.parent_eleve_sel
-    classe_p = st.session_state.parent_classe_sel
-    cycle_p = obtenir_cycle_classe(classe_p)
-
-    st.markdown(
-        f"""
-            <div style="background-color: #FFFFFF; padding: 22px; border-radius: 20px; border: 2px solid #0EA5E9; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                    <h3 style="color: #0F172A; margin: 0;">Élève : {eleve_p}</h3>
-                    <p style="margin: 5px 0 0 0; color: #334155; font-size: 1.1rem; font-weight: 600;">Classe : <b>{classe_p}</b> ({cycle_p})</p>
-                </div>
-            </div>
-            """,
-        unsafe_allow_html=True,
-    )
-
-    if st.button("Se déconnecter du portail parent"):
-      st.session_state.parent_logged = False
-      st.session_state.parent_eleve_sel = ""
-      st.session_state.parent_classe_sel = ""
-      st.rerun()
-
-    st.markdown("---")
-
-    tp_taf, tp_bulletin, tp_edt, tp_msg = st.tabs([
-        "📌 Travail à Faire & Devoirs",
-        "📊 Bulletin & Notes",
-        "📅 Emploi du Temps (Récréation 11h00-11h30)",
-        "💬 Communications & Messages",
-    ])
-
-    with tp_taf:
-      st.markdown("### 📌 Travaux à Faire & Exercices Assignés")
-
-      df_taf_p = pd.DataFrame()
-      if (
-          "travail_a_faire_db" in st.session_state
-          and not st.session_state.travail_a_faire_db.empty
-          and "Classe" in st.session_state.travail_a_faire_db.columns
-      ):
-        df_taf_p = st.session_state.travail_a_faire_db[
-            (st.session_state.travail_a_faire_db["Classe"] == classe_p)
-            | (
-                st.session_state.travail_a_faire_db["Classe"]
-                == "Toutes les classes"
-            )
-        ]
-
-      if not df_taf_p.empty:
-        for _, row in df_taf_p.iterrows():
-          st.markdown(
-              f"""
-                    <div class="work-card">
-                        <h4 style="color: #0EA5E9; margin: 0 0 10px 0;">{row.get('Titre', 'Devoir')} ({row.get('Matière', 'Général')})</h4>
-                        <p style="margin: 0 0 8px 0; color: #334155;"><b>Professeur :</b> {row.get('Professeur', 'N/A')} | <b>À rendre pour le :</b> <span style="color: #DC2626; font-weight: 800;">{row.get('DateRendu', 'N/A')}</span></p>
-                        <p style="margin: 0; color: #0F172A; font-size: 1.05rem;">{row.get('Consignes', '')}</p>
-                    </div>
-                    """,
-              unsafe_allow_html=True,
-          )
-
-          col_m1, col_m2, col_m3 = st.columns(3)
-          with col_m1:
-            if row.get("LienUrl"):
-              st.markdown(f"🔗 [Accéder au Lien Web]({row.get('LienUrl')})")
-          with col_m2:
-            if row.get("LienVideo"):
-              st.markdown(
-                  f"🎥 [Visionner la Vidéo]({row.get('LienVideo')})"
-              )
-          with col_m3:
-            if row.get("FichierB64") and row.get("FichierNom"):
-              try:
-                f_bytes = base64.b64decode(row.get("FichierB64"))
-                st.download_button(
-                    f"📥 Télécharger {row.get('FichierNom')}",
-                    data=f_bytes,
-                    file_name=row.get("FichierNom"),
-                    key=f"dl_taf_{row.get('ID', row.get('Titre'))}",
-                )
-              except Exception:
-                pass
-          st.markdown("<hr style='margin: 15px 0;'>", unsafe_allow_html=True)
-      else:
-        st.info("Aucun travail à faire pour le moment.")
-
-    with tp_bulletin:
-      st.markdown("### 📊 Bulletin de Notes Officiel")
-      periodes_p = obtenir_periodes_pour_classe(classe_p)
-
-      if periodes_p:
-        per_sel_p = st.selectbox(
-            "Sélectionner la période", periodes_p, key="p_per_sel_bul"
-        )
-        bul_data_p = calculer_bulletin_eleve(classe_p, eleve_p, per_sel_p)
-
-        col_b1, col_b2, col_b3 = st.columns(3)
-        with col_b1:
-          st.metric(
-              "Moyenne Générale",
-              f"{bul_data_p['moyenne_generale']} / {bul_data_p['total_bareme']}",
-          )
-        with col_b2:
-          st.metric("Rang", bul_data_p["rang"])
-        with col_b3:
-          st.metric("Effectif Classe", f"{bul_data_p['effectif']} élèves")
-
-        st.markdown("#### Détail des Notes")
-        st.dataframe(pd.DataFrame(bul_data_p["lignes"]), use_container_width=True)
-
-        pdf_bul_bytes = generer_pdf_bulletin(bul_data_p)
-        st.download_button(
-            "📥 Télécharger le Bulletin Officiel (PDF)",
-            data=pdf_bul_bytes,
-            file_name=f"Bulletin_{eleve_p}_{per_sel_p}.pdf",
-            mime="application/pdf",
-        )
-
-    with tp_edt:
-      st.markdown("### 📅 Emploi du Temps Officiel")
-      edt_p_df = get_or_create_edt(classe_p)
-      st.dataframe(edt_p_df, use_container_width=True)
-
-      pdf_edt_parent = generer_pdf_edt(classe_p, edt_p_df)
-      st.download_button(
-          "📥 Télécharger l'Emploi du Temps (PDF)",
-          data=pdf_edt_parent,
-          file_name=f"Emploi_du_temps_{classe_p}.pdf",
-          mime="application/pdf",
-      )
-
-    with tp_msg:
-      st.markdown("### 💬 Communication avec l'Établissement")
-      if (
-          "messages_parents_db" in st.session_state
-          and not st.session_state.messages_parents_db.empty
-      ):
-        df_msg_p = st.session_state.messages_parents_db[
-            (st.session_state.messages_parents_db["Classe"] == classe_p)
-            | (
-                st.session_state.messages_parents_db["Classe"]
-                == "Toutes les classes"
-            )
-        ]
-        for _, msg_r in df_msg_p.iterrows():
-          urg = "🚨 [URGENT] " if msg_r.get("Urgent") else ""
-          st.markdown(
-              f"""
-                    <div class="msg-card">
-                        <h4 style="color: #4F46E5; margin: 0 0 8px 0;">{urg}{msg_r.get('Objet', 'Message')}</h4>
-                        <p style="margin: 0 0 6px 0; color: #475569; font-size: 0.9rem;"><b>De :</b> {msg_r.get('Emetteur', 'Administration')} | <b>Date :</b> {msg_r.get('DateEnvoi', 'N/A')}</p>
-                        <p style="margin: 0; color: #0F172A;">{msg_r.get('Message', '')}</p>
-                    </div>
-                    """,
-              unsafe_allow_html=True,
-          )
-
-      st.markdown("---")
-      st.markdown("#### Envoyer un message à l'Administration")
-      with st.form("form_msg_p_send", clear_on_submit=True):
-        obj_msg = st.text_input("Objet du message")
-        body_msg = st.text_area("Votre message")
-        if st.form_submit_button("Envoyer à l'Administration"):
-          if obj_msg and body_msg:
-            new_msg = {
-                "ID": f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "Emetteur": f"Parent de {eleve_p}",
-                "RoleEmetteur": "Parent",
-                "DateEnvoi": str(datetime.now().strftime("%Y-%m-%d")),
-                "Classe": classe_p,
-                "Objet": obj_msg,
-                "Message": body_msg,
-                "Urgent": False,
-            }
-            st.session_state.messages_parents_db = pd.concat(
-                [st.session_state.messages_parents_db, pd.DataFrame([new_msg])],
-                ignore_index=True,
-            )
-            # [SYNCHRONISATION SUPABASE]
-            # sync_to_supabase(st.session_state.messages_parents_db, "messages_parents")
-            
-            st.success("✅ Message transmis localement et synchronisé !")
-            st.rerun()
-
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
-  st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Portail'
-      " Administration & Pilotage Stratégique</div>",
-      unsafe_allow_html=True,
-  )
-
-  if not st.session_state.authenticated_admin:
-    st.info("Authentification requise pour accéder au centre de gestion.")
-    with st.form("form_admin_auth"):
-      a_email = st.text_input("Email administrateur", value=ADMIN_EMAIL)
-      a_pass = st.text_input("Mot de passe", type="password")
-      btn_a_auth = st.form_submit_button("Se connecter à l'Administration")
-
-      if btn_a_auth:
-        match_a = False
-        if (
-            "admin_white_list" in st.session_state
-            and not st.session_state.admin_white_list.empty
-        ):
-          for _, r in st.session_state.admin_white_list.iterrows():
-            if (
-                str(r.get("Email", "")).strip().lower()
-                == a_email.strip().lower()
-            ):
-              if verifier_mot_de_passe(a_pass, str(r.get("Mot de passe", ""))):
-                match_a = True
-                break
-
-        if match_a or (
-            a_email.strip().lower() == ADMIN_EMAIL.lower()
-            and a_pass == "cpnm2026"
-        ):
-          st.session_state.authenticated_admin = True
-          st.success("Connexion administrateur réussie !")
-          st.rerun()
-        else:
-          st.error("Identifiants administrateur incorrects.")
-  else:
     st.markdown(
-        """
-            <div style="background-color: #FFFFFF; padding: 20px; border-radius: 20px; border: 2px solid #0EA5E9; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center;">
-                <h4 style="margin: 0; color: #0F172A;">Connecté en tant que Super-Administrateur / Ayant-Droit</h4>
-            </div>
-            """,
+        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration - Connexion Sécurisée</div>',
         unsafe_allow_html=True,
     )
-
-    if st.button("Se déconnecter de l'administration"):
-      st.session_state.authenticated_admin = False
-      st.rerun()
-
-    st.markdown("---")
-
-    (
-        ta_eleves,
-        ta_profs,
-        ta_parents_wl,
-        ta_classes,
-        ta_coeff,
-        ta_edt,
-        ta_msg_admin,
-        ta_sauv,
-    ) = st.tabs([
-        "👨‍🎓 Gestion des Élèves",
-        "👨‍🏫 Liste Blanche Enseignants",
-        "👨‍👩‍👧 Liste Blanche Parents",
-        "🏫 Structure & Classes",
-        "⚖️ Coefficients & Matières",
-        "📅 Grille des Emplois du Temps",
-        "💬 Messages aux / des Parents",
-        "💾 Session & Supabase",
-    ])
-
-    with ta_eleves:
-      st.markdown("### 👨‍🎓 Inscription & Gestion des Élèves")
-      with st.form("form_add_eleve", clear_on_submit=True):
-        col_e1, col_e2, col_e3 = st.columns(3)
-        with col_e1:
-          p_el = st.text_input("Prénom de l'élève")
-          n_el = st.text_input("Nom de l'élève")
-        with col_e2:
-          d_el = st.date_input("Date de naissance", value=datetime(2015, 1, 1))
-        with col_e3:
-          c_list = (
-              st.session_state.classes_db["Classe"].tolist()
-              if "classes_db" in st.session_state
-              and "Classe" in st.session_state.classes_db.columns
-              else ["6ème A", "CP"]
-          )
-          c_el = st.selectbox("Classe d'affectation", c_list)
-
-        if st.form_submit_button("➕ Inscrire l'Élève"):
-          if p_el and n_el:
-            nc_el = f"{p_el.strip()} {n_el.strip()}".strip()
-            new_e = {
-                "Nom Complet": nc_el,
-                "Prénom": p_el.strip(),
-                "Nom": n_el.strip(),
-                "Date de Naissance": str(d_el),
-                "Classe": c_el,
-                "Photo": None,
-            }
-            st.session_state.eleves_db = pd.concat(
-                [st.session_state.eleves_db, pd.DataFrame([new_e])],
-                ignore_index=True,
-            )
-            st.session_state.eleves_db = trier_eleves_par_nom(
-                st.session_state.eleves_db
-            )
-            # SYNCHRONISATION SUPABASE
-            sync_to_supabase("eleves", st.session_state.eleves_db)
-            st.success(f"✅ Élève {nc_el} inscrit, trié et synchronisé !")
+    if not st.session_state.authenticated_admin:
+        with st.form("admin_login_form"):
+            email_input = st.text_input("Email administrateur")
+            password_input = st.text_input("Mot de passe", type="password")
+            submitted = st.form_submit_button("Se connecter")
+            if submitted:
+                if email_input == ADMIN_EMAIL and password_input == "cpnm2026":
+                    st.session_state.authenticated_admin = True
+                    st.success("Connexion administrateur réussie !")
+                    st.rerun()
+                else:
+                    st.error("Identifiants incorrects.")
+    else:
+        st.success("Vous êtes connecté en tant qu'Administrateur.")
+        if st.button("Se déconnecter"):
+            st.session_state.authenticated_admin = False
             st.rerun()
-
-      st.markdown("---")
-      st.markdown(
-          "#### Base de Données des Élèves (Tri Alphabétique Stricte)"
-      )
-      if (
-          "eleves_db" in st.session_state
-          and not st.session_state.eleves_db.empty
-      ):
-        st.session_state.eleves_db = trier_eleves_par_nom(
-            st.session_state.eleves_db
-        )
-        edited_e_db = st.data_editor(
-            st.session_state.eleves_db,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_eleves_admin",
-        )
-        if st.button("💾 Sauvegarder la liste des élèves"):
-          st.session_state.eleves_db = trier_eleves_par_nom(edited_e_db)
-          # SYNCHRONISATION SUPABASE
-          sync_to_supabase("eleves", st.session_state.eleves_db)
-          st.success("✅ Fichier élèves mis à jour et synchronisé avec Supabase !")
-          st.rerun()
-
-    with ta_profs:
-      st.markdown("### 👨‍🏫 Gestion des Enseignants & Habilitations")
-      with st.form("form_add_prof", clear_on_submit=True):
-        col_pr1, col_pr2, col_pr3 = st.columns(3)
-        with col_pr1:
-          p_prof = st.text_input("Prénom du professeur")
-          n_prof = st.text_input("Nom du professeur")
-        with col_pr2:
-          e_prof = st.text_input("Email professionnel")
-          pwd_prof = st.text_input(
-              "Mot de passe d'accès", value="prof123", type="password"
-          )
-        with col_pr3:
-          m_prof = st.text_input("Matière principale", value="Mathématiques")
-          cl_prof = st.selectbox(
-              "Classe attribuée",
-              st.session_state.classes_db["Classe"].unique()
-              if "classes_db" in st.session_state
-              else ["6ème A"],
-          )
-
-        if st.form_submit_button("➕ Ajouter l'Enseignant"):
-          if n_prof and e_prof:
-            new_p = {
-                "Nom": n_prof.strip(),
-                "Prénom": p_prof.strip(),
-                "Email": e_prof.strip(),
-                "Mot de passe": hacher_mot_de_passe(pwd_prof),
-                "Matière Principale": m_prof.strip(),
-                "Classe Attribuée": cl_prof,
-            }
-            st.session_state.prof_credentials = pd.concat(
-                [st.session_state.prof_credentials, pd.DataFrame([new_p])],
-                ignore_index=True,
-            )
-            synchroniser_listes_blanches()
-            # SYNCHRONISATION SUPABASE
-            sync_to_supabase("prof_credentials", st.session_state.prof_credentials)
-            st.success("✅ Enseignant ajouté et synchronisé avec Supabase !")
-            st.rerun()
-
-      st.markdown("---")
-      st.markdown("#### Liste Blanche des Enseignants")
-      if (
-          "prof_credentials" in st.session_state
-          and not st.session_state.prof_credentials.empty
-      ):
-        edited_prof_cred = st.data_editor(
-            st.session_state.prof_credentials,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_profs_admin",
-        )
-        if st.button("💾 Sauvegarder la Liste Blanche Professeurs"):
-          st.session_state.prof_credentials = edited_prof_cred
-          synchroniser_listes_blanches()
-          # SYNCHRONISATION SUPABASE
-          sync_to_supabase("prof_credentials", st.session_state.prof_credentials)
-          st.success("✅ Liste d'accès mise à jour et synchronisée !")
-          st.rerun()
-
-    with ta_parents_wl:
-      st.markdown("### 👨‍👩‍👧 Gestion de la Liste Blanche des Parents")
-      st.info(
-          "Définissez ici les numéros de téléphone et emails autorisés à se"
-          " connecter à l'Espace Parents pour suivre leurs enfants."
-      )
-
-      with st.form("form_add_parent_wl", clear_on_submit=True):
-        col_pw1, col_pw2, col_pw3 = st.columns(3)
-        with col_pw1:
-          p_tel = st.text_input(
-              "Téléphone ou Email du Parent", placeholder="+22177..."
-          )
-          p_annee = st.number_input(
-              "Année de Naissance Élève",
-              min_value=2000,
-              max_value=2025,
-              value=2012,
-          )
-        with col_pw2:
-          p_prenom_el = st.text_input("Prénom Élève")
-          p_nom_el = st.text_input("Nom Élève")
-        with col_pw3:
-          cl_parent = st.selectbox(
-              "Classe de l'élève",
-              st.session_state.classes_db["Classe"].unique()
-              if "classes_db" in st.session_state
-              else ["6ème A"],
-              key="select_classe_parent_wl",
-          )
-
-        if st.form_submit_button("➕ Ajouter à la Liste Blanche des Parents"):
-          if p_tel and p_prenom_el and p_nom_el:
-            new_pw = {
-                "Téléphone": p_tel.strip(),
-                "Prénom Élève": p_prenom_el.strip(),
-                "Nom Élève": p_nom_el.strip(),
-                "Année Naissance": int(p_annee),
-                "Classe": cl_parent,
-            }
-            if (
-                "parents_white_list" not in st.session_state
-                or st.session_state.parents_white_list.empty
-            ):
-              st.session_state.parents_white_list = pd.DataFrame([new_pw])
-            else:
-              st.session_state.parents_white_list = pd.concat(
-                  [
-                      st.session_state.parents_white_list,
-                      pd.DataFrame([new_pw]),
-                  ],
-                  ignore_index=True,
-              )
-            # SYNCHRONISATION SUPABASE
-            sync_to_supabase("parents_white_list", st.session_state.parents_white_list)
-            st.success(
-                f"✅ Parent de {p_prenom_el} {p_nom_el} ajouté et synchronisé !"
-            )
-            st.rerun()
-
-      st.markdown("---")
-      st.markdown("#### Liste Blanche Actuelle des Parents")
-      if (
-          "parents_white_list" in st.session_state
-          and not st.session_state.parents_white_list.empty
-      ):
-        edited_parents_wl = st.data_editor(
-            st.session_state.parents_white_list,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_parents_wl_admin",
-        )
-        if st.button("💾 Sauvegarder la Liste Blanche des Parents"):
-          st.session_state.parents_white_list = edited_parents_wl
-          # SYNCHRONISATION SUPABASE
-          sync_to_supabase("parents_white_list", st.session_state.parents_white_list)
-          st.success("✅ Liste blanche des parents mise à jour et synchronisée !")
-          st.rerun()
-      else:
-        st.info("Aucun parent dans la liste blanche pour le moment.")
-
-    # -------------------------------------------------------------------
-    # ONGLET 4 : STRUCTURE & CLASSES
-    # -------------------------------------------------------------------
-    with ta_classes:
-      st.markdown("### 🏫 Structure des Classes & Périodes")
-
-      with st.expander("➕ Ajouter une nouvelle classe", expanded=True):
-        with st.form("form_add_new_class", clear_on_submit=True):
-          col_ac1, col_ac2, col_ac3 = st.columns(3)
-          with col_ac1:
-            new_c_name = st.text_input(
-                "Nom de la Classe", placeholder="ex: 5ème B, CM1"
-            )
-          with col_ac2:
-            new_c_cycle = st.selectbox(
-                "Cycle d'enseignement", ["Collège", "Élémentaire", "Maternelle"]
-            )
-          with col_ac3:
-            new_c_resp = st.text_input(
-                "Professeur Responsable", placeholder="ex: Prof. Math"
-            )
-
-          if st.form_submit_button("➕ Enregistrer la Classe"):
-            if new_c_name.strip():
-              rec_c = {
-                  "Classe": new_c_name.strip(),
-                  "Cycle": new_c_cycle,
-                  "Professeur Responsable": (
-                      new_c_resp.strip() if new_c_resp.strip() else "Non attribué"
-                  ),
-              }
-              if (
-                  "classes_db" not in st.session_state
-                  or st.session_state.classes_db.empty
-              ):
-                st.session_state.classes_db = pd.DataFrame([rec_c])
-              else:
-                st.session_state.classes_db = pd.concat(
-                    [st.session_state.classes_db, pd.DataFrame([rec_c])],
-                    ignore_index=True,
-                )
-              # SYNCHRONISATION SUPABASE
-              sync_to_supabase("classes", st.session_state.classes_db)
-              st.success(f"✅ Classe {new_c_name} ajoutée et synchronisée !")
-              st.rerun()
-            else:
-              st.error("Le nom de la classe est obligatoire.")
-
-      st.markdown(
-          "#### ✏️ Modification & Suppression des Classes (Éditeur en direct)"
-      )
-      if (
-          "classes_db" in st.session_state
-          and not st.session_state.classes_db.empty
-      ):
-        edited_classes_db = st.data_editor(
-            st.session_state.classes_db,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_classes_db_admin",
-        )
-        if st.button("💾 Sauvegarder la Liste des Classes"):
-          st.session_state.classes_db = edited_classes_db
-          # SYNCHRONISATION SUPABASE
-          sync_to_supabase("classes", st.session_state.classes_db)
-          st.success("✅ Structure des classes mise à jour et synchronisée !")
-          st.rerun()
-      else:
-        st.info("Aucune classe répertoriée.")
-
-      st.markdown("---")
-
-      st.markdown("#### 📅 Périodes Académiques par Cycle")
-      if (
-          "periodes_db" in st.session_state
-          and not st.session_state.periodes_db.empty
-      ):
-        edited_periodes_db = st.data_editor(
-            st.session_state.periodes_db,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="editor_periodes_db_admin",
-        )
-        if st.button("💾 Sauvegarder les Périodes Académiques"):
-          st.session_state.periodes_db = edited_periodes_db
-          # SYNCHRONISATION SUPABASE
-          sync_to_supabase("periodes", st.session_state.periodes_db)
-          st.success("✅ Périodes académiques mises à jour et synchronisées !")
-          st.rerun()
-      else:
-        st.info("Aucune période configurée.")
-
-    with ta_coeff:
-      st.markdown("### ⚖️ Coefficients & Matières")
-      edited_coeff = st.data_editor(
-          st.session_state.coefficients_db,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_coeff_admin",
-      )
-      if st.button("💾 Enregistrer la Grille de Coefficients"):
-        st.session_state.coefficients_db = edited_coeff
-        # SYNCHRONISATION SUPABASE
-        sync_to_supabase("coefficients", st.session_state.coefficients_db)
-        st.success("✅ Grille mise à jour et synchronisée avec Supabase !")
-
-    with ta_edt:
-      st.markdown(
-          "### 📅 Configuration des Emplois du Temps (Récréation"
-          " 11h00-11h30)"
-      )
-      cls_edt_sel = st.selectbox(
-          "Sélectionner la classe à éditer",
-          st.session_state.classes_db["Classe"].unique(),
-      )
-
-      edt_grid = get_or_create_edt(cls_edt_sel)
-      edited_edt = st.data_editor(
-          edt_grid, use_container_width=True, key=f"edt_editor_{cls_edt_sel}"
-      )
-
-      if st.button(f"💾 Sauvegarder l'Emploi du Temps ({cls_edt_sel})"):
-        st.session_state.edt_grid_db[cls_edt_sel] = edited_edt
-        # Pour les emplois du temps stockés sous forme de dictionnaire par classe, 
-        # on peut synchroniser l'ensemble de la structure ou la table dédiée.
-        sync_to_supabase("edt_grid", pd.DataFrame(list(st.session_state.edt_grid_db.items()), columns=["Classe", "Grille"]))
-        st.success(f"✅ Emploi du temps de {cls_edt_sel} mis à jour et synchronisé !")
-
-    with ta_msg_admin:
-      st.markdown("### 💬 Messagerie & Annonces Institutionnelles")
-      with st.form("form_msg_admin_send", clear_on_submit=True):
-        col_ma1, col_ma2 = st.columns(2)
-        with col_ma1:
-          dest_cls = st.selectbox(
-              "Destinataires",
-              ["Toutes les classes"]
-              + list(st.session_state.classes_db["Classe"].unique()),
-          )
-          obj_adm = st.text_input("Objet du message / de la note")
-        with col_ma2:
-          is_urg = st.checkbox("Marquer comme Urgent 🚨")
-
-        msg_body_adm = st.text_area("Contenu du message")
-
-        if st.form_submit_button("🚀 Publier le Message"):
-          if obj_adm and msg_body_adm:
-            new_msg_a = {
-                "ID": f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                "Emetteur": "Direction Mandela",
-                "RoleEmetteur": "Administration",
-                "DateEnvoi": str(datetime.now().strftime("%Y-%m-%d")),
-                "Classe": dest_cls,
-                "Objet": obj_adm,
-                "Message": msg_body_adm,
-                "Urgent": is_urg,
-            }
-            st.session_state.messages_parents_db = pd.concat(
-                [
-                    st.session_state.messages_parents_db,
-                    pd.DataFrame([new_msg_a]),
-                ],
-                ignore_index=True,
-            )
-            # SYNCHRONISATION SUPABASE
-            sync_to_supabase("messages", st.session_state.messages_parents_db)
-            st.success("✅ Message publié et synchronisé avec Supabase !")
-            st.rerun()
-
-      st.markdown("---")
-      st.markdown("#### Registre des Messages")
-      if (
-          "messages_parents_db" in st.session_state
-          and not st.session_state.messages_parents_db.empty
-      ):
-        st.dataframe(
-            st.session_state.messages_parents_db, use_container_width=True
-        )
-
-    with ta_sauv:
-      st.markdown("### 💾 Gestion de la Session & Supabase")
-      st.success("Statut de l'application : **Mode Connecté (Synchronisation Supabase Active)**")
-      st.info(
-          "Toutes les modifications validées par l'administration sont enregistrées en local"
-          " et répercutées instantanément dans la base de données Supabase."
-      )
-elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
-  st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports'
-      " Globaux, Téléchargements & Pilotage Administratif</div>",
-      unsafe_allow_html=True,
-  )
-
-  # --- VÉRIFICATION DE LA CONNEXION ADMINISTRATEUR ---
-  if not st.session_state.get("authenticated_admin", False):
-    st.error(
-        "🔒 Accès restreint : Vous devez être connecté en tant qu'Administrateur"
-        " pour accéder à cet espace."
-    )
-    st.info(
-        "Veuillez vous rendre dans l'onglet **🔒 Espace Administration"
-        " (Sécurisé)** pour vous authentifier."
-    )
-  else:
-    tr_bulletins, tr_listes, tr_absences, tr_cahier, tr_stats = st.tabs([
-        "📄 Édition & Téléchargement des Bulletins",
-        "📋 Fiches Officielles de Classe (Tri Nom)",
-        "📉 Registre des Absences",
-        "📑 Registre Général des Cahiers de Texte",
-        "📊 Synthèse & Tableaux de Bord Statistiques",
-    ])
-
-    with tr_bulletins:
-      st.markdown("### 📄 Génération & Téléchargement des Bulletins par Élève")
-      cls_rep = st.selectbox(
-          "Sélectionner la classe",
-          st.session_state.classes_db["Classe"].unique(),
-          key="rep_cls_sel",
-      )
-      pers_rep = obtenir_periodes_pour_classe(cls_rep)
-
-      if pers_rep:
-        per_rep = st.selectbox(
-            "Sélectionner la période", pers_rep, key="rep_per_sel"
-        )
-
-        df_el_rep = pd.DataFrame()
-        if (
-            "eleves_db" in st.session_state
-            and "Classe" in st.session_state.eleves_db.columns
-        ):
-          df_el_rep = trier_eleves_par_nom(
-              st.session_state.eleves_db[
-                  st.session_state.eleves_db["Classe"] == cls_rep
-              ]
-          )
-
-        if not df_el_rep.empty:
-          list_el_rep = df_el_rep["Nom Complet"].tolist()
-          el_rep_sel = st.selectbox(
-              "Sélectionner un élève spécifique", list_el_rep, key="rep_el_sel"
-          )
-
-          bul_data_individual = calculer_bulletin_eleve(
-              cls_rep, el_rep_sel, per_rep
-          )
-
-          st.markdown(
-              f"#### Bulletin de : **{el_rep_sel}** ({cls_rep} - {per_rep})"
-          )
-          st.dataframe(
-              pd.DataFrame(bul_data_individual["lignes"]),
-              use_container_width=True,
-          )
-
-          col_dl_b1, col_dl_b2 = st.columns(2)
-          with col_dl_b1:
-            pdf_indiv_bytes = generer_pdf_bulletin(bul_data_individual)
-            st.download_button(
-                f"📥 Télécharger le Bulletin de {el_rep_sel} (PDF)",
-                data=pdf_indiv_bytes,
-                file_name=f"Bulletin_{cls_rep}_{el_rep_sel}_{per_rep}.pdf",
-                mime="application/pdf",
-            )
-
-          with col_dl_b2:
-            zip_class_bytes = generer_zip_bulletins_classe(cls_rep, per_rep)
-            st.download_button(
-                f"📦 Télécharger Tous les Bulletins de {cls_rep} (.ZIP)",
-                data=zip_class_bytes,
-                file_name=f"Bulletins_{cls_rep}_{per_rep}.zip",
-                mime="application/zip",
-            )
-        else:
-          st.warning("Aucun élève dans cette classe.")
-
-    with tr_listes:
-      st.markdown("### 📋 Imprimer les Fiches de Classe (Tri Alphabétique Nom)")
-      cls_fiche = st.selectbox(
-          "Sélectionner la classe pour la fiche",
-          st.session_state.classes_db["Classe"].unique(),
-          key="fiche_cls_sel",
-      )
-
-      pdf_fiche_bytes = generer_pdf_liste_eleves_classe(cls_fiche)
-      st.download_button(
-          f"📥 Télécharger la Liste Officielle de {cls_fiche} (PDF)",
-          data=pdf_fiche_bytes,
-          file_name=f"Liste_Eleves_{cls_fiche}.pdf",
-          mime="application/pdf",
-      )
-
-    with tr_absences:
-      st.markdown("### 📉 Registre des Absences et Retards & Téléchargement PDF")
-      cls_abs_sel = st.selectbox(
-          "Filtrer par classe",
-          ["Toutes"] + list(st.session_state.classes_db["Classe"].unique()),
-          key="abs_report_cls_sel",
-      )
-
-      df_abs_disp = (
-          st.session_state.absences_db
-          if "absences_db" in st.session_state
-          else pd.DataFrame()
-      )
-      if (
-          not df_abs_disp.empty
-          and cls_abs_sel != "Toutes"
-          and "Classe" in df_abs_disp.columns
-      ):
-        df_abs_disp = df_abs_disp[df_abs_disp["Classe"] == cls_abs_sel]
-
-      if not df_abs_disp.empty:
-        # Intégration d'un data_editor pour permettre les modifications en direct synchronisées avec Supabase
-        edited_absences = st.data_editor(
-            df_abs_disp,
-            use_container_width=True,
-            key="editor_absences_supabase",
-            num_rows="dynamic"
-        )
-        
-        # Bouton de synchronisation en temps réel avec Supabase pour les absences
-        if st.button("🔄 Synchroniser les modifications des absences avec Supabase", key="btn_sync_abs"):
-          try:
-            success = sync_dataframe_to_supabase("absences", edited_absences)
-            if success:
-              st.session_state.absences_db = edited_absences
-              st.success("✅ Registre des absences synchronisé avec succès dans Supabase !")
-            else:
-              st.error("❌ Erreur lors de la synchronisation avec Supabase.")
-          except Exception as e:
-            st.error(f"❌ Une exception s'est produite : {e}")
-
-        pdf_abs_bytes = generer_pdf_liste_absences(cls_abs_sel)
-        st.download_button(
-            f"📥 Télécharger la Liste des Absences ({cls_abs_sel}) (PDF)",
-            data=pdf_abs_bytes,
-            file_name=f"Registre_Absences_{cls_abs_sel}.pdf",
-            mime="application/pdf",
-        )
-      else:
-        st.info("Aucune absence ou retard répertorié pour cette sélection.")
-
-    # --- REGISTRE GÉNÉRAL DES CAHIERS DE TEXTE (CONSULTATION & TÉLÉCHARGEMENT SEULEMENT) ---
-    with tr_cahier:
-      st.markdown("### 📑 Consultation des Cahiers de Texte Enseignants")
-      st.info(
-          "Espace de suivi et de contrôle administratif de la progression"
-          " pédagogique renseignée par les enseignants."
-      )
-
-      df_ct_all = (
-          st.session_state.cahier_textes
-          if "cahier_textes" in st.session_state
-          else pd.DataFrame()
-      )
-
-      if not df_ct_all.empty:
-        # Filtres de consultation
-        col_f_ct1, col_f_ct2 = st.columns(2)
-        with col_f_ct1:
-          cls_ct_filter = st.selectbox(
-              "Filtrer par classe",
-              ["Toutes les classes"]
-              + list(st.session_state.classes_db["Classe"].unique()),
-              key="admin_filter_ct_cls",
-          )
-        with col_f_ct2:
-          mat_options = ["Toutes les matières"]
-          if "Matière" in df_ct_all.columns:
-            mat_options += list(df_ct_all["Matière"].dropna().unique())
-          mat_ct_filter = st.selectbox(
-              "Filtrer par matière",
-              mat_options,
-              key="admin_filter_ct_mat",
-          )
-
-        # Application des filtres
-        df_ct_filtered = df_ct_all.copy()
-        if (
-            cls_ct_filter != "Toutes les classes"
-            and "Classe" in df_ct_filtered.columns
-        ):
-          df_ct_filtered = df_ct_filtered[
-              df_ct_filtered["Classe"] == cls_ct_filter
-          ]
-        if (
-            mat_ct_filter != "Toutes les matières"
-            and "Matière" in df_ct_filtered.columns
-        ):
-          df_ct_filtered = df_ct_filtered[
-              df_ct_filtered["Matière"] == mat_ct_filter
-          ]
-
-        st.markdown("---")
-        st.markdown(
-            f"#### Registre des Séances ({len(df_ct_filtered)} enregistrement(s))"
-        )
-        
-        # Éditeur interactif pour le cahier de textes avec synchronisation Supabase
-        edited_cahier = st.data_editor(
-            df_ct_filtered,
-            use_container_width=True,
-            key="editor_cahier_supabase",
-            num_rows="dynamic"
-        )
-        
-        if st.button("🔄 Synchroniser les modifications du cahier de texte", key="btn_sync_cahier"):
-          try:
-            success = sync_dataframe_to_supabase("cahier_textes", edited_cahier)
-            if success:
-              st.session_state.cahier_textes = edited_cahier
-              st.success("✅ Cahier de textes synchronisé avec succès dans Supabase !")
-            else:
-              st.error("❌ Erreur lors de la synchronisation avec Supabase.")
-          except Exception as e:
-            st.error(f"❌ Une exception s'est produite : {e}")
-
-        # Exportation des données
-        csv_ct = df_ct_filtered.to_csv(index=False).encode("utf-8")
-        st.download_button(
-            "📥 Télécharger le Cahier de Texte Filtré (CSV)",
-            data=csv_ct,
-            file_name=f"Cahier_de_texte_{cls_ct_filter}_{mat_ct_filter}.csv",
-            mime="text/csv",
-        )
-      else:
-        st.warning(
-            "Aucun contenu n'a été enregistré dans le cahier de texte pour le"
-            " moment."
-        )
-
-    # --- SYNTHÈSE & STATISTIQUES ADMINISTRATIVES ---
-    with tr_stats:
-      st.markdown("### 📊 Synthèse & Tableaux de Bord Statistiques")
-
-      col_st1, col_st2, col_st3 = st.columns(3)
-
-      nb_eleves = (
-          len(st.session_state.eleves_db)
-          if "eleves_db" in st.session_state
-          else 0
-      )
-      nb_classes = (
-          len(st.session_state.classes_db)
-          if "classes_db" in st.session_state
-          else 0
-      )
-      nb_absences = (
-          len(st.session_state.absences_db)
-          if "absences_db" in st.session_state
-          else 0
-      )
-
-      with col_st1:
-        st.metric("Total Élèves Inscrits", nb_eleves)
-      with col_st2:
-        st.metric("Total Classes Actives", nb_classes)
-      with col_st3:
-        st.metric("Total Incidents / Absences", nb_absences)
-
-      st.markdown("---")
-      st.markdown("#### 🏫 Répartition des Élèves par Classe")
-      if (
-          "eleves_db" in st.session_state
-          and not st.session_state.eleves_db.empty
-          and "Classe" in st.session_state.eleves_db.columns
-      ):
-        df_eff = (
-            st.session_state.eleves_db["Classe"]
-            .value_counts()
-            .reset_index()
-        )
-        df_eff.columns = ["Classe", "Effectif Élèves"]
-        
-        # Intégration d'un data_editor pour la base des élèves/classes pilotable et synchronisable
-        edited_eleves = st.data_editor(
-            st.session_state.eleves_db,
-            use_container_width=True,
-            key="editor_eleves_db_supabase",
-            num_rows="dynamic"
-        )
-        
-        if st.button("🔄 Synchroniser la base élèves et effectifs avec Supabase", key="btn_sync_eleves"):
-          try:
-            success = sync_dataframe_to_supabase("eleves", edited_eleves)
-            if success:
-              st.session_state.eleves_db = edited_eleves
-              st.success("✅ Base des élèves et répartition synchronisées avec Supabase avec succès !")
-              st.rerun()
-            else:
-              st.error("❌ Échec de la synchronisation de la base élèves avec Supabase.")
-          except Exception as e:
-            st.error(f"❌ Une erreur est survenue : {e}")
-            
-        st.markdown("##### Aperçu consolidé de la répartition")
-        st.dataframe(df_eff, use_container_width=True)
-      else:
-        st.info(
-            "Données insuffisantes pour afficher la répartition par classe."
-        )
