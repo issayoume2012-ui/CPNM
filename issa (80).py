@@ -10,33 +10,171 @@ import pandas as pd
 from fpdf import FPDF
 import streamlit as st
 import bcrypt
+from supabase import create_client, Client
 
-# --- INITIALISATION DU SESSION STATE ---
-if "messages_parents_db" not in st.session_state:
-    st.session_state.messages_parents_db = pd.DataFrame(columns=[
-        "ID", "Emetteur", "RoleEmetteur", "DateEnvoi", "Classe", "Objet", "Message", "Urgent"
-    ])
+# --- CONFIGURATION SUPABASE ---
+SUPABASE_URL = "https://gxzprtufqvblwoyqihd.supabase.co"
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd4enByenR1ZnF2Ymx3b3lxaWhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY2NTAwNDgsImV4cCI6MjEwMjIyNjA0OH0.CK9c_hb3bp6q0V7zHBWoX15BwqNHCUSYY9DRXqgOP_Q"
 
-# Ajout de l'élève Issa et de son parent dans la liste blanche de test
+@st.cache_resource
+def init_supabase() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
+
+supabase = init_supabase()
+
+# --- INITIALISATION ET SYNCHRONISATION SUPABASE / SESSION STATE ---
+
+# Helper pour convertir les résultats Supabase en DataFrame
+def charger_table_supabase(table_name: str, cols_mapping: dict = None) -> pd.DataFrame:
+    try:
+        res = supabase.table(table_name).select("*").execute()
+        df = pd.DataFrame(res.data)
+        if not df.empty and cols_mapping:
+            df = df.rename(columns=cols_mapping)
+        return df
+    except Exception as e:
+        return pd.DataFrame()
+
+# Chargement de la liste blanche parents depuis Supabase
 if "parents_white_list" not in st.session_state:
-    st.session_state.parents_white_list = pd.DataFrame([
-        {
-            "Téléphone": "771234567",
-            "Prénom Élève": "Issa",
-            "Nom Élève": "",
-            "Classe": "6ème A"
-        }
-    ])
+    df_p = charger_table_supabase("parents_white_list", {
+        "telephone": "Téléphone",
+        "prenom_eleve": "Prénom Élève",
+        "nom_eleve": "Nom Élève",
+        "classe": "Classe"
+    })
+    if df_p.empty:
+        st.session_state.parents_white_list = pd.DataFrame([
+            {
+                "Téléphone": "771234567",
+                "Prénom Élève": "Issa",
+                "Nom Élève": "",
+                "Classe": "6ème A"
+            }
+        ])
+    else:
+        st.session_state.parents_white_list = df_p
 
+# Chargement des élèves depuis Supabase
 if "eleves_db" not in st.session_state:
-    st.session_state.eleves_db = pd.DataFrame([
-        {
-            "Nom Complet": "Issa",
-            "Nom": "Issa",
-            "Prénom": "",
-            "Classe": "6ème A"
-        }
-    ])
+    df_e = charger_table_supabase("eleves", {
+        "nom_complet": "Nom Complet",
+        "nom": "Nom",
+        "prenom": "Prénom",
+        "classe": "Classe"
+    })
+    if df_e.empty:
+        st.session_state.eleves_db = pd.DataFrame([
+            {
+                "Nom Complet": "Issa",
+                "Nom": "Issa",
+                "Prénom": "",
+                "Classe": "6ème A"
+            }
+        ])
+    else:
+        st.session_state.eleves_db = df_e
+
+# Chargement des messages parents depuis Supabase
+if "messages_parents_db" not in st.session_state:
+    df_m = charger_table_supabase("messages_parents", {
+        "id": "ID",
+        "emetteur": "Emetteur",
+        "role_emetteur": "RoleEmetteur",
+        "date_envoi": "DateEnvoi",
+        "classe": "Classe",
+        "objet": "Objet",
+        "message": "Message",
+        "urgent": "Urgent"
+    })
+    if df_m.empty:
+        st.session_state.messages_parents_db = pd.DataFrame(columns=[
+            "ID", "Emetteur", "RoleEmetteur", "DateEnvoi", "Classe", "Objet", "Message", "Urgent"
+        ])
+    else:
+        st.session_state.messages_parents_db = df_m
+
+# Chargement du travail à faire depuis Supabase
+if "travail_a_faire_db" not in st.session_state:
+    df_taf = charger_table_supabase("travail_a_faire", {
+        "id": "ID",
+        "titre": "Titre",
+        "matiere": "Matière",
+        "classe": "Classe",
+        "professeur": "Professeur",
+        "date_rendu": "DateRendu",
+        "consignes": "Consignes",
+        "lien_url": "LienUrl",
+        "lien_video": "LienVideo",
+        "fichier_b64": "FichierB64",
+        "fichier_nom": "FichierNom"
+    })
+    st.session_state.travail_a_faire_db = df_taf
+
+# Chargement des notes depuis Supabase
+if "notes_db" not in st.session_state:
+    df_n = charger_table_supabase("notes", {
+        "classe": "Classe",
+        "periode": "Periode",
+        "eleve": "Eleve",
+        "matiere": "Matière",
+        "devoir1": "Devoir1",
+        "devoir2": "Devoir2",
+        "composition": "Composition"
+    })
+    st.session_state.notes_db = df_n
+
+# Chargement de la vie scolaire depuis Supabase
+if "viescolaire_db" not in st.session_state:
+    df_vs = charger_table_supabase("vie_scolaire", {
+        "classe": "Classe",
+        "periode": "Periode",
+        "eleve": "Eleve",
+        "absences_justifiees": "AbsencesJustifiees",
+        "absences_non_justifiees": "AbsencesNonJustifiees",
+        "retards": "Retards",
+        "heures_perdues": "HeuresPerdues",
+        "observations": "Observations",
+        "decision_conseil": "DecisionConseil"
+    })
+    st.session_state.viescolaire_db = df_vs
+
+# Chargement des classes depuis Supabase
+if "classes_db" not in st.session_state:
+    df_cls = charger_table_supabase("classes", {
+        "classe": "Classe",
+        "cycle": "Cycle"
+    })
+    st.session_state.classes_db = df_cls
+
+# Chargement des périodes depuis Supabase
+if "periodes_db" not in st.session_state:
+    df_per = charger_table_supabase("periodes", {
+        "periode": "Période",
+        "cycle": "Cycle"
+    })
+    st.session_state.periodes_db = df_per
+
+# Chargement des coefficients depuis Supabase
+if "coefficients_db" not in st.session_state:
+    df_coef = charger_table_supabase("coefficients", {
+        "classe": "Classe",
+        "matiere": "Matière",
+        "coefficient": "Coefficient",
+        "bareme": "Barème"
+    })
+    st.session_state.coefficients_db = df_coef
+
+# Chargement des matières par défaut depuis Supabase
+if "matieres_def" not in st.session_state:
+    df_mat = charger_table_supabase("matieres", {
+        "matiere": "Matière",
+        "cycle": "Cycle",
+        "coefficient": "Coefficient",
+        "bareme": "Barème"
+    })
+    st.session_state.matieres_def = df_mat
+
 
 # --- FONCTIONS UTILITAIRES DE BASE ---
 def normaliser_texte(texte):
@@ -415,18 +553,38 @@ def afficher_espace_parents():
                 urgent_m = st.checkbox("Signaler comme Urgent ⚠️")
                 if st.form_submit_button("Envoyer à l'Administration"):
                     if objet_m and msg_m:
+                        msg_id = f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        emetteur_val = f"Parent de {eleve_p}"
+                        date_val = datetime.now().strftime("%Y-%m-%d %H:%M")
+
                         nouveau_msg = {
-                            "ID": f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                            "Emetteur": f"Parent de {eleve_p}",
+                            "ID": msg_id,
+                            "Emetteur": emetteur_val,
                             "RoleEmetteur": "Parent",
-                            "DateEnvoi": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "DateEnvoi": date_val,
                             "Classe": classe_p,
                             "Objet": objet_m,
                             "Message": msg_m,
                             "Urgent": urgent_m
                         }
-                        st.session_state.messages_parents_db = pd.concat([st.session_state.messages_parents_db, pd.DataFrame([nouveau_msg])], ignore_index=True)
-                        st.success("✅ Message transmis avec succès !")
+
+                        # Insertion distante dans la base de données PostgreSQL (Supabase)
+                        try:
+                            supabase.table("messages_parents").insert({
+                                "id": msg_id,
+                                "emetteur": emetteur_val,
+                                "role_emetteur": "Parent",
+                                "date_envoi": date_val,
+                                "classe": classe_p,
+                                "objet": objet_m,
+                                "message": msg_m,
+                                "urgent": urgent_m
+                            }).execute()
+
+                            st.session_state.messages_parents_db = pd.concat([st.session_state.messages_parents_db, pd.DataFrame([nouveau_msg])], ignore_index=True)
+                            st.success("✅ Message transmis avec succès et sauvegardé dans Supabase !")
+                        except Exception as e:
+                            st.error(f"Erreur lors de la sauvegarde sur Supabase: {e}")
                     else: st.error("Veuillez remplir l'objet et le message.")
 
 # --- POINT D'ENTRÉE DU SCRIPT STREAMLIT ---
