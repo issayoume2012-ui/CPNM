@@ -38,7 +38,8 @@ def sync_to_supabase(table_name, df):
         }
         
         # Renomme les colonnes présentes
-        df_sync = df_sync.rename(columns=mapping_colonnes)
+        # Renommez la colonne de votre DataFrame avant l'upsert
+        df_sync = df.rename(columns={"Date de Naissance": "date_de_naissance"})
 
         data = df_sync.to_dict(orient="records")
         response = supabase.table(table_name).upsert(data).execute()
