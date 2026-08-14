@@ -545,63 +545,62 @@ def afficher_espace_parents():
             st.dataframe(edt_parent_df, use_container_width=True)
 
         with tp_msg:
-    st.markdown("### 💬 Communication Directe avec l'Administration")
-    with st.form("form_msg_parent"):
-        objet_m = st.text_input("Objet de la demande")
-        msg_m = st.text_area("Message")
-        urgent_m = st.checkbox("Signaler comme Urgent ⚠️")
-        
-        if st.form_submit_button("Envoyer à l'Administration"):
-            if objet_m and msg_m:
-                msg_id = f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                emetteur_val = f"Parent de {eleve_p}"
-                date_val = datetime.now().strftime("%Y-%m-%d %H:%M")
+            st.markdown("### 💬 Communication Directe avec l'Administration")
+            with st.form("form_msg_parent"):
+                objet_m = st.text_input("Objet de la demande")
+                msg_m = st.text_area("Message")
+                urgent_m = st.checkbox("Signaler comme Urgent ⚠️")
+                
+                if st.form_submit_button("Envoyer à l'Administration"):
+                    if objet_m and msg_m:
+                        msg_id = f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        emetteur_val = f"Parent de {eleve_p}"
+                        date_val = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-                nouveau_msg = {
-                    "ID": msg_id,
-                    "Emetteur": emetteur_val,
-                    "RoleEmetteur": "Parent",
-                    "DateEnvoi": date_val,
-                    "Classe": classe_p,
-                    "Objet": objet_m,
-                    "Message": msg_m,
-                    "Urgent": urgent_m
-                }
+                        nouveau_msg = {
+                            "ID": msg_id,
+                            "Emetteur": emetteur_val,
+                            "RoleEmetteur": "Parent",
+                            "DateEnvoi": date_val,
+                            "Classe": classe_p,
+                            "Objet": objet_m,
+                            "Message": msg_m,
+                            "Urgent": urgent_m
+                        }
 
-                # 1. Mise à jour immédiate dans la session locale (IHM fluide)
-                st.session_state.messages_parents_db = pd.concat(
-                    [st.session_state.messages_parents_db, pd.DataFrame([nouveau_msg])], 
-                    ignore_index=True
-                )
+                        # 1. Enregistrement local garanti
+                        st.session_state.messages_parents_db = pd.concat(
+                            [st.session_state.messages_parents_db, pd.DataFrame([nouveau_msg])], 
+                            ignore_index=True
+                        )
 
-                # 2. Tentative de sauvegarde dans Supabase avec contournement des erreurs DNS
-                saved_to_cloud = False
-                try:
-                    supabase.table("messages_parents").insert({
-                        "id": msg_id,
-                        "emetteur": emetteur_val,
-                        "role_emetteur": "Parent",
-                        "date_envoi": date_val,
-                        "classe": classe_p,
-                        "objet": objet_m,
-                        "message": msg_m,
-                        "urgent": urgent_m
-                    }).execute()
-                    saved_to_cloud = True
-                except Exception as e:
-                    # Capturer explicitement les erreurs de connexion DNS / réseau
-                    err_msg = str(e)
-                    if "[Errno -2]" in err_msg or "Name or service not known" in err_msg:
-                        st.warning("⚠️ Problème de connexion au serveur distant (DNS). Votre message est enregistré en mémoire locale pour cette session.")
+                        # 2. Sauvegarde Cloud Supabase sécurisée
+                        saved_to_cloud = False
+                        try:
+                            supabase.table("messages_parents").insert({
+                                "id": msg_id,
+                                "emetteur": emetteur_val,
+                                "role_emetteur": "Parent",
+                                "date_envoi": date_val,
+                                "classe": classe_p,
+                                "objet": objet_m,
+                                "message": msg_m,
+                                "urgent": urgent_m
+                            }).execute()
+                            saved_to_cloud = True
+                        except Exception as e:
+                            err_msg = str(e)
+                            if "[Errno -2]" in err_msg or "Name or service not known" in err_msg:
+                                st.warning("⚠️ Problème de connexion au serveur distant (DNS). Message enregistré en local.")
+                            else:
+                                st.warning(f"⚠️ Erreur de synchronisation : {e}")
+
+                        if saved_to_cloud:
+                            st.success("✅ Message transmis et synchronisé sur Supabase !")
+                        else:
+                            st.info("ℹ️ Le message est sauvegardé localement pour cette session.")
                     else:
-                        st.warning(f"⚠️ Erreur de synchronisation cloud : {e}")
-
-                if saved_to_cloud:
-                    st.success("✅ Message transmis et synchronisé sur la base de données !")
-                else:
-                    st.info("ℹ️ Le message est sauvegardé localement.")
-            else:
-                st.error("Veuillez remplir l'objet et le message.")
+                        st.error("Veuillez remplir l'objet et le message.")
 
 # --- POINT D'ENTRÉE DU SCRIPT STREAMLIT ---
 if __name__ == "__main__":
