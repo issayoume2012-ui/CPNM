@@ -17,6 +17,27 @@ if "messages_parents_db" not in st.session_state:
         "ID", "Emetteur", "RoleEmetteur", "DateEnvoi", "Classe", "Objet", "Message", "Urgent"
     ])
 
+# Ajout de l'élève Issa et de son parent dans la liste blanche de test
+if "parents_white_list" not in st.session_state:
+    st.session_state.parents_white_list = pd.DataFrame([
+        {
+            "Téléphone": "771234567",
+            "Prénom Élève": "Issa",
+            "Nom Élève": "",
+            "Classe": "6ème A"
+        }
+    ])
+
+if "eleves_db" not in st.session_state:
+    st.session_state.eleves_db = pd.DataFrame([
+        {
+            "Nom Complet": "Issa",
+            "Nom": "Issa",
+            "Prénom": "",
+            "Classe": "6ème A"
+        }
+    ])
+
 # --- FONCTIONS UTILITAIRES DE BASE ---
 def normaliser_texte(texte):
     if not texte: return ""
@@ -275,8 +296,9 @@ def afficher_espace_parents():
         st.info("Veuillez vous authentifier par Téléphone/Email ou Nom de l'élève pour accéder au suivi personnalisé.")
         with st.form("form_login_parent"):
             col_p1, col_p2 = st.columns(2)
-            with col_p1: par_ident = st.text_input("Numéro de téléphone ou Email du Parent")
-            with col_p2: nom_eleve_par = st.text_input("Nom ou Prénom de l'élève")
+            # Champs pré-remplis avec 771234567 et Issa
+            with col_p1: par_ident = st.text_input("Numéro de téléphone ou Email du Parent", value="771234567")
+            with col_p2: nom_eleve_par = st.text_input("Nom ou Prénom de l'élève", value="issa")
             btn_par_login = st.form_submit_button("Accéder au Portail Parent")
 
             if btn_par_login:
@@ -305,7 +327,7 @@ def afficher_espace_parents():
 
                 if match_p or ident_clean == ADMIN_EMAIL.lower():
                     st.session_state.parent_logged = True
-                    st.session_state.parent_eleve_sel = el_trouve if el_trouve else "Mamadou Diallo"
+                    st.session_state.parent_eleve_sel = el_trouve if el_trouve else "Issa"
                     st.session_state.parent_classe_sel = cl_trouvee if cl_trouvee else "6ème A"
                     st.success("Connexion réussie !")
                     st.rerun()
