@@ -28,15 +28,17 @@ supabase: Client = init_supabase()
 def sync_to_supabase(table_name, df):
     """Synchronise un DataFrame avec une table Supabase."""
     try:
-        # Fait une copie pour ne pas altérer le DataFrame original de Streamlit
         df_sync = df.copy()
+
+        # Dictionnaire de correspondance : "Nom dans Streamlit" -> "nom_dans_supabase"
+        mapping_colonnes = {
+            "Classe": "classe",
+            "Date de Naissance": "date_de_naissance",  # Ajustez selon le nom exact dans Supabase
+            # Ajoutez les autres colonnes au besoin
+        }
         
-        # Option 1: Renommer spécifiquement 'Classe' en 'classe'
-        if "Classe" in df_sync.columns:
-            df_sync = df_sync.rename(columns={"Classe": "classe"})
-            
-        # Option 2 (Générale): Convertir toutes les colonnes en minuscules
-        # df_sync.columns = [col.lower() for col in df_sync.columns]
+        # Renomme les colonnes présentes
+        df_sync = df_sync.rename(columns=mapping_colonnes)
 
         data = df_sync.to_dict(orient="records")
         response = supabase.table(table_name).upsert(data).execute()
