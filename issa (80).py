@@ -1265,6 +1265,14 @@ def obtenir_logo_base64():
     except Exception:
         pass
     return ""
+
+# Définition sécurisée du logo en HTML pour éviter le NameError
+logo_base64 = obtenir_logo_base64()
+if logo_base64:
+    logo_element_html = f'<img src="data:image/jpeg;base64,{logo_base64}" style="width: 80px; height: auto;" alt="Logo"/>'
+else:
+    logo_element_html = ''
+
 header_complet_html = f"""
 <div class="header-institutionnel">
     <div class="header-inner">
@@ -1282,13 +1290,12 @@ header_complet_html = f"""
 st.markdown(header_complet_html, unsafe_allow_html=True)
 
 if st.session_state.espace_actif != "🏠 Accueil":
-  col_ret1, col_ret2 = st.columns([1, 5])
-  with col_ret1:
-    if st.button("⬅️ Retour Accueil"):
-      st.session_state.espace_actif = "🏠 Accueil"
-      st.rerun()
-  st.markdown("---")
-
+    col_ret1, col_ret2 = st.columns([1, 5])
+    with col_ret1:
+        if st.button("⬅️ Retour Accueil"):
+            st.session_state.espace_actif = "🏠 Accueil"
+            st.rerun()
+    st.markdown("---")
 # ==========================================
 # 5. ACCUEIL ET REDIRECTION SÉLECTIVE
 # ==========================================
