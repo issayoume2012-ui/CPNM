@@ -3560,18 +3560,24 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.rerun()
 
     with ta_logs:
-      st.markdown("### 📜 Journal de Traçabilité & Audit")
-      if (
-          "audit_logs_db" in st.session_state
-          and not st.session_state.audit_logs_db.empty
-      ):
+    st.markdown("### 📜 Journal de Traçabilité & Audit")
+    if (
+        "audit_logs_db" in st.session_state
+        and not st.session_state.audit_logs_db.empty
+    ):
+        # Copie pour éviter de modifier l'original par référence et conversion sécurisée de la colonne 'horodatage'
+        df_logs = st.session_state.audit_logs_db.copy()
+        if "horodatage" in df_logs.columns:
+            df_logs["horodatage"] = pd.to_datetime(df_logs["horodatage"], errors="coerce")
+            df_logs = df_logs.sort_values(
+                by="horodatage", ascending=False, na_position="last"
+            )
+            
         st.dataframe(
-            st.session_state.audit_logs_db.sort_values(
-                by="horodatage", ascending=False
-            ),
+            df_logs,
             use_container_width=True,
         )
-      else:
+    else:
         st.info("Aucune activité enregistrée dans le journal.")
 
 # ==========================================
