@@ -3584,7 +3584,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         if "emploi_du_temps_db" not in st.session_state:
             st.session_state.emploi_du_temps_db = pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
 
-        # Gestion via la fonction get_or_create_edt si elle existe, ou filtrage direct
+        # Récupération sécurisée de l'EDT pour la classe
         if "get_or_create_edt" in globals():
             edt_classe = get_or_create_edt(classe_selectionnee)
         else:
@@ -3593,11 +3593,17 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                 df_global["Classe"] = classe_selectionnee
             edt_classe = df_global[df_global["Classe"] == classe_selectionnee].copy()
 
+        # Sécurité : s'assurer que toutes les colonnes nécessaires existent dans le DataFrame
+        colonnes_requises = ["Jour", "Horaire", "Matière", "Professeur"]
+        for col in colonnes_requises:
+            if col not in edt_classe.columns:
+                edt_classe[col] = ""
+
         st.markdown(f"#### 🕒 Grille des créneaux pour la classe : **{classe_selectionnee}**")
         
         # Éditeur de tableau dynamique structuré pour les créneaux
         edited_emploi_classe = st.data_editor(
-            edt_classe[["Jour", "Horaire", "Matière", "Professeur"]] if not edt_classe.empty else pd.DataFrame(columns=["Jour", "Horaire", "Matière", "Professeur"]),
+            edt_classe[colonnes_requises],
             num_rows="dynamic",
             use_container_width=True,
             key=f"editor_emploi_{classe_selectionnee}",
