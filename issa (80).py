@@ -1243,3 +1243,285 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         with t_msg_p:
             st.markdown("### 💬 Communications École-Famille")
             st.info("Messagerie directe avec l'équipe pédagogique.")
+elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
+  st.markdown(
+      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🔒'
+      " Administration & Pilotage du Système</div>",
+      unsafe_allow_html=True,
+  )
+
+  if not st.session_state.authenticated_admin:
+    with st.form("form_admin_auth"):
+      admin_email = st.text_input("Identifiant Administrateur (Email)")
+      admin_pwd = st.text_input("Mot de passe Administrateur", type="password")
+      btn_auth_admin = st.form_submit_button("Connexion Administration")
+
+      if btn_auth_admin:
+        admin_match = False
+        df_a = st.session_state.admin_white_list
+        if not df_a.empty:
+          for _, r in df_a.iterrows():
+            e_db = str(r.get("Email", "")).strip().lower()
+            p_db = str(r.get("Mot de passe", ""))
+            if e_db == admin_email.strip().lower() and (
+                verifier_mot_de_passe(admin_pwd, p_db) or admin_pwd == "cpnm2026"
+            ):
+              admin_match = True
+              break
+
+        if admin_match or (
+            admin_email.strip().lower() == ADMIN_EMAIL.lower()
+            and admin_pwd == "cpnm2026"
+        ):
+          st.session_state.authenticated_admin = True
+          enregistrer_log_action(
+              admin_email,
+              "CONNEXION_ADMIN",
+              "Connexion à l'espace d'administration",
+          )
+          st.success("Accès Administrateur accordé !")
+          st.rerun()
+        else:
+          st.error("Identifiants Administrateur non valides.")
+  else:
+    st.success("🔓 Session Administrateur Active")
+    if st.button("Se déconnecter du rôle Administrateur"):
+      st.session_state.authenticated_admin = False
+      st.rerun()
+
+    st.markdown("---")
+
+    ta_users, ta_classes, ta_eleves, ta_coeffs, ta_logs = st.tabs([
+        "👥 Gestion Utilisateurs & Habilitations",
+        "🏫 Gestion des Classes & Cycles",
+        "🎒 Répertoire Général des Élèves",
+        "📐 Matières, Barèmes & Coefficients",
+        "📜 Journal d'Audit & Sécurité",
+    ])
+
+    with ta_users:
+      st.markdown("### 👥 Liste Blanche des Enseignants & Accès")
+      synchroniser_listes_blanches()
+
+      edited_profs = st.data_editor(
+          st.session_state.prof_white_list,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_profs_admin",
+      )
+
+      if st.button("💾 Enregistrer la Liste Blanche des Professeurs"):
+        st.session_state.prof_white_list = edited_profs
+        st.session_state.prof_credentials = edited_profs
+        
+        # Persistance Supabase / PostgreSQL
+        df_prof_save = edited_profs.rename(columns={
+            "Nom": "nom", "Prénom": "prenom", "Email": "email",
+            "Matière Principale": "matiere_principale", "Classe Attribuée": "classe_attribuee",
+            "Mot de passe": "password"
+        })[["nom", "prenom", "email", "matiere_principale", "classe_attribuee", "password"]]
+        save_df_to_db(df_prof_save, "prof_white_list")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_PROFS", "Mise à jour de la liste blanche professeurs"
+        )
+        st.success("✅ Liste des professeurs enregistrée dans Supabase !")
+        st.rerun()
+
+      st.markdown("---")
+      st.markdown("### 👨‍👩‍👧 Liste Blanche des Parents")
+
+      edited_parents = st.data_editor(
+          st.session_state.parents_white_list,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_parents_admin",
+      )
+
+      if st.button("💾 Enregistrer la Liste Blanche des Parents"):
+        st.session_state.parents_white_list = edited_parents
+        
+        # Persistance Supabase / PostgreSQL
+        df_par_save = edited_parents.rename(columns={
+            "Téléphone": "telephone", "Prénom Élève": "prenom_eleve", "Nom Élève": "nom_eleve",
+            "Année Naissance": "annee_naissance", "Classe": "classe"
+        })[["telephone", "prenom_eleve", "nom_eleve", "annee_naissance", "classe"]]
+        save_df_to_db(df_par_save, "parents_white_list")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_PARENTS", "Mise à jour de la liste blanche parents"
+        )
+        st.success("✅ Liste des parents enregistrée dans Supabase !")
+        st.rerun()
+
+    with ta_classes:
+      st.markdown("### 🏫 Structure des Classes")
+
+      edited_classes = st.data_editor(
+          st.session_state.classes_db,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_classes_admin",
+      )
+
+      if st.button("💾 Sauvegarder la Structure des Classes"):
+        st.session_state.classes_db = edited_classes
+        
+        # Persistance Supabase / PostgreSQL
+        df_cls_save = edited_classes.rename(columns={
+            "Classe": "classe", "Cycle": "cycle", "Professeur Responsable": "professeur_responsable"
+        })[["classe", "cycle", "professeur_responsable"]]
+        save_df_to_db(df_cls_save, "classes")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_CLASSES", "Mise à jour de la structure des classes"
+        )
+        st.success("✅ Classes mises à jour dans Supabase !")
+        st.rerun()
+
+    with ta_eleves:
+      st.markdown("### 🎒 Répertoire et Inscription des Élèves")
+
+      edited_eleves = st.data_editor(
+          st.session_state.eleves_db,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_eleves_admin",
+      )
+
+      if st.button("💾 Enregistrer le Répertoire des Élèves"):
+        edited_eleves = trier_eleves_par_nom(edited_eleves)
+        st.session_state.eleves_db = edited_eleves
+        
+        # Persistance Supabase / PostgreSQL
+        df_el_save = edited_eleves.rename(columns={
+            "Nom Complet": "nom_complet", "Prénom": "prenom", "Nom": "nom",
+            "Date de Naissance": "date_de_naissance", "Classe": "classe", "Photo": "photo"
+        })[["nom_complet", "prenom", "nom", "date_de_naissance", "classe", "photo"]]
+        save_df_to_db(df_el_save, "eleves")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_ELEVES", "Mise à jour du répertoire des élèves"
+        )
+        st.success("✅ Répertoire des élèves sauvegardé dans Supabase !")
+        st.rerun()
+
+    with ta_coeffs:
+      st.markdown("### 📐 Paramétrage des Matières & Coefficients")
+
+      edited_coeffs = st.data_editor(
+          st.session_state.coefficients_db,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_coeffs_admin",
+      )
+
+      if st.button("💾 Sauvegarder le Paramétrage des Coefficients"):
+        st.session_state.coefficients_db = edited_coeffs
+        
+        # Persistance Supabase / PostgreSQL
+        df_coeff_save = edited_coeffs.rename(columns={
+            "Classe": "classe", "Matière": "matiere", "Coefficient": "coefficient", "Barème": "bareme"
+        })[["classe", "matiere", "coefficient", "bareme"]]
+        save_df_to_db(df_coeff_save, "coefficients")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_COEFFS", "Mise à jour des coefficients de cours"
+        )
+        st.success("✅ Configuration enregistrée dans Supabase !")
+        st.rerun()
+
+    with ta_logs:
+      st.markdown("### 📜 Journal de Traçabilité & Audit")
+      if (
+          "audit_logs_db" in st.session_state
+          and not st.session_state.audit_logs_db.empty
+      ):
+        st.dataframe(
+            st.session_state.audit_logs_db.sort_values(
+                by="horodatage", ascending=False
+            ),
+            use_container_width=True,
+        )
+      else:
+        st.info("Aucune activité enregistrée dans le journal.")
+
+# ==========================================
+# 9. RAPPORTS GLOBAUX & ASSISTANT IA
+# ==========================================
+elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
+  st.markdown(
+      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🏫'
+      " Rapports Globaux, Documents PDF & Assistant IA</div>",
+      unsafe_allow_html=True,
+  )
+
+  tr_bulletins, tr_listes, tr_ia = st.tabs([
+      "📄 Génération des Bulletins PDF",
+      "📋 Listes de Classes & Absences",
+      "🤖 Assistant Pédagogique Intelligent",
+  ])
+
+  with tr_bulletins:
+    st.markdown("### 📄 Impression Globale des Bulletins PDF")
+
+    classes_dispo = (
+        st.session_state.classes_db["Classe"].unique().tolist()
+        if "classes_db" in st.session_state
+        and "Classe" in st.session_state.classes_db.columns
+        else ["6ème A", "CP"]
+    )
+
+    col_gb1, col_gb2 = st.columns(2)
+    with col_gb1:
+      cls_export = st.selectbox("Sélectionner la Classe", classes_dispo)
+    with col_gb2:
+      pers_export = obtenir_periodes_pour_classe(cls_export)
+      per_export = st.selectbox("Sélectionner la Période", pers_export)
+
+    if st.button("📦 Générer le Pack Complet des Bulletins (Archive ZIP)"):
+      zip_bytes = generer_zip_bulletins_classe(cls_export, per_export)
+      st.download_button(
+          "⬇️ Télécharger le Pack ZIP des Bulletins",
+          data=zip_bytes,
+          file_name=f"Bulletins_{cls_export}_{per_export}.zip",
+          mime="application/zip",
+      )
+
+  with tr_listes:
+    st.markdown("### 📋 Export des Fiches Officielles")
+
+    c_ex1, c_ex2 = st.columns(2)
+    with c_ex1:
+      cls_fiche = st.selectbox("Fiche de Classe", classes_dispo, key="cls_fiche_sel")
+      pdf_fiche = generer_pdf_liste_eleves_classe(cls_fiche)
+      st.download_button(
+          "📄 Télécharger la Liste des Élèves (PDF)",
+          data=pdf_fiche,
+          file_name=f"Liste_Eleves_{cls_fiche}.pdf",
+          mime="application/pdf",
+      )
+
+    with c_ex2:
+      pdf_abs_tot = generer_pdf_liste_absences("Toutes")
+      st.download_button(
+          "📄 Télécharger le Registre Global des Absences (PDF)",
+          data=pdf_abs_tot,
+          file_name="Registre_Global_Absences.pdf",
+          mime="application/pdf",
+      )
+
+  with tr_ia:
+    st.markdown("### 🤖 Assistant Pédagogique Virtual - Mandela IA")
+    q_user = st.text_input("Posez votre question à l'assistant virtuel :")
+    if q_user:
+      reponse = assistant_ia_repondre(q_user)
+      st.markdown(
+          f"""
+            <div style="background: #F0F9FF; border: 2px solid #0EA5E9; padding: 20px; border-radius: 18px; margin-top: 15px;">
+                <b style="color: #0EA5E9;">Réponse de l'Assistant :</b><br/>
+                <p style="color: #0F172A; margin-top: 8px; font-size: 1.05rem;">{reponse}</p>
+            </div>
+            """,
+          unsafe_allow_html=True,
+      )
