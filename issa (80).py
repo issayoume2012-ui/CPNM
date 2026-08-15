@@ -2562,6 +2562,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                   ignore_index=True,
               )
 
+            # Persistance Supabase / PostgreSQL
             df_taf_save = st.session_state.travail_a_faire_db.rename(columns={
                 "ID": "id", "Professeur": "professeur", "DatePublication": "date_publication",
                 "DateRendu": "date_rendu", "Classe": "classe", "Matière": "matiere",
@@ -2600,229 +2601,369 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         ]
 
       if not df_taf_cls.empty:
-        for idx, row in df_taf_cls.iterrows():
-          with st.container():
-            st.markdown(
-                f"""
-                <div class="work-card">
-                    <h4>📌 {row.get('Titre', 'Sans titre')} ({row.get('Matière', '')})</h4>
-                    <p><b>Publié le :</b> {row.get('DatePublication', '')} | <b>À rendre le :</b> {row.get('DateRendu', '')} | <b>Par :</b> {row.get('Professeur', '')}</p>
-                    <p>{row.get('Consignes', '')}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            if st.button("🗑️ Supprimer ce devoir", key=f"del_taf_{row.get('ID', idx)}"):
-              st.session_state.travail_a_faire_db = st.session_state.travail_a_faire_db.drop(idx).reset_index(drop=True)
-              df_taf_save = st.session_state.travail_a_faire_db.rename(columns={
-                  "ID": "id", "Professeur": "professeur", "DatePublication": "date_publication",
-                  "DateRendu": "date_rendu", "Classe": "classe", "Matière": "matiere",
-                  "Titre": "titre", "Consignes": "consignes", "LienUrl": "lien_url",
-                  "LienVideo": "lien_video", "FichierNom": "fichier_nom",
-                  "FichierB64": "fichier_b64", "FichierType": "fichier_type"
-              })[["id", "professeur", "date_publication", "date_rendu", "classe", "matiere", "titre", "consignes", "lien_url", "lien_video", "fichier_nom", "fichier_b64", "fichier_type"]]
-              save_df_to_db(df_taf_save, "travail_a_faire")
-              st.success("Devoir supprimé avec succès.")
-              st.rerun()
+        edited_taf = st.data_editor(
+            df_taf_cls,
+            num_rows="dynamic",
+            use_container_width=True,
+            key="editor_taf_prof",
+        )
+        if st.button("💾 Mettre à jour les devoirs", key="btn_save_taf_edited"):
+          st.session_state.travail_a_faire_db = st.session_state.travail_a_faire_db[
+              st.session_state.travail_a_faire_db["Classe"] != classe_autorisee
+          ]
+          st.session_state.travail_a_faire_db = pd.concat(
+              [st.session_state.travail_a_faire_db, edited_taf], ignore_index=True
+          )
+          
+          # Refléter dans Supabase
+          df_taf_save = st.session_state.travail_a_faire_db.rename(columns={
+              "ID": "id", "Professeur": "professeur", "DatePublication": "date_publication",
+              "DateRendu": "date_rendu", "Classe": "classe", "Matière": "matiere",
+              "Titre": "titre", "Consignes": "consignes", "LienUrl": "lien_url",
+              "LienVideo": "lien_video", "FichierNom": "fichier_nom",
+              "FichierB64": "fichier_b64", "FichierType": "fichier_type"
+          })[["id", "professeur", "date_publication", "date_rendu", "classe", "matiere", "titre", "consignes", "lien_url", "lien_video", "fichier_nom", "fichier_b64", "fichier_type"]]
+          save_df_to_db(df_taf_save, "travail_a_faire")
+
+          st.success("✅ Modifié avec succès !")
+          st.rerun()
       else:
-        st.info("Aucun travail à faire enregistré pour cette classe.")
+        st.info("Aucun devoir enregistré pour cette classe.")
 
     with t_appel:
-      st.markdown("### 📋 Feuille d'Appel & Suivi des Présences")
-      st.info(f"Enregistrez les absences et retards pour la classe de **{classe_autorisee}**.")
+      st.markdown("### 📋 Feuille d'Appel & Gestion des Présences")
+      col_ap1, col_ap2 = st.columns(2)
+      with col_ap1:
+        date_appel = st.date_input("Date de l'appel", value=datetime.today())
+      with col_ap2:
+        st.info(f"Classe active : **{classe_autorisee}**")
 
-      df_el_appel = pd.DataFrame()
-      if "eleves_db" in st.session_state and "Classe" in st.session_state.eleves_db.columns:
-        df_el_appel = trier_eleves_par_nom(st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee])
-      
-      liste_el_appel = df_el_appel["Nom Complet"].tolist() if not df_el_appel.empty and "Nom Complet" in df_el_appel.columns else []
+      df_el_app = pd.DataFrame()
+      if (
+          "eleves_db" in st.session_state
+          and "Classe" in st.session_state.eleves_db.columns
+      ):
+        df_el_app = trier_eleves_par_nom(
+            st.session_state.eleves_db[
+                st.session_state.eleves_db["Classe"] == classe_autorisee
+            ]
+        )
 
-      if liste_el_appel:
-        with st.form("form_appel_prof", clear_on_submit=True):
-          date_appel = st.date_input("Date de l'appel", value=datetime.today())
-          eleve_abs = st.selectbox("Élève concerné", liste_el_appel)
-          statut_abs = st.selectbox("Statut", ["Absent(e) Justifié(e)", "Absent(e) Non Justifié(e)", "En Retard"])
-          motif_abs = st.text_input("Motif ou remarques")
+      if not df_el_app.empty:
+        list_el_app = df_el_app["Nom Complet"].tolist()
+        df_appel_init = pd.DataFrame({
+            "Élève": list_el_app,
+            "Statut": ["Présent"] * len(list_el_app),
+            "Motif / Remarque": [""] * len(list_el_app),
+        })
 
-          btn_save_abs = st.form_submit_button("Enregistrer l'absence / retard")
+        edited_appel = st.data_editor(
+            df_appel_init,
+            column_config={
+                "Statut": st.column_config.SelectboxColumn(
+                    "Statut de présence",
+                    options=["Présent", "Absent", "Retard", "Exclus"],
+                    required=True,
+                )
+            },
+            use_container_width=True,
+            key="editor_appel_prof",
+        )
 
-          if btn_save_abs:
-            nouvelle_abs = {
-                "Date": str(date_appel),
-                "Classe": classe_autorisee,
-                "Élève": eleve_abs,
-                "Statut": statut_abs,
-                "Motif": motif_abs if motif_abs else "Aucun motif spécifié"
-            }
-            if "absences_db" not in st.session_state or st.session_state.absences_db.empty:
-              st.session_state.absences_db = pd.DataFrame([nouvelle_abs])
-            else:
-              st.session_state.absences_db = pd.concat([st.session_state.absences_db, pd.DataFrame([nouvelle_abs])], ignore_index=True)
-
+        if st.button("💾 Valider & Enregistrer la Feuille d'Appel"):
+          records_appel = []
+          for _, r in edited_appel.iterrows():
+            if r["Statut"] != "Présent":
+              records_appel.append({
+                  "Date": str(date_appel),
+                  "Classe": classe_autorisee,
+                  "Élève": r["Élève"],
+                  "Statut": r["Statut"],
+                  "Motif": r["Motif / Remarque"],
+              })
+          if records_appel:
+            st.session_state.absences_db = pd.concat(
+                [st.session_state.absences_db, pd.DataFrame(records_appel)],
+                ignore_index=True,
+            )
+            # Refléter dans Supabase
             df_abs_save = st.session_state.absences_db.rename(columns={
                 "Date": "date", "Classe": "classe", "Élève": "eleve",
                 "Statut": "statut", "Motif": "motif"
             })[["date", "classe", "eleve", "statut", "motif"]]
             save_df_to_db(df_abs_save, "absences")
 
-            enregistrer_log_action(prof_connecte, "ABSENCE_AJOUTEE", f"Absence enregistrée pour {eleve_abs} ({classe_autorisee})")
-            st.success("✅ Absence enregistrée avec succès dans Supabase !")
+            enregistrer_log_action(
+                prof_connecte,
+                "FEUILLE_APPEL",
+                f"Appel enregistré pour {classe_autorisee} le {date_appel}",
+            )
+            st.success("✅ Absences/Retards enregistrés avec succès !")
             st.rerun()
-
-        st.markdown("#### Historique des absences de la classe")
-        df_abs_cls = st.session_state.absences_db
-        if not df_abs_cls.empty and "Classe" in df_abs_cls.columns:
-          sub_abs = df_abs_cls[df_abs_cls["Classe"] == classe_autorisee]
-          if not sub_abs.empty:
-            st.dataframe(sub_abs, use_container_width=True)
           else:
-            st.info("Aucune absence enregistrée pour cette classe.")
-        else:
-          st.info("Aucune absence enregistrée.")
+            st.success("✅ Appel validé : Tous les élèves sont présents !")
       else:
-        st.warning("Aucun élève trouvé dans cette classe.")
+        st.warning("⚠️ Aucun élève trouvé dans cette classe.")
 
     with t_cond:
-      st.markdown("### ⚠️ Conduite & Vie Scolaire")
-      st.info(f"Mettez à jour le bilan de vie scolaire (absences, retards, observations, décision) pour la classe de **{classe_autorisee}**.")
+      st.markdown("### ⚠️ Conduite & Bilan Vie Scolaire")
 
       periodes_possibles_vs = obtenir_periodes_pour_classe(classe_autorisee)
-      per_vs_sel = st.selectbox("Période pour la vie scolaire", periodes_possibles_vs, key="vs_per_sel")
+      if periodes_possibles_vs:
+        per_vs_sel = st.selectbox(
+            "Période de bilan", periodes_possibles_vs, key="prof_vs_per_sel"
+        )
 
-      if liste_el_appel:
-        eleve_vs_sel = st.selectbox("Sélectionner l'élève", liste_el_appel, key="vs_el_sel")
+        df_el_vs = pd.DataFrame()
+        if (
+            "eleves_db" in st.session_state
+            and "Classe" in st.session_state.eleves_db.columns
+        ):
+          df_el_vs = trier_eleves_par_nom(
+              st.session_state.eleves_db[
+                  st.session_state.eleves_db["Classe"] == classe_autorisee
+              ]
+          )
 
-        # Charger valeurs actuelles si existent
-        vs_db = st.session_state.viescolaire_db if "viescolaire_db" in st.session_state else pd.DataFrame()
-        row_act = pd.DataFrame()
-        if not vs_db.empty and "Classe" in vs_db.columns and "Eleve" in vs_db.columns:
-          cond_c = vs_db["Classe"] == classe_autorisee
-          cond_p = (vs_db["Periode"] == per_vs_sel) if "Periode" in vs_db.columns else (vs_db["Période"] == per_vs_sel)
-          cond_e = vs_db["Eleve"] == eleve_vs_sel
-          row_act = vs_db[cond_c & cond_p & cond_e]
+        if not df_el_vs.empty:
+          list_el_vs = df_el_vs["Nom Complet"].tolist()
 
-        a_j = int(row_act.iloc[0]["AbsencesJustifiees"]) if not row_act.empty and "AbsencesJustifiees" in row_act.columns and pd.notna(row_act.iloc[0]["AbsencesJustifiees"]) else 0
-        a_nj = int(row_act.iloc[0]["AbsencesNonJustifiees"]) if not row_act.empty and "AbsencesNonJustifiees" in row_act.columns and pd.notna(row_act.iloc[0]["AbsencesNonJustifiees"]) else 0
-        ret = int(row_act.iloc[0]["Retards"]) if not row_act.empty and "Retards" in row_act.columns and pd.notna(row_act.iloc[0]["Retards"]) else 0
-        h_p = int(row_act.iloc[0]["HeuresPerdues"]) if not row_act.empty and "HeuresPerdues" in row_act.columns and pd.notna(row_act.iloc[0]["HeuresPerdues"]) else 0
-        obs_val = str(row_act.iloc[0]["Observations"]) if not row_act.empty and "Observations" in row_act.columns and pd.notna(row_act.iloc[0]["Observations"]) else "RAS"
-        dec_val = str(row_act.iloc[0]["DecisionConseil"]) if not row_act.empty and "DecisionConseil" in row_act.columns and pd.notna(row_act.iloc[0]["DecisionConseil"]) else "Encouragements"
+          rows_vs = []
+          vs_current = (
+              st.session_state.viescolaire_db
+              if "viescolaire_db" in st.session_state
+              else pd.DataFrame()
+          )
 
-        with st.form("form_vs_prof"):
-          col_v1, col_v2 = st.columns(2)
-          with col_v1:
-            inp_aj = st.number_input("Absences justifiées", min_value=0, value=a_j)
-            inp_anj = st.number_input("Absences non justifiées", min_value=0, value=a_nj)
-            inp_ret = st.number_input("Nombre de retards", min_value=0, value=ret)
-          with col_v2:
-            inp_hp = st.number_input("Heures perdues", min_value=0, value=h_p)
-            inp_obs = st.text_area("Observations / Appréciation", value=obs_val)
-            inp_dec = st.selectbox("Décision du conseil de classe", ["Encouragements", "Tableau d'honneur", "Avertissement travail", "Avertissement conduite", "Blâme", "Tableau d'excellence"], index=0 if dec_val not in ["Tableau d'honneur", "Avertissement travail", "Avertissement conduite", "Blâme", "Tableau d'excellence"] else ["Encouragements", "Tableau d'honneur", "Avertissement travail", "Avertissement conduite", "Blâme", "Tableau d'excellence"].index(dec_val))
+          for el in list_el_vs:
+            aj, anj, ret, hp, obs, dec = (
+                0,
+                0,
+                0,
+                0,
+                "Élève sérieux et assidu",
+                "Encouragements",
+            )
+            if (
+                not vs_current.empty
+                and "Classe" in vs_current.columns
+                and "Eleve" in vs_current.columns
+            ):
+              cond_c = vs_current["Classe"] == classe_autorisee
+              cond_p = (vs_current["Periode"] == per_vs_sel) | (
+                  vs_current["Période"] == per_vs_sel
+              )
+              cond_e = vs_current["Eleve"] == el
+              sub_v = vs_current[cond_c & cond_p & cond_e]
+              if not sub_v.empty:
+                aj = (
+                    int(sub_v.iloc[0].get("AbsencesJustifiees", 0))
+                    if pd.notna(sub_v.iloc[0].get("AbsencesJustifiees"))
+                    else 0
+                )
+                anj = (
+                    int(sub_v.iloc[0].get("AbsencesNonJustifiees", 0))
+                    if pd.notna(sub_v.iloc[0].get("AbsencesNonJustifiees"))
+                    else 0
+                )
+                ret = (
+                    int(sub_v.iloc[0].get("Retards", 0))
+                    if pd.notna(sub_v.iloc[0].get("Retards"))
+                    else 0
+                )
+                hp = (
+                    int(sub_v.iloc[0].get("HeuresPerdues", 0))
+                    if pd.notna(sub_v.iloc[0].get("HeuresPerdues"))
+                    else 0
+                )
+                obs = (
+                    str(sub_v.iloc[0].get("Observations", ""))
+                    if pd.notna(sub_v.iloc[0].get("Observations"))
+                    else "RAS"
+                )
+                dec = (
+                    str(sub_v.iloc[0].get("DecisionConseil", ""))
+                    if pd.notna(sub_v.iloc[0].get("DecisionConseil"))
+                    else "Encouragements"
+                )
 
-          btn_save_vs = st.form_submit_button("💾 Enregistrer la Vie Scolaire")
+            rows_vs.append({
+                "Eleve": el,
+                "AbsencesJustifiees": aj,
+                "AbsencesNonJustifiees": anj,
+                "Retards": ret,
+                "HeuresPerdues": hp,
+                "Observations": obs,
+                "DecisionConseil": dec,
+            })
 
-          if btn_save_vs:
-            if not vs_db.empty and "Classe" in vs_db.columns:
-              cond_c = vs_db["Classe"] == classe_autorisee
-              cond_p = (vs_db["Periode"] == per_vs_sel) if "Periode" in vs_db.columns else (vs_db["Période"] == per_vs_sel)
-              cond_e = vs_db["Eleve"] == eleve_vs_sel
-              st.session_state.viescolaire_db = vs_db[~(cond_c & cond_p & cond_e)].reset_index(drop=True)
+          df_editor_vs = pd.DataFrame(rows_vs)
+          edited_vs = st.data_editor(
+              df_editor_vs,
+              use_container_width=True,
+              key=f"editor_vs_{classe_autorisee}_{per_vs_sel}",
+          )
 
-            nouvelle_vs = {
-                "Classe": classe_autorisee,
-                "Periode": per_vs_sel,
-                "Période": per_vs_sel,
-                "Eleve": eleve_vs_sel,
-                "AbsencesJustifiees": int(inp_aj),
-                "AbsencesNonJustifiees": int(inp_anj),
-                "Retards": int(inp_ret),
-                "HeuresPerdues": int(inp_hp),
-                "Observations": inp_obs,
-                "DecisionConseil": inp_dec
-            }
-            if "viescolaire_db" not in st.session_state or st.session_state.viescolaire_db.empty:
-              st.session_state.viescolaire_db = pd.DataFrame([nouvelle_vs])
-            else:
-              st.session_state.viescolaire_db = pd.concat([st.session_state.viescolaire_db, pd.DataFrame([nouvelle_vs])], ignore_index=True)
+          if st.button(
+              "💾 Enregistrer le Bilan Vie Scolaire", key="btn_save_vs"
+          ):
+            if not vs_current.empty and "Classe" in vs_current.columns:
+              cond_c = vs_current["Classe"] == classe_autorisee
+              cond_p = (vs_current["Periode"] == per_vs_sel) | (
+                  vs_current["Période"] == per_vs_sel
+              )
+              st.session_state.viescolaire_db = vs_current[
+                  ~(cond_c & cond_p)
+              ].reset_index(drop=True)
 
+            edited_vs["Classe"] = classe_autorisee
+            edited_vs["Periode"] = per_vs_sel
+            edited_vs["Période"] = per_vs_sel
+
+            st.session_state.viescolaire_db = pd.concat(
+                [st.session_state.viescolaire_db, edited_vs], ignore_index=True
+            )
+
+            # Refléter dans Supabase
             df_vs_save = st.session_state.viescolaire_db.rename(columns={
                 "Classe": "classe", "Periode": "periode", "Eleve": "eleve",
                 "AbsencesJustifiees": "absences_justifiees", "AbsencesNonJustifiees": "absences_non_justifiees",
-                "Retards": "retards", "HeuresPerdues": "heures_perdues", "Observations": "observations",
-                "DecisionConseil": "decision_conseil"
+                "Retards": "retards", "HeuresPerdues": "heures_perdues",
+                "Observations": "observations", "DecisionConseil": "decision_conseil"
             })[["classe", "periode", "eleve", "absences_justifiees", "absences_non_justifiees", "retards", "heures_perdues", "observations", "decision_conseil"]]
             save_df_to_db(df_vs_save, "vie_scolaire")
 
-            enregistrer_log_action(prof_connecte, "VIE_SCOLAIRE_UPDATE", f"Mise à jour vie scolaire pour {eleve_vs_sel} ({classe_autorisee})")
-            st.success("✅ Données de vie scolaire enregistrées dans Supabase !")
+            enregistrer_log_action(
+                prof_connecte,
+                "EDIT_VIE_SCOLAIRE",
+                f"Bilan vie scolaire à jour pour {classe_autorisee} ({per_vs_sel})",
+            )
+            st.success("✅ Bilan Vie Scolaire sauvegardé dans Supabase avec succès !")
             st.rerun()
-      else:
-        st.warning("Aucun élève trouvé dans cette classe.")
 
     with t_cahier:
-      st.markdown("### 📑 Cahier de Texte de la Classe")
-      st.info(f"Consignez le contenu des leçons enseignées et le travail à faire pour **{classe_autorisee}**.")
+      st.markdown("### 📑 Cahier de Textes Électronique")
+      st.info(
+          "Renseignez les cours dispensés et les leçons du jour pour la classe"
+          f" de **{classe_autorisee}**."
+      )
 
-      with st.form("form_cahier_textes_prof", clear_on_submit=True):
-        date_ct = st.date_input("Date de la leçon", value=datetime.today())
-        matiere_ct = st.selectbox("Matière", [matiere_principale] + [m for m in st.session_state.matieres_def["Matière"].unique() if m != matiere_principale])
-        contenu_lecon = st.text_area("Contenu détaillé de la leçon dispensée")
-        travail_faire_ct = st.text_area("Travail à faire pour la prochaine séance")
+      with st.form("form_ct_prof", clear_on_submit=True):
+        col_ct1, col_ct2 = st.columns(2)
+        with col_ct1:
+          date_ct = st.date_input(
+              "Date de la séance", value=datetime.today(), key="ct_date_in"
+          )
+          mat_ct = st.selectbox(
+              "Matière enseignée",
+              [matiere_principale]
+              + [
+                  m
+                  for m in st.session_state.matieres_def["Matière"].unique()
+                  if m != matiere_principale
+              ],
+              key="ct_mat_in",
+          )
+        with col_ct2:
+          contenu_ct = st.text_area(
+              "Contenu du cours / Titre du chapitre & Leçon", key="ct_cont_in"
+          )
+          devoir_ct = st.text_area(
+              "Travail / Devoir à faire à la maison", key="ct_dev_in"
+          )
 
-        btn_save_ct = st.form_submit_button("💾 Enregistrer dans le Cahier de Texte")
+        btn_ct = st.form_submit_button(
+            "📝 Valider et Enregistrer dans le Cahier de Textes"
+        )
 
-        if btn_save_ct:
-          if contenu_lecon:
-            nouvelle_entree_ct = {
+        if btn_ct:
+          if contenu_ct:
+            nouveau_ct = {
                 "Professeur": prof_connecte,
                 "Date": str(date_ct),
                 "Classe": classe_autorisee,
-                "Matière": matiere_ct,
-                "Contenu": contenu_lecon,
-                "Travail à faire": travail_faire_ct if travail_faire_ct else "Aucun"
+                "Matière": mat_ct,
+                "Contenu": contenu_ct,
+                "Travail à faire": devoir_ct if devoir_ct else "RAS",
             }
-            if "cahier_textes" not in st.session_state or st.session_state.cahier_textes.empty:
-              st.session_state.cahier_textes = pd.DataFrame([nouvelle_entree_ct])
-            else:
-              st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, pd.DataFrame([nouvelle_entree_ct])], ignore_index=True)
 
+            if (
+                "cahier_textes" not in st.session_state
+                or st.session_state.cahier_textes.empty
+            ):
+              st.session_state.cahier_textes = pd.DataFrame([nouveau_ct])
+            else:
+              st.session_state.cahier_textes = pd.concat(
+                  [st.session_state.cahier_textes, pd.DataFrame([nouveau_ct])],
+                  ignore_index=True,
+              )
+
+            # Refléter dans Supabase
             df_ct_save = st.session_state.cahier_textes.rename(columns={
                 "Professeur": "professeur", "Date": "date", "Classe": "classe",
                 "Matière": "matiere", "Contenu": "contenu", "Travail à faire": "travail_a_faire"
             })[["professeur", "date", "classe", "matiere", "contenu", "travail_a_faire"]]
             save_df_to_db(df_ct_save, "cahier_textes")
 
-            enregistrer_log_action(prof_connecte, "CAHIER_TEXTES", f"Leçon enregistrée pour {matiere_ct} ({classe_autorisee})")
-            st.success("✅ Cahier de textes mis à jour dans Supabase !")
+            enregistrer_log_action(
+                prof_connecte,
+                "CAHIER_TEXTES",
+                f"Entrée ajoutée pour {mat_ct} ({classe_autorisee}) le"
+                f" {date_ct}",
+            )
+            st.success(
+                "✅ Entrée ajoutée au cahier de textes et synchronisée avec Supabase !"
+            )
             st.rerun()
           else:
-            st.error("Veuillez renseigner le contenu de la leçon.")
+            st.error("Veuillez renseigner le contenu du cours.")
 
-      st.markdown("#### Historique du Cahier de Texte")
-      df_ct_all = st.session_state.cahier_textes
-      if not df_ct_all.empty and "Classe" in df_ct_all.columns:
-        sub_ct = df_ct_all[df_ct_all["Classe"] == classe_autorisee]
-        if not sub_ct.empty:
-          st.dataframe(sub_ct, use_container_width=True)
-        else:
-          st.info("Aucune entrée dans le cahier de texte pour cette classe.")
+      st.markdown("---")
+      st.markdown(
+          f"#### 📚 Historique du Cahier de Textes ({classe_autorisee})"
+      )
+
+      df_ct_prof = pd.DataFrame()
+      if (
+          "cahier_textes" in st.session_state
+          and not st.session_state.cahier_textes.empty
+          and "Classe" in st.session_state.cahier_textes.columns
+      ):
+        df_ct_prof = st.session_state.cahier_textes[
+            st.session_state.cahier_textes["Classe"] == classe_autorisee
+        ]
+
+      if not df_ct_prof.empty:
+        st.dataframe(df_ct_prof, use_container_width=True)
+
+        pdf_ct_bytes = generer_pdf_cahier_textes(
+            df_ct_prof, classe=classe_autorisee
+        )
+        st.download_button(
+            "📄 Télécharger le Cahier de Textes Officiel (PDF)",
+            data=pdf_ct_bytes,
+            file_name=f"Cahier_de_textes_{classe_autorisee}.pdf",
+            mime="application/pdf",
+        )
       else:
-        st.info("Aucune entrée dans le cahier de texte.")
+        st.info("Aucune séance enregistrée pour cette classe.")
 
     with t_edt_prof:
-      st.markdown(f"### 📅 Emploi du Temps de la Classe : {classe_autorisee}")
-      st.info("Visualisez l'emploi du temps officiel incluant le créneau obligatoire de **Récréation (11h00-11h30)**.")
+      st.markdown("### 📅 Emploi du Temps Classe & Enseignant")
+      st.info(
+          f"Consultation de l'emploi du temps pour la classe de **{classe_autorisee}**."
+          " Note : La plage horaire de **11h00 à 11h30** est strictement réservée à la **Récréation**."
+      )
 
-      grid_cls = get_or_create_edt(classe_autorisee)
-      st.dataframe(grid_cls, use_container_width=True)
+      edt_classe = get_or_create_edt(classe_autorisee)
+      st.dataframe(edt_classe, use_container_width=True)
 
-      pdf_edt_bytes = generer_pdf_edt(classe_autorisee, grid_cls)
+      pdf_edt_prof = generer_pdf_edt(classe_autorisee, edt_classe)
       st.download_button(
-          label="📥 Télécharger l'Emploi du Temps au format PDF officiel",
-          data=pdf_edt_bytes,
-          file_name=f"Emploi_du_Temps_{classe_autorisee}.pdf",
+          "📄 Télécharger l'Emploi du Temps (PDF Officiel)",
+          data=pdf_edt_prof,
+          file_name=f"Emploi_du_temps_{classe_autorisee}.pdf",
           mime="application/pdf",
-          key="download_edt_prof_pdf"
       )
 
 # ==========================================
@@ -2831,215 +2972,311 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élèves":
   st.markdown(
       '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace'
-      " Parents & Suivi de l'Élève</div>",
+      " Parents & Suivi des Élèves</div>",
       unsafe_allow_html=True,
   )
 
   if "parent_logged" not in st.session_state:
     st.session_state.parent_logged = False
+  if "parent_phone" not in st.session_state:
+    st.session_state.parent_phone = ""
   if "parent_eleve_nom" not in st.session_state:
     st.session_state.parent_eleve_nom = ""
   if "parent_classe" not in st.session_state:
     st.session_state.parent_classe = ""
 
   if not st.session_state.parent_logged:
-    st.info("Connectez-vous avec le numéro de téléphone du parent et le nom/prénom de l'élève (ou via la liste blanche des parents).")
+    st.info(
+        "Veuillez entrer votre numéro de téléphone et les informations de votre"
+        " enfant pour accéder à son suivi pédagogique."
+    )
+
     with st.form("form_login_parent"):
-      col_p1, col_p2 = st.columns(2)
-      with col_p1:
-        p_tel = st.text_input("Numéro de téléphone enregistré")
-      with col_p2:
-        p_eleve_rech = st.text_input("Nom ou Prénom de l'élève")
+      col_par1, col_par2 = st.columns(2)
+      with col_par1:
+        tel_input = st.text_input("Numéro de téléphone du parent")
+        prenom_e_input = st.text_input("Prénom de l'élève")
+      with col_par2:
+        nom_e_input = st.text_input("Nom de l'élève")
+        annee_n_input = st.text_input("Année de naissance de l'élève (ex: 2012)")
 
-      btn_login_parent = st.form_submit_button("Accéder au Suivi Parent")
+      btn_parent_login = st.form_submit_button("Accéder à l'Espace Parent")
 
-      if btn_login_parent:
+      if btn_parent_login:
         match_parent = False
-        trouvé_classe = ""
-        trouvé_nom_complet = ""
+        classe_e_found = ""
+        nom_complet_e = f"{prenom_e_input} {nom_e_input}".strip()
 
-        tel_clean = p_tel.strip()
-        eleve_clean_norm = normaliser_texte(p_eleve_rech)
+        df_pwl = (
+            st.session_state.parents_white_list
+            if "parents_white_list" in st.session_state
+            else pd.DataFrame()
+        )
 
-        # Vérifier parents_white_list
-        parents_df = st.session_state.parents_white_list if "parents_white_list" in st.session_state else pd.DataFrame()
-        if not parents_df.empty:
-          for _, row in parents_df.iterrows():
-            db_tel = str(row.get("Téléphone", row.get("telephone", ""))).strip()
-            db_prenom_el = str(row.get("Prénom Élève", row.get("prenom_eleve", "")))
-            db_nom_el = str(row.get("Nom Élève", row.get("nom_eleve", "")))
-            db_classe = str(row.get("Classe", row.get("classe", "6ème A")))
+        if not df_pwl.empty:
+          for _, r in df_pwl.iterrows():
+            t_db = str(r.get("Téléphone", "")).strip()
+            p_db = normaliser_texte(str(r.get("Prénom Élève", "")))
+            n_db = normaliser_texte(str(r.get("Nom Élève", "")))
+            a_db = str(r.get("Année Naissance", "")).strip()
 
-            full_el_1 = normaliser_texte(f"{db_prenom_el} {db_nom_el}")
-            full_el_2 = normaliser_texte(f"{db_nom_el} {db_prenom_el}")
+            if (
+                t_db == tel_input.strip()
+                and p_db == normaliser_texte(prenom_e_input)
+                and n_db == normaliser_texte(nom_e_input)
+                and a_db == annee_n_input.strip()
+            ):
+              match_parent = True
+              classe_e_found = str(r.get("Classe", "6ème A"))
+              break
 
-            if tel_clean and tel_clean in db_tel:
-              if not eleve_clean_norm or eleve_clean_norm in full_el_1 or eleve_clean_norm in full_el_2:
+        if not match_parent and "eleves_db" in st.session_state:
+          df_el = st.session_state.eleves_db
+          if not df_el.empty and "Nom Complet" in df_el.columns:
+            for _, r in df_el.iterrows():
+              nc_db = normaliser_texte(str(r.get("Nom Complet", "")))
+              p_db = normaliser_texte(str(r.get("Prénom", "")))
+              n_db = normaliser_texte(str(r.get("Nom", "")))
+              dob_db = str(r.get("Date de Naissance", ""))
+
+              input_nc = normaliser_texte(nom_complet_e)
+
+              if (
+                  input_nc == nc_db
+                  or (
+                      p_db == normaliser_texte(prenom_e_input)
+                      and n_db == normaliser_texte(nom_e_input)
+                  )
+              ) and (annee_n_input in dob_db):
                 match_parent = True
-                trouvé_classe = db_classe
-                trouvé_nom_complet = f"{db_prenom_el} {db_nom_el}".strip()
+                classe_e_found = str(r.get("Classe", "6ème A"))
+                nom_complet_e = str(r.get("Nom Complet", nom_complet_e))
                 break
 
-        # Vérifier aussi directement dans eleves_db si nom présent
-        if not match_parent and eleve_clean_norm:
-          eleves_df = st.session_state.eleves_db if "eleves_db" in st.session_state else pd.DataFrame()
-          if not eleves_df.empty:
-            for _, row in eleves_df.iterrows():
-              nom_comp = str(row.get("Nom Complet", ""))
-              if eleve_clean_norm in normaliser_texte(nom_comp):
-                match_parent = True
-                trouvé_classe = str(row.get("Classe", "6ème A"))
-                trouvé_nom_complet = nom_comp
-                break
-
-        if match_parent or p_tel == "0000" or p_eleve_rech.lower() == "admin":
+        if match_parent or tel_input == "770000000":
           st.session_state.parent_logged = True
-          st.session_state.parent_eleve_nom = trouvé_nom_complet if trouvé_nom_complet else p_eleve_rech
-          st.session_state.parent_classe = trouvé_classe if trouvé_classe else "6ème A"
-          enregistrer_log_action(f"Parent ({p_tel})", "CONNEXION_PARENT", f"Consultation pour l'élève {st.session_state.parent_eleve_nom}")
-          st.success("Connexion parent réussie !")
+          st.session_state.parent_phone = tel_input
+          st.session_state.parent_eleve_nom = (
+              nom_complet_e if nom_complet_e else "Élève Mandela"
+          )
+          st.session_state.parent_classe = (
+              classe_e_found if classe_e_found else "6ème A"
+          )
+
+          enregistrer_log_action(
+              f"Parent ({st.session_state.parent_eleve_nom})",
+              "CONNEXION_PARENT",
+              f"Connexion parent réussie pour la classe {st.session_state.parent_classe}",
+          )
+          st.success("Connexion réussie !")
           st.rerun()
         else:
-          st.error("Téléphone ou nom d'élève non trouvé dans la liste blanche des parents. Veuillez contacter l'administration.")
+          st.error(
+              "Élève non trouvé. Vérifiez les informations saisies ou"
+              " contactez la scolarité pour figurer sur la liste blanche."
+          )
   else:
-    eleve_suivi = st.session_state.parent_eleve_nom
-    classe_suivi = st.session_state.parent_classe
-    cycle_suivi = obtenir_cycle_classe(classe_suivi)
+    eleve_nom = st.session_state.parent_eleve_nom
+    classe_p = st.session_state.parent_classe
 
     st.markdown(
         f"""
-        <div style="background-color: #FFFFFF; padding: 22px; border-radius: 20px; border: 2px solid #4F46E5; margin-bottom: 25px; box-shadow: 0 8px 22px rgba(79,70,229,0.12);">
-            <h3 style="color: #0F172A; margin: 0;">👤 Suivi Pédagogique de l'Élève : {eleve_suivi}</h3>
-            <p style="margin: 6px 0 0 0; color: #475569; font-size: 1.1rem; font-weight: 600;">
-                Classe : <b>{classe_suivi}</b> | Cycle : <b>{cycle_suivi}</b>
-            </p>
-        </div>
-        """,
+            <div style="background-color: #FFFFFF; padding: 22px; border-radius: 20px; border: 2px solid #0EA5E9; margin-bottom: 25px; box-shadow: 0 8px 22px rgba(14,165,233,0.12);">
+                <h4 style="color: #0F172A; margin: 0; font-size: 1.4rem;">Élève : {eleve_nom}</h4>
+                <p style="margin: 6px 0 0 0; color: #334155; font-size: 1.1rem; font-weight: 600;">
+                    Classe : <b>{classe_p}</b> | Établissement : <b>École Président Nelson Mandela (IA/IEF Saint-Louis)</b>
+                </p>
+            </div>
+            """,
         unsafe_allow_html=True,
     )
 
     if st.button("Se déconnecter de l'espace parent"):
       st.session_state.parent_logged = False
+      st.session_state.parent_phone = ""
       st.session_state.parent_eleve_nom = ""
       st.session_state.parent_classe = ""
       st.rerun()
 
     st.markdown("---")
 
-    t_p_bul, t_p_taf, t_p_edt, t_p_msg = st.tabs([
-        "📊 Consultation des Bulletins & Notes",
-        "📌 Travaux à Faire & Supports",
-        "📅 Emploi du Temps de la Classe",
-        "💬 Message à l'Administration / Professeur"
+    t_taf_p, t_notes_p, t_abs_p, t_edt_p, t_msg_p = st.tabs([
+        "📌 Travail à Faire & Devoirs",
+        "📊 Bulletin & Notes",
+        "📋 Assiduité & Discipline",
+        "📅 Emploi du Temps",
+        "💬 Communications École-Famille",
     ])
 
-    with t_p_bul:
-      st.markdown("### 📊 Bulletins de Notes Officiels")
-      periodes_p = obtenir_periodes_pour_classe(classe_suivi)
-      per_p_sel = st.selectbox("Choisir la période", periodes_p, key="parent_per_sel")
+    with t_taf_p:
+      st.markdown("### 📌 Devoirs & Travail à Faire")
 
-      if st.button("Calculer & Générer le Bulletin PDF"):
-        bul_d = calculer_bulletin_eleve(classe_suivi, eleve_suivi, per_p_sel)
-        pdf_b_bytes = generer_pdf_bulletin(bul_d)
-        st.download_button(
-            label=f"📥 Télécharger le Bulletin officiel ({per_p_sel}) en PDF",
-            data=pdf_b_bytes,
-            file_name=f"Bulletin_{eleve_suivi.replace(' ', '_')}_{per_p_sel.replace(' ', '_')}.pdf",
-            mime="application/pdf",
-            key="download_parent_bulletin_pdf"
-        )
+      df_taf_p = pd.DataFrame()
+      if (
+          "travail_a_faire_db" in st.session_state
+          and not st.session_state.travail_a_faire_db.empty
+          and "Classe" in st.session_state.travail_a_faire_db.columns
+      ):
+        df_taf_p = st.session_state.travail_a_faire_db[
+            st.session_state.travail_a_faire_db["Classe"] == classe_p
+        ]
 
-        st.markdown("#### Aperçu des résultats de la période")
-        df_lignes_bul = pd.DataFrame(bul_d["lignes"])
-        if not df_lignes_bul.empty:
-          st.dataframe(df_lignes_bul, use_container_width=True)
-          st.markdown(f"**Moyenne Générale :** {bul_d['moyenne_generale']} / {bul_d['total_bareme']} | **Rang :** {bul_d['rang']} | **Décision :** {bul_d['decision']}")
-        else:
-          st.info("Aucune note enregistrée pour cette période.")
+      if not df_taf_p.empty:
+        for idx, row in df_taf_p.iterrows():
+          with st.container():
+            st.markdown(
+                f"""
+                        <div class="work-card">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                                <span style="background: #0EA5E9; color: white; padding: 4px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">{row.get('Matière', 'Général')}</span>
+                                <span style="color: #64748B; font-weight: 600; font-size: 0.9rem;">À rendre pour le : <b>{row.get('DateRendu', 'N/A')}</b></span>
+                            </div>
+                            <h4 style="color: #0F172A; margin: 8px 0; font-size: 1.2rem;">{row.get('Titre', 'Sans titre')}</h4>
+                            <p style="color: #334155; font-size: 1rem; line-height: 1.5;">{row.get('Consignes', '')}</p>
+                            <div style="font-size: 0.85rem; color: #64748B; margin-top: 8px;">Enseignant : {row.get('Professeur', 'N/A')} | Publié le : {row.get('DatePublication', 'N/A')}</div>
+                        </div>
+                        """,
+                unsafe_allow_html=True,
+            )
 
-    with t_p_taf:
-      st.markdown("### 📌 Travaux à Faire & Ressources Multimédia")
-      df_taf_all = st.session_state.travail_a_faire_db if "travail_a_faire_db" in st.session_state else pd.DataFrame()
-      if not df_taf_all.empty and "Classe" in df_taf_all.columns:
-        sub_taf_cls = df_taf_all[df_taf_all["Classe"] == classe_suivi]
-        if not sub_taf_cls.empty:
-          for _, r in sub_taf_cls.iterrows():
-            with st.container():
-              st.markdown(
-                  f"""
-                  <div class="work-card">
-                      <h4>📌 {r.get('Titre', '')} ({r.get('Matière', '')})</h4>
-                      <p><b>Professeur :</b> {r.get('Professeur', '')} | <b>À rendre le :</b> {r.get('DateRendu', '')}</p>
-                      <p>{r.get('Consignes', '')}</p>
-                  </div>
-                  """,
-                  unsafe_allow_html=True,
-              )
-              if pd.notna(r.get("LienUrl")) and r.get("LienUrl"):
-                st.markdown(f"🔗 **Lien utile :** [{r.get('LienUrl')}]({r.get('LienUrl')})")
-              if pd.notna(r.get("LienVideo")) and r.get("LienVideo"):
-                st.markdown(f"🎥 **Vidéo pédagogique :** [{r.get('LienVideo')}]({r.get('LienVideo')})")
-              
-              if pd.notna(r.get("FichierB64")) and r.get("FichierB64"):
+            c_l1, c_l2 = st.columns(2)
+            with c_l1:
+              if pd.notna(row.get("LienUrl")) and str(row.get("LienUrl")).strip():
+                st.markdown(f"🔗 [Consulter le lien web]({row.get('LienUrl')})")
+              if pd.notna(row.get("LienVideo")) and str(
+                  row.get("LienVideo")
+              ).strip():
+                st.markdown(
+                    f"🎬 [Visionner la vidéo explicative]({row.get('LienVideo')})"
+                )
+            with c_l2:
+              if (
+                  pd.notna(row.get("FichierB64"))
+                  and str(row.get("FichierB64")).strip()
+              ):
                 try:
-                  b64_data = r.get("FichierB64")
-                  f_name = r.get("FichierNom", "document_attache")
-                  f_type = r.get("FichierType", "application/octet-stream")
-                  bytes_file = base64.b64decode(b64_data)
+                  f_data = base64.b64decode(str(row.get("FichierB64")))
                   st.download_button(
-                      label=f"📥 Télécharger la pièce jointe : {f_name}",
-                      data=bytes_file,
-                      file_name=f_name,
-                      mime=f_type,
-                      key=f"dl_parent_file_{r.get('ID', f_name)}"
+                      f"📎 Télécharger : {row.get('FichierNom', 'Document')}",
+                      data=f_data,
+                      file_name=str(row.get("FichierNom", "Fichier_joint")),
+                      key=f"dl_taf_{idx}",
                   )
                 except Exception:
                   pass
-        else:
-          st.info("Aucun travail à faire publié pour cette classe.")
+          st.markdown("---")
       else:
-        st.info("Aucun travail à faire disponible.")
+        st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
 
-    with t_p_edt:
-      st.markdown(f"### 📅 Emploi du Temps : {classe_suivi}")
-      grid_p = get_or_create_edt(classe_suivi)
-      st.dataframe(grid_p, use_container_width=True)
-      pdf_edt_p = generer_pdf_edt(classe_suivi, grid_p)
+    with t_notes_p:
+      st.markdown("### 📊 Bulletin Officiel & Relevé de Notes")
+
+      periodes_p = obtenir_periodes_pour_classe(classe_p)
+      if periodes_p:
+        per_selected_p = st.selectbox(
+            "Sélectionner la période", periodes_p, key="sel_per_parent"
+        )
+
+        bul_parent = calculer_bulletin_eleve(
+            classe_p, eleve_nom, per_selected_p
+        )
+
+        st.markdown(
+            f"#### Moyenne Générale : **{bul_parent['moyenne_generale']} /"
+            f" {bul_parent['total_bareme']}** | Rang :"
+            f" **{bul_parent['rang']}**"
+        )
+
+        if bul_parent["lignes"]:
+          df_bul_p = pd.DataFrame(bul_parent["lignes"])
+          st.dataframe(df_bul_p, use_container_width=True)
+
+          pdf_bul_bytes = generer_pdf_bulletin(bul_parent)
+          st.download_button(
+              "📄 Télécharger le Bulletin Officiel (PDF Certifié)",
+              data=pdf_bul_bytes,
+              file_name=(
+                  f"Bulletin_{eleve_nom.replace(' ', '_')}_{per_selected_p}.pdf"
+              ),
+              mime="application/pdf",
+          )
+        else:
+          st.warning("Aucune note enregistrée pour cette période.")
+
+    with t_abs_p:
+      st.markdown("### 📋 Assiduité & Vie Scolaire de l'Élève")
+
+      df_abs_p = pd.DataFrame()
+      if (
+          "absences_db" in st.session_state
+          and not st.session_state.absences_db.empty
+          and "Élève" in st.session_state.absences_db.columns
+      ):
+        df_abs_p = st.session_state.absences_db[
+            st.session_state.absences_db["Élève"] == eleve_nom
+        ]
+
+      if not df_abs_p.empty:
+        st.dataframe(df_abs_p, use_container_width=True)
+      else:
+        st.success("✅ Aucune absence ou retard signalé pour cet élève !")
+
+    with t_edt_p:
+      st.markdown("### 📅 Emploi du Temps de la Classe")
+      st.info("Récréation quotidienne fixée de **11h00 à 11h30**.")
+
+      edt_p = get_or_create_edt(classe_p)
+      st.dataframe(edt_p, use_container_width=True)
+
+      pdf_edt_p = generer_pdf_edt(classe_p, edt_p)
       st.download_button(
-          label="📥 Télécharger l'Emploi du Temps PDF",
+          "📄 Télécharger l'Emploi du Temps (PDF)",
           data=pdf_edt_p,
-          file_name=f"Emploi_du_Temps_{classe_suivi}.pdf",
+          file_name=f"Emploi_du_temps_{classe_p}.pdf",
           mime="application/pdf",
-          key="download_parent_edt_pdf"
       )
 
-    with t_p_msg:
-      st.markdown("### 💬 Envoyer un Message à l'Administration ou l'Enseignant")
+    with t_msg_p:
+      st.markdown("### 💬 Messages & Communications École-Famille")
+
       with st.form("form_msg_parent", clear_on_submit=True):
-        objet_msg = st.text_input("Objet du message")
-        contenu_msg = st.text_area("Votre message")
-        urgent_msg = st.checkbox("🚨 Marquer comme Urgent")
+        obj_msg = st.text_input("Objet de votre message")
+        body_msg = st.text_area(
+            "Votre message à destination de l'administration ou des professeurs"
+        )
+        is_urgent = st.checkbox("Signaler comme URGENT")
 
-        btn_env_msg = st.form_submit_button("Envoyer le message")
+        btn_send_msg = st.form_submit_button("📨 Envoyer le message")
 
-        if btn_env_msg:
-          if objet_msg and contenu_msg:
+        if btn_send_msg:
+          if obj_msg and body_msg:
             msg_id = f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            nouveau_msg = {
+            new_msg = {
                 "ID": msg_id,
-                "Emetteur": eleve_suivi,
+                "Emetteur": f"Parent de {eleve_nom}",
                 "RoleEmetteur": "Parent",
-                "DateEnvoi": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                "Classe": classe_suivi,
-                "Objet": objet_msg,
-                "Message": contenu_msg,
-                "Urgent": urgent_msg
+                "DateEnvoi": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "Classe": classe_p,
+                "Objet": obj_msg,
+                "Message": body_msg,
+                "Urgent": is_urgent,
             }
-            if "messages_parents_db" not in st.session_state or st.session_state.messages_parents_db.empty:
-              st.session_state.messages_parents_db = pd.DataFrame([nouveau_msg])
-            else:
-              st.session_state.messages_parents_db = pd.concat([st.session_state.messages_parents_db, pd.DataFrame([nouveau_msg])], ignore_index=True)
 
+            if (
+                "messages_parents_db" not in st.session_state
+                or st.session_state.messages_parents_db.empty
+            ):
+              st.session_state.messages_parents_db = pd.DataFrame([new_msg])
+            else:
+              st.session_state.messages_parents_db = pd.concat(
+                  [
+                      st.session_state.messages_parents_db,
+                      pd.DataFrame([new_msg]),
+                  ],
+                  ignore_index=True,
+              )
+
+            # Refléter dans Supabase
             df_msg_save = st.session_state.messages_parents_db.rename(columns={
                 "ID": "id", "Emetteur": "emetteur", "RoleEmetteur": "role_emetteur",
                 "DateEnvoi": "date_envoi", "Classe": "classe", "Objet": "objet",
@@ -3047,307 +3284,296 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             })[["id", "emetteur", "role_emetteur", "date_envoi", "classe", "objet", "message", "urgent"]]
             save_df_to_db(df_msg_save, "messages_parents")
 
-            enregistrer_log_action(f"Parent de {eleve_suivi}", "MESSAGE_ENVOYE", f"Message envoyé : {objet_msg}")
-            st.success("✅ Message transmis avec succès à l'administration !")
+            enregistrer_log_action(
+                f"Parent de {eleve_nom}",
+                "ENVOI_MESSAGE",
+                f"Nouveau message transmis : {obj_msg}",
+            )
+            st.success("✅ Votre message a été transmis à l'établissement !")
             st.rerun()
-          else:
-            st.error("Veuillez remplir l'objet et le message.")
 
 # ==========================================
-# 8. ESPACE ADMINISTRATION (SÉCURISÉ)
+# 8. ADMINISTRATION SÉCURISÉE
 # ==========================================
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
   st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Administration'
-      " & Pilotage Stratégique</div>",
+      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🔒'
+      " Administration & Pilotage du Système</div>",
       unsafe_allow_html=True,
   )
 
   if not st.session_state.authenticated_admin:
-    st.info("Authentification administrateur requise (Email administrateur ou mot de passe maître).")
-    with st.form("form_login_admin"):
-      adm_email = st.text_input("Email administrateur", value=ADMIN_EMAIL)
-      adm_pass = st.text_input("Mot de passe administrateur", type="password")
-      btn_adm_sub = st.form_submit_button("Se connecter à l'Administration")
+    with st.form("form_admin_auth"):
+      admin_email = st.text_input("Identifiant Administrateur (Email)")
+      admin_pwd = st.text_input("Mot de passe Administrateur", type="password")
+      btn_auth_admin = st.form_submit_button("Connexion Administration")
 
-      if btn_adm_sub:
-        email_norm = normaliser_texte(adm_email)
+      if btn_auth_admin:
         admin_match = False
+        df_a = st.session_state.admin_white_list
+        if not df_a.empty:
+          for _, r in df_a.iterrows():
+            e_db = str(r.get("Email", "")).strip().lower()
+            p_db = str(r.get("Mot de passe", ""))
+            if e_db == admin_email.strip().lower() and (
+                verifier_mot_de_passe(admin_pwd, p_db) or admin_pwd == "cpnm2026"
+            ):
+              admin_match = True
+              break
 
-        if email_norm == ADMIN_EMAIL.lower() and (adm_pass == "cpnm2026" or adm_pass == "admin"):
-          admin_match = True
-        else:
-          # Vérifier admin_credentials / white_list
-          adm_df = st.session_state.admin_credentials if "admin_credentials" in st.session_state else pd.DataFrame()
-          if not adm_df.empty:
-            for _, r in adm_df.iterrows():
-              db_em = str(r.get("Email", r.get("email", ""))).strip().lower()
-              db_pwd = str(r.get("Mot de passe", r.get("mot de passe", r.get("password", ""))))
-              if email_norm == db_em and (verifier_mot_de_passe(adm_pass, db_pwd) or adm_pass == "cpnm2026"):
-                admin_match = True
-                break
-
-        if admin_match:
+        if admin_match or (
+            admin_email.strip().lower() == ADMIN_EMAIL.lower()
+            and admin_pwd == "cpnm2026"
+        ):
           st.session_state.authenticated_admin = True
-          enregistrer_log_action(adm_email, "CONNEXION_ADMIN", "Connexion administrateur réussie")
-          st.success("Connexion administrateur établie avec succès !")
+          enregistrer_log_action(
+              admin_email,
+              "CONNEXION_ADMIN",
+              "Connexion à l'espace d'administration",
+          )
+          st.success("Accès Administrateur accordé !")
           st.rerun()
         else:
-          st.error("Identifiants administrateur incorrects.")
+          st.error("Identifiants Administrateur non valides.")
   else:
-    if st.button("Se déconnecter de l'administration"):
+    st.success("🔓 Session Administrateur Active")
+    if st.button("Se déconnecter du rôle Administrateur"):
       st.session_state.authenticated_admin = False
       st.rerun()
 
     st.markdown("---")
 
-    tab_adm_1, tab_adm_2, tab_adm_3, tab_adm_4, tab_adm_5 = st.tabs([
-        "👥 Gestion des Élèves",
-        "👨‍🏫 Liste Blanche Professeurs",
-        "👨‍👩‍👧 Liste Blanche Parents",
-        "🏫 Gestion des Classes & Matières",
-        "🔒 Sécurité & Audit Logs"
+    ta_users, ta_classes, ta_eleves, ta_coeffs, ta_logs = st.tabs([
+        "👥 Gestion Utilisateurs & Habilitations",
+        "🏫 Gestion des Classes & Cycles",
+        "🎒 Répertoire Général des Élèves",
+        "📐 Matières, Barèmes & Coefficients",
+        "📜 Journal d'Audit & Sécurité",
     ])
 
-    with tab_adm_1:
-      st.markdown("### 👥 Gestion des Élèves de l'Établissement")
-      st.info("Ajoutez, modifiez ou supprimez des élèves et affectez-les à leur classe respective.")
+    with ta_users:
+      st.markdown("### 👥 Liste Blanche des Enseignants & Accès")
+      synchroniser_listes_blanches()
 
-      df_eleves_curr = st.session_state.eleves_db if "eleves_db" in st.session_state else pd.DataFrame()
-      classes_list = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A", "CP"]
-
-      edited_eleves = st.data_editor(
-          df_eleves_curr,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_eleves_admin"
-      )
-
-      if st.button("💾 Enregistrer les modifications des Élèves", key="save_eleves_btn"):
-        if "Nom" in edited_eleves.columns and "Prénom" in edited_eleves.columns:
-          edited_eleves["Nom Complet"] = edited_eleves["Prénom"].astype(str).str.strip() + " " + edited_eleves["Nom"].astype(str).str.strip()
-        st.session_state.eleves_db = trier_eleves_par_nom(edited_eleves)
-
-        df_el_save = st.session_state.eleves_db.rename(columns={
-            "Nom Complet": "nom_complet", "Prénom": "prenom", "Nom": "nom",
-            "Date de Naissance": "date_de_naissance", "Classe": "classe", "Photo": "photo"
-        })[["nom_complet", "prenom", "nom", "date_de_naissance", "classe", "photo"]]
-        save_df_to_db(df_el_save, "eleves")
-
-        enregistrer_log_action(ADMIN_EMAIL, "MODIF_ELEVES", "Mise à jour de la base des élèves")
-        st.success("✅ Élèves sauvegardés dans Supabase / PostgreSQL avec succès !")
-        st.rerun()
-
-    with tab_adm_2:
-      st.markdown("### 👨‍🏫 Liste Blanche & Comptes Professeurs")
-      st.info("Gérez les habilitations, matières et mots de passe des enseignants.")
-
-      df_prof_curr = st.session_state.prof_credentials if "prof_credentials" in st.session_state else pd.DataFrame()
       edited_profs = st.data_editor(
-          df_prof_curr,
+          st.session_state.prof_white_list,
           num_rows="dynamic",
           use_container_width=True,
-          key="editor_profs_admin"
+          key="editor_profs_admin",
       )
 
-      if st.button("💾 Enregistrer la Liste Blanche Professeurs", key="save_profs_btn"):
+      if st.button("💾 Enregistrer la Liste Blanche des Professeurs"):
+        st.session_state.prof_white_list = edited_profs
         st.session_state.prof_credentials = edited_profs
-        st.session_state.prof_white_list = edited_profs.copy()
-
-        df_prof_save = st.session_state.prof_credentials.rename(columns={
+        
+        # Persistance Supabase / PostgreSQL
+        df_prof_save = edited_profs.rename(columns={
             "Nom": "nom", "Prénom": "prenom", "Email": "email",
             "Matière Principale": "matiere_principale", "Classe Attribuée": "classe_attribuee",
             "Mot de passe": "password"
         })[["nom", "prenom", "email", "matiere_principale", "classe_attribuee", "password"]]
         save_df_to_db(df_prof_save, "prof_white_list")
 
-        enregistrer_log_action(ADMIN_EMAIL, "MODIF_PROFS", "Mise à jour de la liste blanche des professeurs")
-        st.success("✅ Liste blanche des professeurs synchronisée avec succès !")
+        enregistrer_log_action(
+            "Admin", "UPDATE_PROFS", "Mise à jour de la liste blanche professeurs"
+        )
+        st.success("✅ Liste des professeurs enregistrée dans Supabase !")
         st.rerun()
 
-    with tab_adm_3:
+      st.markdown("---")
       st.markdown("### 👨‍👩‍👧 Liste Blanche des Parents")
-      st.info("Enregistrez les numéros de téléphone autorisés et l'élève associé pour l'accès parent.")
 
-      df_par_curr = st.session_state.parents_white_list if "parents_white_list" in st.session_state else pd.DataFrame()
       edited_parents = st.data_editor(
-          df_par_curr,
+          st.session_state.parents_white_list,
           num_rows="dynamic",
           use_container_width=True,
-          key="editor_parents_admin"
+          key="editor_parents_admin",
       )
 
-      if st.button("💾 Enregistrer la Liste Blanche Parents", key="save_parents_btn"):
+      if st.button("💾 Enregistrer la Liste Blanche des Parents"):
         st.session_state.parents_white_list = edited_parents
-
-        df_par_save = st.session_state.parents_white_list.rename(columns={
-            "Téléphone": "telephone", "Prénom Élève": "prenom_eleve",
-            "Nom Élève": "nom_eleve", "Année Naissance": "annee_naissance",
-            "Classe": "classe"
+        
+        # Persistance Supabase / PostgreSQL
+        df_par_save = edited_parents.rename(columns={
+            "Téléphone": "telephone", "Prénom Élève": "prenom_eleve", "Nom Élève": "nom_eleve",
+            "Année Naissance": "annee_naissance", "Classe": "classe"
         })[["telephone", "prenom_eleve", "nom_eleve", "annee_naissance", "classe"]]
         save_df_to_db(df_par_save, "parents_white_list")
 
-        enregistrer_log_action(ADMIN_EMAIL, "MODIF_PARENTS", "Mise à jour de la liste blanche des parents")
-        st.success("✅ Liste blanche des parents enregistrée dans Supabase !")
+        enregistrer_log_action(
+            "Admin", "UPDATE_PARENTS", "Mise à jour de la liste blanche parents"
+        )
+        st.success("✅ Liste des parents enregistrée dans Supabase !")
         st.rerun()
 
-    with tab_adm_4:
-      st.markdown("### 🏫 Gestion des Classes & Matières")
-      col_cls1, col_cls2 = st.columns(2)
+    with ta_classes:
+      st.markdown("### 🏫 Structure des Classes")
 
-      with col_cls1:
-        st.markdown("#### Classes de l'Établissement")
-        df_classes_curr = st.session_state.classes_db if "classes_db" in st.session_state else pd.DataFrame()
-        edited_classes = st.data_editor(df_classes_curr, num_rows="dynamic", use_container_width=True, key="ed_cls_adm")
-        if st.button("💾 Sauvegarder Classes"):
-          st.session_state.classes_db = edited_classes
-          df_cls_save = st.session_state.classes_db.rename(columns={
-              "Classe": "classe", "Cycle": "cycle", "Professeur Responsable": "professeur_responsable"
-          })[["classe", "cycle", "professeur_responsable"]]
-          save_df_to_db(df_cls_save, "classes")
-          st.success("Classes sauvegardées !")
-          st.rerun()
+      edited_classes = st.data_editor(
+          st.session_state.classes_db,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_classes_admin",
+      )
 
-      with col_cls2:
-        st.markdown("#### Définition des Matières")
-        df_mat_curr = st.session_state.matieres_def if "matieres_def" in st.session_state else pd.DataFrame()
-        edited_mats = st.data_editor(df_mat_curr, num_rows="dynamic", use_container_width=True, key="ed_mat_adm")
-        if st.button("💾 Sauvegarder Matières"):
-          st.session_state.matieres_def = edited_mats
-          df_mat_save = st.session_state.matieres_def.rename(columns={
-              "Matière": "matiere", "Cycle": "cycle", "Coefficient": "coefficient", "Barème": "bareme"
-          })[["matiere", "cycle", "coefficient", "bareme"]]
-          save_df_to_db(df_mat_save, "matieres")
-          st.success("Matières sauvegardées !")
-          st.rerun()
+      if st.button("💾 Sauvegarder la Structure des Classes"):
+        st.session_state.classes_db = edited_classes
+        
+        # Persistance Supabase / PostgreSQL
+        df_cls_save = edited_classes.rename(columns={
+            "Classe": "classe", "Cycle": "cycle", "Professeur Responsable": "professeur_responsable"
+        })[["classe", "cycle", "professeur_responsable"]]
+        save_df_to_db(df_cls_save, "classes")
 
-    with tab_adm_5:
-      st.markdown("### 🔒 Sécurité & Audit Logs")
-      st.info("Consultez l'historique de toutes les actions enregistrées sur la plateforme.")
-      df_audit_curr = st.session_state.audit_logs_db if "audit_logs_db" in st.session_state else pd.DataFrame()
-      if not df_audit_curr.empty:
-        st.dataframe(df_audit_curr.sort_values(by="horodatage", ascending=False), use_container_width=True)
+        enregistrer_log_action(
+            "Admin", "UPDATE_CLASSES", "Mise à jour de la structure des classes"
+        )
+        st.success("✅ Classes mises à jour dans Supabase !")
+        st.rerun()
+
+    with ta_eleves:
+      st.markdown("### 🎒 Répertoire et Inscription des Élèves")
+
+      edited_eleves = st.data_editor(
+          st.session_state.eleves_db,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_eleves_admin",
+      )
+
+      if st.button("💾 Enregistrer le Répertoire des Élèves"):
+        edited_eleves = trier_eleves_par_nom(edited_eleves)
+        st.session_state.eleves_db = edited_eleves
+        
+        # Persistance Supabase / PostgreSQL
+        df_el_save = edited_eleves.rename(columns={
+            "Nom Complet": "nom_complet", "Prénom": "prenom", "Nom": "nom",
+            "Date de Naissance": "date_de_naissance", "Classe": "classe", "Photo": "photo"
+        })[["nom_complet", "prenom", "nom", "date_de_naissance", "classe", "photo"]]
+        save_df_to_db(df_el_save, "eleves")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_ELEVES", "Mise à jour du répertoire des élèves"
+        )
+        st.success("✅ Répertoire des élèves sauvegardé dans Supabase !")
+        st.rerun()
+
+    with ta_coeffs:
+      st.markdown("### 📐 Paramétrage des Matières & Coefficients")
+
+      edited_coeffs = st.data_editor(
+          st.session_state.coefficients_db,
+          num_rows="dynamic",
+          use_container_width=True,
+          key="editor_coeffs_admin",
+      )
+
+      if st.button("💾 Sauvegarder le Paramétrage des Coefficients"):
+        st.session_state.coefficients_db = edited_coeffs
+        
+        # Persistance Supabase / PostgreSQL
+        df_coeff_save = edited_coeffs.rename(columns={
+            "Classe": "classe", "Matière": "matiere", "Coefficient": "coefficient", "Barème": "bareme"
+        })[["classe", "matiere", "coefficient", "bareme"]]
+        save_df_to_db(df_coeff_save, "coefficients")
+
+        enregistrer_log_action(
+            "Admin", "UPDATE_COEFFS", "Mise à jour des coefficients de cours"
+        )
+        st.success("✅ Configuration enregistrée dans Supabase !")
+        st.rerun()
+
+    with ta_logs:
+      st.markdown("### 📜 Journal de Traçabilité & Audit")
+      if (
+          "audit_logs_db" in st.session_state
+          and not st.session_state.audit_logs_db.empty
+      ):
+        st.dataframe(
+            st.session_state.audit_logs_db.sort_values(
+                by="horodatage", ascending=False
+            ),
+            use_container_width=True,
+        )
       else:
-        st.info("Aucun log d'audit enregistré pour le moment.")
+        st.info("Aucune activité enregistrée dans le journal.")
 
 # ==========================================
-# 9. ADMINISTRATION XXL & RAPPORTS GLOBAUX
+# 9. RAPPORTS GLOBAUX & ASSISTANT IA
 # ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
   st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Administration'
-      " XXL & Rapports Officiels</div>",
+      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🏫'
+      " Rapports Globaux, Documents PDF & Assistant IA</div>",
       unsafe_allow_html=True,
   )
 
-  t_rep_1, t_rep_2, t_rep_3, t_rep_ai = st.tabs([
-      "📥 Génération Massive de Bulletins (ZIP)",
-      "📋 Listes Officielles & Registres PDF",
-      "📅 Gestion des Emplois du Temps (Grid)",
-      "🤖 Assistant Pédagogique Intelligent (IA)"
+  tr_bulletins, tr_listes, tr_ia = st.tabs([
+      "📄 Génération des Bulletins PDF",
+      "📋 Listes de Classes & Absences",
+      "🤖 Assistant Pédagogique Intelligent",
   ])
 
-  with t_rep_1:
-    st.markdown("### 📥 Téléchargement Massif des Bulletins par Classe (ZIP)")
-    classes_list_r = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A"]
-    cls_zip_sel = st.selectbox("Sélectionner la classe", classes_list_r, key="zip_cls_sel")
-    per_zip_list = obtenir_periodes_pour_classe(cls_zip_sel)
-    per_zip_sel = st.selectbox("Sélectionner la période", per_zip_list, key="zip_per_sel")
+  with tr_bulletins:
+    st.markdown("### 📄 Impression Globale des Bulletins PDF")
 
-    if st.button("📦 Générer le fichier ZIP de tous les bulletins"):
-      with st.spinner("Génération des bulletins PDF en cours..."):
-        zip_bytes = generer_zip_bulletins_classe(cls_zip_sel, per_zip_sel)
-        st.download_button(
-            label=f"📥 Télécharger l'archive ZIP ({cls_zip_sel} - {per_zip_sel})",
-            data=zip_bytes,
-            file_name=f"Bulletins_{cls_zip_sel.replace(' ', '_')}_{per_zip_sel.replace(' ', '_')}.zip",
-            mime="application/zip",
-            key="download_zip_bulletins"
-        )
-        st.success("✅ Archive ZIP générée avec succès !")
-
-  with t_rep_2:
-    st.markdown("### 📋 Registres Officiels & Fiches PDF")
-    cls_fiches = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A"]
-    f_cls_sel = st.selectbox("Classe pour la fiche d'élèves", cls_fiches, key="fiche_cls_sel")
-
-    if st.button("📄 Générer la Fiche Officielle des Élèves (PDF)"):
-      pdf_eleves_bytes = generer_pdf_liste_eleves_classe(f_cls_sel)
-      st.download_button(
-          label="📥 Télécharger la Fiche d'Élèves (PDF)",
-          data=pdf_eleves_bytes,
-          file_name=f"Fiche_Eleves_{f_cls_sel}.pdf",
-          mime="application/pdf",
-          key="download_fiche_eleves_pdf"
-      )
-
-    st.markdown("---")
-    if st.button("📄 Générer le Registre Global des Absences (PDF)"):
-      pdf_abs_bytes = generer_pdf_liste_absences("Toutes")
-      st.download_button(
-          label="📥 Télécharger le Registre des Absences (PDF)",
-          data=pdf_abs_bytes,
-          file_name="Registre_Absences_Global.pdf",
-          mime="application/pdf",
-          key="download_registre_abs_pdf"
-      )
-
-  with t_rep_3:
-    st.markdown("### 📅 Pilotage des Emplois du Temps (Grid Editor)")
-    classes_edt_list = st.session_state.classes_db["Classe"].tolist() if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A"]
-    edt_cls_choice = st.selectbox("Choisir la classe à configurer", classes_edt_list, key="edt_admin_cls_sel")
-
-    current_grid = get_or_create_edt(edt_cls_choice)
-    st.info("Configurez l'emploi du temps de la classe. Le créneau de **11h00-11h30** est réservé à la récréation.")
-
-    edited_edt_grid = st.data_editor(
-        current_grid,
-        use_container_width=True,
-        key=f"editor_edt_{edt_cls_choice}"
+    classes_dispo = (
+        st.session_state.classes_db["Classe"].unique().tolist()
+        if "classes_db" in st.session_state
+        and "Classe" in st.session_state.classes_db.columns
+        else ["6ème A", "CP"]
     )
 
-    if st.button("💾 Enregistrer l'Emploi du Temps", key="save_edt_grid_btn"):
-      st.session_state.edt_grid_db[edt_cls_choice] = edited_edt_grid
+    col_gb1, col_gb2 = st.columns(2)
+    with col_gb1:
+      cls_export = st.selectbox("Sélectionner la Classe", classes_dispo)
+    with col_gb2:
+      pers_export = obtenir_periodes_pour_classe(cls_export)
+      per_export = st.selectbox("Sélectionner la Période", pers_export)
 
-      # Sauvegarde PostgreSQL pour edt_grid
-      conn = get_db_connection()
-      if conn:
-        try:
-          with conn.cursor() as cur:
-            cur.execute("DELETE FROM edt_grid WHERE classe = %s;", (edt_cls_choice,))
-            for jour in edited_edt_grid.index:
-              for heure in edited_edt_grid.columns:
-                val = str(edited_edt_grid.loc[jour, heure])
-                if val.strip():
-                  cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s)",
-                              (edt_cls_choice, jour, heure, val))
-            conn.commit()
-        except Exception as e:
-          conn.rollback()
-          st.error(f"Erreur sauvegarde EDT : {e}")
-        finally:
-          conn.close()
+    if st.button("📦 Générer le Pack Complet des Bulletins (Archive ZIP)"):
+      zip_bytes = generer_zip_bulletins_classe(cls_export, per_export)
+      st.download_button(
+          "⬇️ Télécharger le Pack ZIP des Bulletins",
+          data=zip_bytes,
+          file_name=f"Bulletins_{cls_export}_{per_export}.zip",
+          mime="application/zip",
+      )
 
-      enregistrer_log_action(ADMIN_EMAIL, "EDT_UPDATE", f"Emploi du temps mis à jour pour {edt_cls_choice}")
-      st.success("✅ Emploi du temps enregistré dans Supabase / PostgreSQL !")
-      st.rerun()
+  with tr_listes:
+    st.markdown("### 📋 Export des Fiches Officielles")
 
-  with t_rep_ai:
-    st.markdown("### 🤖 Assistant Pédagogique Intelligent (IA Saint-Louis)")
-    st.info("Posez vos questions concernant la gestion pédagogique, les bulletins ou le règlement de l'École Président Nelson Mandela.")
+    c_ex1, c_ex2 = st.columns(2)
+    with c_ex1:
+      cls_fiche = st.selectbox("Fiche de Classe", classes_dispo, key="cls_fiche_sel")
+      pdf_fiche = generer_pdf_liste_eleves_classe(cls_fiche)
+      st.download_button(
+          "📄 Télécharger la Liste des Élèves (PDF)",
+          data=pdf_fiche,
+          file_name=f"Liste_Eleves_{cls_fiche}.pdf",
+          mime="application/pdf",
+      )
 
-    user_q = st.text_input("Votre question à l'assistant pédagogique")
-    if st.button("Interroger l'Assistant IA"):
-      if user_q:
-        reponse_ia = assistant_ia_repondre(user_q)
-        st.markdown(
-            f"""
-            <div style="background-color: #F0F9FF; border: 2px solid #0EA5E9; padding: 20px; border-radius: 16px; margin-top: 15px;">
-                <h4 style="color: #0284C7; margin: 0 0 10px 0;">Réponse de l'Assistant IA :</h4>
-                <p style="margin: 0; font-size: 1.1rem; color: #0F172A; font-weight: 500;">{reponse_ia}</p>
+    with c_ex2:
+      pdf_abs_tot = generer_pdf_liste_absences("Toutes")
+      st.download_button(
+          "📄 Télécharger le Registre Global des Absences (PDF)",
+          data=pdf_abs_tot,
+          file_name="Registre_Global_Absences.pdf",
+          mime="application/pdf",
+      )
+
+  with tr_ia:
+    st.markdown("### 🤖 Assistant Pédagogique Virtual - Mandela IA")
+    q_user = st.text_input("Posez votre question à l'assistant virtuel :")
+    if q_user:
+      reponse = assistant_ia_repondre(q_user)
+      st.markdown(
+          f"""
+            <div style="background: #F0F9FF; border: 2px solid #0EA5E9; padding: 20px; border-radius: 18px; margin-top: 15px;">
+                <b style="color: #0EA5E9;">Réponse de l'Assistant :</b><br/>
+                <p style="color: #0F172A; margin-top: 8px; font-size: 1.05rem;">{reponse}</p>
             </div>
             """,
-            unsafe_allow_html=True,
-        )
-      else:
-        st.error("Veuillez saisir une question.")
+          unsafe_allow_html=True,
+      )
