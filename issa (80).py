@@ -321,18 +321,36 @@ def hacher_tous_les_passwords_en_clair():
 
 import bcrypt
 
-def verifier_mot_de_passe(email, password_saisi, hashed_db, table_name="prof_white_list"):
-    """Version robuste supportant la vérification avec ou sans e-mail."""
+import bcrypt
+
+def verifier_mot_de_passe(arg1, arg2, arg3=None, table_name="prof_white_list"):
+    """
+    Fonction universelle compatible avec 2 ou 3 arguments pour éviter tout TypeError.
+    - Si 2 arguments : verifier_mot_de_passe(password_saisi, hashed_db)
+    - Si 3 arguments : verifier_mot_de_passe(email, password_saisi, hashed_db)
+    """
+    # Détection automatique de la signature selon le nombre d'arguments fournis
+    if arg3 is None:
+        # Appel avec 2 arguments : (password_saisi, hashed_db)
+        password_saisi = arg1
+        hashed_db = arg2
+        email = None
+    else:
+        # Appel avec 3 arguments : (email, password_saisi, hashed_db)
+        email = arg1
+        password_saisi = arg2
+        hashed_db = arg3
+
     if not password_saisi or not hashed_db: 
         return False
     
-    # 1. Vérification sécurisée si le mot de passe est déjà haché
+    # 1. Vérification sécurisée si le mot de passe est haché en base
     if str(hashed_db).startswith('$2b$'):
         return bcrypt.checkpw(str(password_saisi).encode("utf-8"), str(hashed_db).encode("utf-8"))
     
-    # 2. Si le mot de passe en DB correspond au texte clair
+    # 2. Si le mot de passe en DB est en clair et correspond au texte saisi
     if str(password_saisi) == str(hashed_db):
-        # Si un email est fourni, on effectue la migration en base
+        # Si un email est disponible, on en profite pour le hacher et le mettre à jour
         if email:
             nouveau_hash = hacher_mot_de_passe(password_saisi)
             conn = get_db_connection()
