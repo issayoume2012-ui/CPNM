@@ -1064,19 +1064,19 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
               " contactez la scolarité pour figurer sur la liste blanche."
           )
     else:
-        eleve_nom = st.session_state.parent_eleve_nom
-        classe_p = st.session_state.parent_classe
+      eleve_nom = st.session_state.parent_eleve_nom
+      classe_p = st.session_state.parent_classe
     
-        st.markdown(
-            f"""
-                <div style="background-color: #FFFFFF; padding: 22px; border-radius: 20px; border: 2px solid #0EA5E9; margin-bottom: 25px; box-shadow: 0 8px 22px rgba(14,165,233,0.12);">
-                    <h4 style="color: #0F172A; margin: 0; font-size: 1.4rem;">Élève : {eleve_nom}</h4>
-                    <p style="margin: 6px 0 0 0; color: #334155; font-size: 1.1rem; font-weight: 600;">
-                        Classe : <b>{classe_p}</b> | Établissement : <b>École Président Nelson Mandela (IA/IEF Saint-Louis)</b>
-                    </p>
-                </div>
-                """,
-            unsafe_allow_html=True,
+      st.markdown(
+          f"""
+              <div style="background-color: #FFFFFF; padding: 22px; border-radius: 20px; border: 2px solid #0EA5E9; margin-bottom: 25px; box-shadow: 0 8px 22px rgba(14,165,233,0.12);">
+                  <h4 style="color: #0F172A; margin: 0; font-size: 1.4rem;">Élève : {eleve_nom}</h4>
+                  <p style="margin: 6px 0 0 0; color: #334155; font-size: 1.1rem; font-weight: 600;">
+                      Classe : <b>{classe_p}</b> | Établissement : <b>École Président Nelson Mandela (IA/IEF Saint-Louis)</b>
+                  </p>
+              </div>
+              """,
+        unsafe_allow_html=True,
         )
 
     if st.button("Se déconnecter de l'espace parent"):
