@@ -3563,7 +3563,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
     with ta_emploi:
         st.markdown("### 📅 Gestion des Emplois du Temps par Classe")
-        st.info("Sélectionnez une classe pour configurer ses créneaux horaires et matières de la semaine.")
+        st.info(
+            "Sélectionnez une classe pour configurer ses créneaux horaires et matières de la semaine."
+            " Note : La plage horaire de **11h00 à 11h30** est strictement réservée à la **Récréation**."
+        )
 
         # Récupération des classes disponibles
         classes_dispo = (
@@ -3581,21 +3584,20 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         if "emploi_du_temps_db" not in st.session_state:
             st.session_state.emploi_du_temps_db = pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
 
-        # Filtrer ou préparer le DataFrame pour la classe sélectionnée
-        df_global = st.session_state.emploi_du_temps_db
-        
-        # Si la colonne Classe n'existe pas ou est vide, on l'initialise proprement
-        if "Classe" not in df_global.columns:
-            df_global["Classe"] = classe_selectionnee
-
-        # Filtrer les lignes correspondant à la classe sélectionnée pour l'éditeur
-        df_classe_actuelle = df_global[df_global["Classe"] == classe_selectionnee].copy()
+        # Gestion via la fonction get_or_create_edt si elle existe, ou filtrage direct
+        if "get_or_create_edt" in globals():
+            edt_classe = get_or_create_edt(classe_selectionnee)
+        else:
+            df_global = st.session_state.emploi_du_temps_db
+            if "Classe" not in df_global.columns:
+                df_global["Classe"] = classe_selectionnee
+            edt_classe = df_global[df_global["Classe"] == classe_selectionnee].copy()
 
         st.markdown(f"#### 🕒 Grille des créneaux pour la classe : **{classe_selectionnee}**")
         
         # Éditeur de tableau dynamique structuré pour les créneaux
         edited_emploi_classe = st.data_editor(
-            df_classe_actuelle[["Jour", "Horaire", "Matière", "Professeur"]] if not df_classe_actuelle.empty else pd.DataFrame(columns=["Jour", "Horaire", "Matière", "Professeur"]),
+            edt_classe[["Jour", "Horaire", "Matière", "Professeur"]] if not edt_classe.empty else pd.DataFrame(columns=["Jour", "Horaire", "Matière", "Professeur"]),
             num_rows="dynamic",
             use_container_width=True,
             key=f"editor_emploi_{classe_selectionnee}",
@@ -3614,30 +3616,42 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             }
         )
 
-        if st.button("💾 Sauvegarder l'Emploi du Temps de cette classe"):
-            # Réinjecter la classe sélectionnée dans le DataFrame édité
-            edited_emploi_classe["Classe"] = classe_selectionnee
-            
-            # Mettre à jour le DataFrame global en retirant l'ancienne version de cette classe et en ajoutant la nouvelle
-            df_autres_classes = df_global[df_global["Classe"] != classe_selectionnee]
-            st.session_state.emploi_du_temps_db = pd.concat([df_autres_classes, edited_emploi_classe], ignore_index=True)
-            
-            # Préparation pour la persistance en base (Supabase / PostgreSQL)
-            df_emploi_save = st.session_state.emploi_du_temps_db.rename(columns={
-                "Classe": "classe", "Jour": "jour", "Horaire": "horaire", "Matière": "matiere", "Professeur": "professeur"
-            }, errors="ignore")
-            
-            if "save_df_to_db" in globals():
-                try:
-                    save_df_to_db(df_emploi_save, "emploi_du_temps")
-                except Exception:
-                    pass
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("💾 Sauvegarder l'Emploi du Temps de cette classe"):
+                edited_emploi_classe["Classe"] = classe_selectionnee
+                
+                df_global = st.session_state.emploi_du_temps_db
+                df_autres_classes = df_global[df_global["Classe"] != classe_selectionnee] if "Classe" in df_global.columns else pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
+                st.session_state.emploi_du_temps_db = pd.concat([df_autres_classes, edited_emploi_classe], ignore_index=True)
+                
+                df_emploi_save = st.session_state.emploi_du_temps_db.rename(columns={
+                    "Classe": "classe", "Jour": "jour", "Horaire": "horaire", "Matière": "matiere", "Professeur": "professeur"
+                }, errors="ignore")
+                
+                if "save_df_to_db" in globals():
+                    try:
+                        save_df_to_db(df_emploi_save, "emploi_du_temps")
+                    except Exception:
+                        pass
 
-            enregistrer_log_action(
-                "Admin", "UPDATE_EMPLOI_TEMPS", f"Mise à jour de l'emploi du temps pour la classe {classe_selectionnee}"
-            )
-            st.success(f"✅ Emploi du temps de la classe **{classe_selectionnee}** enregistré avec succès !")
-            st.rerun()
+                enregistrer_log_action(
+                    "Admin", "UPDATE_EMPLOI_TEMPS", f"Mise à jour de l'emploi du temps pour la classe {classe_selectionnee}"
+                )
+                st.success(f"✅ Emploi du temps de la classe **{classe_selectionnee}** enregistré avec succès !")
+                st.rerun()
+
+        with col_btn2:
+            if "generer_pdf_edt" in globals():
+                pdf_edt_prof = generer_pdf_edt(classe_selectionnee, edited_emploi_classe)
+                st.download_button(
+                    "📄 Télécharger l'Emploi du Temps (PDF Officiel)",
+                    data=pdf_edt_prof,
+                    file_name=f"Emploi_du_temps_{classe_selectionnee}.pdf",
+                    mime="application/pdf",
+                )
+            else:
+                st.info("Module de génération PDF officiel disponible selon la configuration globale.")
     with ta_msg:
         st.markdown("### 💬 Messages & Communications aux Parents")
         st.info("Diffusez des informations générales ou des notes d'information à l'attention des parents d'élèves.")
