@@ -258,9 +258,11 @@ def load_table_from_db(query, columns):
 
 import streamlit as st
 import pandas as pd
+import streamlit as st
+import pandas as pd
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase via une connexion SQL directe."""
+    """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase de manière dynamique selon la table."""
     conn = get_db_connection()
     if conn is None:
         st.error("Connexion à la base de données impossible.")
@@ -271,21 +273,39 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
             if not df.empty:
                 cols = list(df.columns)
                 cols_str = ",".join(cols)
-                
-                # Pour un upsert propre, on a besoin d'une clause ON CONFLICT sur (classe, jour, horaire)
-                # Assurez-vous d'avoir créé une contrainte unique sur ces colonnes dans Supabase.
                 placeholders = ",".join(["%s"] * len(cols))
                 
-                # Construction de la clause de mise à jour en cas de conflit
-                update_cols = [c for c in cols if c not in ["classe", "jour", "horaire"]]
-                update_str = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_cols]) if update_cols else "matiere = EXCLUDED.matiere"
-                
-                query = f"""
-                    INSERT INTO {table_name} ({cols_str}) 
-                    VALUES ({placeholders})
-                    ON CONFLICT (classe, jour, horaire) 
-                    DO UPDATE SET {update_str};
-                """
+                # Adaptation dynamique de la clause CONFLICT selon la table
+                if table_name == "edt_grid":
+                    conflict_clause = "ON CONFLICT (classe, jour, heure)"
+                    update_cols = [c for c in cols if c not in ["classe", "jour", "heure"]]
+                elif table_name == "eleves":
+                    # Si vous avez une contrainte unique, adaptez ici. 
+                    # Par exemple, si vous voulez mettre à jour selon id ou nom_complet et classe :
+                    conflict_clause = "ON CONFLICT (id)" if "id" in cols else ""
+                    update_cols = [c for c in cols if c != "id"]
+                elif table_name == "admin_white_list" or table_name == "prof_white_list":
+                    conflict_clause = "ON CONFLICT (email)"
+                    update_cols = [c for c in cols if c != "email"]
+                else:
+                    # Comportement par défaut ou insertion simple sans conflit complexe si non requis
+                    conflict_clause = ""
+                    update_cols = []
+
+                if conflict_clause and update_cols:
+                    update_str = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_cols])
+                    query = f"""
+                        INSERT INTO {table_name} ({cols_str}) 
+                        VALUES ({placeholders})
+                        {conflict_clause}
+                        DO UPDATE SET {update_str};
+                    """
+                else:
+                    # Insertion simple si pas de conflit géré
+                    query = f"""
+                        INSERT INTO {table_name} ({cols_str}) 
+                        VALUES ({placeholders});
+                    """
                 
                 # Conversion du DataFrame en liste de tuples
                 data_tuples = [tuple(x) for x in df.to_numpy()]
@@ -299,6 +319,7 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
         raise e
     finally:
         conn.close()
+
 
 # ==========================================
 # 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
