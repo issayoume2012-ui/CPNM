@@ -290,12 +290,17 @@ def trier_eleves_par_nom(df):
     return df_copy.reset_index(drop=True)
 
 def synchroniser_listes_blanches():
-    """Maintient la cohérence absolue et bidirectionnelle des accès professeurs."""
+    """Maintient la cohérence absolue et bidirectionnelle des accès professeurs et parents."""
     if "prof_credentials" in st.session_state and not st.session_state.prof_credentials.empty:
         st.session_state.prof_white_list = st.session_state.prof_credentials.copy()
     elif "prof_white_list" in st.session_state and not st.session_state.prof_white_list.empty:
         st.session_state.prof_credentials = st.session_state.prof_white_list.copy()
 
+    # Synchronisation croisée avec la table parents si présente dans la session
+    if "parents_credentials" in st.session_state and not st.session_state.parents_credentials.empty:
+        st.session_state.parents_white_list = st.session_state.parents_credentials.copy()
+    elif "parents_white_list" in st.session_state and not st.session_state.parents_white_list.empty:
+        st.session_state.parents_credentials = st.session_state.parents_white_list.copy()
 # ==========================================
 # 0. TER. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
