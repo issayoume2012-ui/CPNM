@@ -1243,7 +1243,7 @@ with t_msg_p:
     st.markdown("### 💬 Communications École-Famille")
     st.info("Messagerie directe avec l'équipe pédagogique.")
 
-elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
+if st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration & Gestion des Listes Blanches</div>', unsafe_allow_html=True)
     
     if not st.session_state.authenticated_admin:
