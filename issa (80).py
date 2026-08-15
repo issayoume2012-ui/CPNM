@@ -355,6 +355,78 @@ def synchroniser_listes_blanches():
             }), "prof_white_list")
 
 # ==========================================
+# 0. TER. FONCTIONNALITÉS MÉTIER (BULLETIN & PÉRIODES)
+# ==========================================
+
+def obtenir_periodes_pour_classe(classe):
+    """
+    Récupère la liste des périodes disponibles pour la classe depuis la base de données ou le session_state.
+    """
+    try:
+        df_p = load_table_from_db("SELECT DISTINCT periode FROM periodes", ["periode"])
+        if not df_p.empty and "periode" in df_p.columns:
+            periodes = df_p["periode"].dropna().unique().tolist()
+            if periodes:
+                return periodes
+    except Exception:
+        pass
+    
+    # Fallback par défaut si la table est vide
+    return ["Trimestre 1", "Trimestre 2", "Trimestre 3"]
+
+def calculer_bulletin_eleve(classe, eleve, periode):
+    """
+    Calcule la moyenne, le rang et retourne les lignes de notes pour un élève donné à partir de la table notes.
+    """
+    lignes_notes = []
+    moyenne_generale = 0.0
+    total_bareme = 20
+    rang_eleve = "N/A"
+    
+    try:
+        query = f"SELECT matiere, devoir1, devoir2, composition, baremenote FROM notes WHERE classe = '{classe}' AND eleve = '{eleve}' AND periode = '{periode}'"
+        df_notes = load_table_from_db(query, ["matiere", "devoir1", "devoir2", "composition", "baremenote"])
+        
+        if not df_notes.empty:
+            somme_notes_ponderees = 0
+            somme_coefficients = 0
+            
+            for _, row in df_notes.iterrows():
+                mat = row.get("matiere", "Matière")
+                d1 = row.get("devoir1")
+                d2 = row.get("devoir2")
+                comp = row.get("composition")
+                bareme = row.get("baremenote") if pd.notna(row.get("baremenote")) else 20.0
+                
+                # Calcul de la moyenne de la matière (Ex: (Devoir1 + Devoir2 + Composition*2) / 4 ou moyenne simple)
+                notes_valides = [n for n in [d1, d2, comp] if pd.notna(n)]
+                moy_mat = sum(notes_valides) / len(notes_valides) if notes_valides else 0.0
+                
+                lignes_notes.append({
+                    "Matière": mat,
+                    "Devoir 1": d1 if pd.notna(d1) else "-",
+                    "Devoir 2": d2 if pd.notna(d2) else "-",
+                    "Composition": comp if pd.notna(comp) else "-",
+                    "Moyenne": round(moy_mat, 2),
+                    "Barème": bareme
+                })
+                
+                somme_notes_ponderees += moy_mat
+                somme_coefficients += 1
+            
+            if somme_coefficients > 0:
+                moyenne_generale = round(somme_notes_ponderees / somme_coefficients, 2)
+    except Exception:
+        pass
+
+    return {
+        'moyenne_generale': moyenne_generale,
+        'total_bareme': total_bareme,
+        'rang': rang_eleve,
+        'lignes': lignes_notes
+    }
+
+# ==========================================
 # 0. TER. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
 SCEAU_SENEGAL_B64 = (
@@ -1079,97 +1151,97 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         st.markdown("---")
 
         t_taf_p, t_notes_p, t_abs_p, t_edt_p, t_msg_p = st.tabs([
-            "📌 Travail à Faire & Devoirs",
-            "📊 Bulletin & Notes",
-            "📋 Assiduité & Discipline",
-            "📅 Emploi du Temps",
-            "💬 Communications École-Famille",
-        ])
+    "📌 Travail à Faire & Devoirs",
+    "📊 Bulletin & Notes",
+    "📋 Assiduité & Discipline",
+    "📅 Emploi du Temps",
+    "💬 Communications École-Famille",
+])
 
-        with t_taf_p:
-            st.markdown("### 📌 Devoirs & Travail à Faire")
-            df_taf_p = pd.DataFrame()
-            if (
-                "travail_a_faire_db" in st.session_state
-                and not st.session_state.travail_a_faire_db.empty
-                and "Classe" in st.session_state.travail_a_faire_db.columns
-            ):
-                df_taf_p = st.session_state.travail_a_faire_db[
-                    st.session_state.travail_a_faire_db["Classe"] == classe_p
-                ]
+with t_taf_p:
+    st.markdown("### 📌 Devoirs & Travail à Faire")
+    df_taf_p = pd.DataFrame()
+    if (
+        "travail_a_faire_db" in st.session_state
+        and not st.session_state.travail_a_faire_db.empty
+        and "Classe" in st.session_state.travail_a_faire_db.columns
+    ):
+        df_taf_p = st.session_state.travail_a_faire_db[
+            st.session_state.travail_a_faire_db["Classe"] == classe_p
+        ]
 
-            if not df_taf_p.empty:
-                for idx, row in df_taf_p.iterrows():
-                    with st.container():
-                        st.markdown(
-                            f"""
-                            <div class="work-card">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <span style="background: #0EA5E9; color: white; padding: 4px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">{row.get('Matière', 'Général')}</span>
-                                    <span style="color: #64748B; font-weight: 600; font-size: 0.9rem;">À rendre pour le : <b>{row.get('DateRendu', 'N/A')}</b></span>
-                                </div>
-                                <h4 style="color: #0F172A; margin: 8px 0; font-size: 1.2rem;">{row.get('Titre', 'Sans titre')}</h4>
-                                <p style="color: #334155; font-size: 1rem; line-height: 1.5;">{row.get('Consignes', '')}</p>
-                                <div style="font-size: 0.85rem; color: #64748B; margin-top: 8px;">Enseignant : {row.get('Professeur', 'N/A')} | Publié le : {row.get('DatePublication', 'N/A')}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+    if not df_taf_p.empty:
+        for idx, row in df_taf_p.iterrows():
+            with st.container():
+                st.markdown(
+                    f"""
+                    <div class="work-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="background: #0EA5E9; color: white; padding: 4px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">{row.get('Matière', 'Général')}</span>
+                            <span style="color: #64748B; font-weight: 600; font-size: 0.9rem;">À rendre pour le : <b>{row.get('DateRendu', 'N/A')}</b></span>
+                        </div>
+                        <h4 style="color: #0F172A; margin: 8px 0; font-size: 1.2rem;">{row.get('Titre', 'Sans titre')}</h4>
+                        <p style="color: #334155; font-size: 1rem; line-height: 1.5;">{row.get('Consignes', '')}</p>
+                        <div style="font-size: 0.85rem; color: #64748B; margin-top: 8px;">Enseignant : {row.get('Professeur', 'N/A')} | Publié le : {row.get('DatePublication', 'N/A')}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                        c_l1, c_l2 = st.columns(2)
-                        with c_l1:
-                            if pd.notna(row.get("LienUrl")) and str(row.get("LienUrl")).strip():
-                                st.markdown(f"🔗 [Consulter le lien web]({row.get('LienUrl')})")
-                            if pd.notna(row.get("LienVideo")) and str(row.get("LienVideo")).strip():
-                                st.markdown(f"🎬 [Visionner la vidéo explicative]({row.get('LienVideo')})")
-                        with c_l2:
-                            if pd.notna(row.get("FichierB64")) and str(row.get("FichierB64")).strip():
-                                try:
-                                    f_data = base64.b64decode(str(row.get("FichierB64")))
-                                    st.download_button(
-                                        f"📎 Télécharger : {row.get('FichierNom', 'Document')}",
-                                        data=f_data,
-                                        file_name=str(row.get("FichierNom", "Fichier_joint")),
-                                        key=f"dl_taf_{idx}",
-                                    )
-                                except Exception:
-                                    pass
-                    st.markdown("---")
-            else:
-                st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
+                c_l1, c_l2 = st.columns(2)
+                with c_l1:
+                    if pd.notna(row.get("LienUrl")) and str(row.get("LienUrl")).strip():
+                        st.markdown(f"🔗 [Consulter le lien web]({row.get('LienUrl')})")
+                    if pd.notna(row.get("LienVideo")) and str(row.get("LienVideo")).strip():
+                        st.markdown(f"🎬 [Visionner la vidéo explicative]({row.get('LienVideo')})")
+                with c_l2:
+                    if pd.notna(row.get("FichierB64")) and str(row.get("FichierB64")).strip():
+                        try:
+                            f_data = base64.b64decode(str(row.get("FichierB64")))
+                            st.download_button(
+                                f"📎 Télécharger : {row.get('FichierNom', 'Document')}",
+                                data=f_data,
+                                file_name=str(row.get("FichierNom", "Fichier_joint")),
+                                key=f"dl_taf_{idx}",
+                            )
+                        except Exception:
+                            pass
+            st.markdown("---")
+    else:
+        st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
 
-        with t_notes_p:
-            st.markdown("### 📊 Bulletin & Notes de l'Élève")
-            periodes_dispo = obtenir_periodes_pour_classe(classe_p)
-            periode_choisie = st.selectbox("Sélectionner la période", periodes_dispo, key="parent_periode_sel")
-            
-            bulletin_res = calculer_bulletin_eleve(classe_p, eleve_nom, periode_choisie)
-            col_m1, col_m2 = st.columns(2)
-            with col_m1:
-                st.metric("Moyenne Générale", f"{bulletin_res['moyenne_generale']} / {bulletin_res['total_bareme']}")
-            with col_m2:
-                st.metric("Rang dans la classe", bulletin_res['rang'])
+with t_notes_p:
+    st.markdown("### 📊 Bulletin & Notes de l'Élève")
+    periodes_dispo = obtenir_periodes_pour_classe(classe_p)
+    periode_choisie = st.selectbox("Sélectionner la période", periodes_dispo, key="parent_periode_sel")
+    
+    bulletin_res = calculer_bulletin_eleve(classe_p, eleve_nom, periode_choisie)
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        st.metric("Moyenne Générale", f"{bulletin_res['moyenne_generale']} / {bulletin_res['total_bareme']}")
+    with col_m2:
+        st.metric("Rang dans la classe", bulletin_res['rang'])
 
-            if bulletin_res['lignes']:
-                df_lignes = pd.DataFrame(bulletin_res['lignes'])
-                st.dataframe(df_lignes, use_container_width=True)
-            else:
-                st.info("Aucune note saisie pour cette période.")
+    if bulletin_res['lignes']:
+        df_lignes = pd.DataFrame(bulletin_res['lignes'])
+        st.dataframe(df_lignes, use_container_width=True)
+    else:
+        st.info("Aucune note saisie pour cette période.")
 
-        with t_abs_p:
-            st.markdown("### 📋 Assiduité & Discipline")
-            st.info("Registre des absences et des retards.")
+with t_abs_p:
+    st.markdown("### 📋 Assiduité & Discipline")
+    st.info("Registre des absences et des retards.")
 
-        with t_edt_p:
-            st.markdown("### 📅 Emploi du Temps de la Classe")
-            if classe_p in st.session_state.edt_grid_db:
-                st.dataframe(st.session_state.edt_grid_db[classe_p], use_container_width=True)
-            else:
-                st.info("Emploi du temps non disponible.")
+with t_edt_p:
+    st.markdown("### 📅 Emploi du Temps de la Classe")
+    if "edt_grid_db" in st.session_state and classe_p in st.session_state.edt_grid_db:
+        st.dataframe(st.session_state.edt_grid_db[classe_p], use_container_width=True)
+    else:
+        st.info("Emploi du temps non disponible.")
 
-        with t_msg_p:
-            st.markdown("### 💬 Communications École-Famille")
-            st.info("Messagerie directe avec l'équipe pédagogique.")
+with t_msg_p:
+    st.markdown("### 💬 Communications École-Famille")
+    st.info("Messagerie directe avec l'équipe pédagogique.")
 
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration & Gestion des Listes Blanches</div>', unsafe_allow_html=True)
