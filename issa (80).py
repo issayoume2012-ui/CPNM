@@ -966,16 +966,15 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Suivi Parents & Élèves</div>', unsafe_allow_html=True)
     st.info("Connectez-vous avec le numéro de téléphone enregistré pour consulter les bulletins, notes et devoirs.")
     if "parent_logged" not in st.session_state:
-    st.session_state.parent_logged = False
-  if "parent_phone" not in st.session_state:
-    st.session_state.parent_phone = ""
-  if "parent_eleve_nom" not in st.session_state:
-    st.session_state.parent_eleve_nom = ""
-  if "parent_classe" not in st.session_state:
-    st.session_state.parent_classe = ""
-
-  if not st.session_state.parent_logged:
-    st.info(
+        st.session_state.parent_logged = False
+    if "parent_phone" not in st.session_state:
+        st.session_state.parent_phone = ""
+    if "parent_eleve_nom" not in st.session_state:
+        st.session_state.parent_eleve_nom = ""
+    if "parent_classe" not in st.session_state:
+        st.session_state.parent_classe = ""
+    if not st.session_state.parent_logged:
+        st.info(
         "Veuillez entrer votre numéro de téléphone et les informations de votre"
         " enfant pour accéder à son suivi pédagogique."
     )
