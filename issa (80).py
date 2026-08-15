@@ -3535,7 +3535,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.rerun()
 
     with ta_coeffs:
-    st.markdown("### 📐 Paramétrage des Matières & Coefficients")
+        st.markdown("### 📐 Paramétrage des Matières & Coefficients")
 
     edited_coeffs = st.data_editor(
         st.session_state.coefficients_db,
