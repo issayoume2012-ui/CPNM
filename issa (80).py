@@ -1399,7 +1399,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                 )
             else:
                 st.info("Aucune activité enregistrée dans le journal.")
-# ==========================================
+
+
 # 9. RAPPORTS GLOBAUX & ASSISTANT IA
 # ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
