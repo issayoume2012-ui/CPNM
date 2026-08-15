@@ -3565,7 +3565,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         "audit_logs_db" in st.session_state
         and not st.session_state.audit_logs_db.empty
     ):
-        # Copie pour éviter de modifier l'original par référence et conversion sécurisée de la colonne 'horodatage'
         df_logs = st.session_state.audit_logs_db.copy()
         if "horodatage" in df_logs.columns:
             df_logs["horodatage"] = pd.to_datetime(df_logs["horodatage"], errors="coerce")
