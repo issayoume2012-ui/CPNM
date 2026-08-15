@@ -1208,8 +1208,7 @@ def calculer_bulletin_eleve(classe, nom_eleve, periode):
 
 def obtenir_periodes_pour_classe(classe):
     """Retourne la liste des périodes disponibles (ex: Trimestre 1, Trimestre 2...)."""
-    return ["Trimestre 1", "Trimestre 2", "Trimestre 3"]
-
+    return (["Trimestre 1", "Trimestre 2", "Trimestre 3"])
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration & Gestion des Listes Blanches</div>', unsafe_allow_html=True)
     
