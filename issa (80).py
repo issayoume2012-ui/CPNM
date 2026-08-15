@@ -3561,40 +3561,83 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.success("✅ Configuration enregistrée dans Supabase !")
             st.rerun()
 
-    with ta_emploi:
-        st.markdown("### 📅 Gestion des Emplois du Temps")
-        st.info("Configurez ou mettez à jour les emplois du temps par classe.")
-        
-        # Initialisation d'une structure d'emploi du temps en session si absente
+   with ta_emploi:
+        st.markdown("### 📅 Gestion des Emplois du Temps par Classe")
+        st.info("Sélectionnez une classe pour configurer ses créneaux horaires et matières de la semaine.")
+
+        # Récupération des classes disponibles
+        classes_dispo = (
+            st.session_state.classes_db["Classe"].unique().tolist()
+            if "classes_db" in st.session_state
+            and not st.session_state.classes_db.empty
+            and "Classe" in st.session_state.classes_db.columns
+            else ["6ème A", "CP"]
+        )
+
+        # 1. Sélection de la classe cible
+        classe_selectionnee = st.selectbox("Sélectionner la classe à configurer", classes_dispo, key="select_classe_emploi")
+
+        # Initialisation de la structure globale de l'emploi du temps en session si absente
         if "emploi_du_temps_db" not in st.session_state:
             st.session_state.emploi_du_temps_db = pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
 
-        edited_emploi = st.data_editor(
-            st.session_state.emploi_du_temps_db,
+        # Filtrer ou préparer le DataFrame pour la classe sélectionnée
+        df_global = st.session_state.emploi_du_temps_db
+        
+        # Si la colonne Classe n'existe pas ou est vide, on l'initialise proprement
+        if "Classe" not in df_global.columns:
+            df_global["Classe"] = classe_selectionnee
+
+        # Filtrer les lignes correspondant à la classe sélectionnée pour l'éditeur
+        df_classe_actuelle = df_global[df_global["Classe"] == classe_selectionnee].copy()
+
+        st.markdown(f"#### 🕒 Grille des créneaux pour la classe : **{classe_selectionnee}**")
+        
+        # Éditeur de tableau dynamique structuré pour les créneaux
+        edited_emploi_classe = st.data_editor(
+            df_classe_actuelle[["Jour", "Horaire", "Matière", "Professeur"]] if not df_classe_actuelle.empty else pd.DataFrame(columns=["Jour", "Horaire", "Matière", "Professeur"]),
             num_rows="dynamic",
             use_container_width=True,
-            key="editor_emploi_admin",
+            key=f"editor_emploi_{classe_selectionnee}",
+            column_config={
+                "Jour": st.column_config.SelectboxColumn(
+                    "Jour de la semaine",
+                    options=["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"],
+                    required=True
+                ),
+                "Horaire": st.column_config.TextColumn(
+                    "Créneau Horaire (ex: 08h00 - 09h00)",
+                    required=True
+                ),
+                "Matière": st.column_config.TextColumn("Matière", required=True),
+                "Professeur": st.column_config.TextColumn("Professeur")
+            }
         )
 
-        if st.button("💾 Sauvegarder les Emplois du Temps"):
-            st.session_state.emploi_du_temps_db = edited_emploi
+        if st.button("💾 Sauvegarder l'Emploi du Temps de cette classe"):
+            # Réinjecter la classe sélectionnée dans le DataFrame édité
+            edited_emploi_classe["Classe"] = classe_selectionnee
             
-            df_emploi_save = edited_emploi.rename(columns={
+            # Mettre à jour le DataFrame global en retirant l'ancienne version de cette classe et en ajoutant la nouvelle
+            df_autres_classes = df_global[df_global["Classe"] != classe_selectionnee]
+            st.session_state.emploi_du_temps_db = pd.concat([df_autres_classes, edited_emploi_classe], ignore_index=True)
+            
+            # Préparation pour la persistance en base (Supabase / PostgreSQL)
+            df_emploi_save = st.session_state.emploi_du_temps_db.rename(columns={
                 "Classe": "classe", "Jour": "jour", "Horaire": "horaire", "Matière": "matiere", "Professeur": "professeur"
             }, errors="ignore")
             
-            if "emploi_du_temps" in globals() or "save_df_to_db" in globals():
+            if "save_df_to_db" in globals():
                 try:
                     save_df_to_db(df_emploi_save, "emploi_du_temps")
                 except Exception:
                     pass
 
             enregistrer_log_action(
-                "Admin", "UPDATE_EMPLOI_TEMPS", "Mise à jour des emplois du temps"
+                "Admin", "UPDATE_EMPLOI_TEMPS", f"Mise à jour de l'emploi du temps pour la classe {classe_selectionnee}"
             )
-            st.success("✅ Emplois du temps enregistrés avec succès !")
+            st.success(f"✅ Emploi du temps de la classe **{classe_selectionnee}** enregistré avec succès !")
             st.rerun()
-
     with ta_msg:
         st.markdown("### 💬 Messages & Communications aux Parents")
         st.info("Diffusez des informations générales ou des notes d'information à l'attention des parents d'élèves.")
