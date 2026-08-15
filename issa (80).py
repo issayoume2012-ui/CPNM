@@ -258,8 +258,6 @@ def load_table_from_db(query, columns):
 
 import streamlit as st
 import pandas as pd
-import streamlit as st
-import pandas as pd
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
     """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase de manière dynamique selon la table."""
@@ -279,16 +277,17 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                 if table_name == "edt_grid":
                     conflict_clause = "ON CONFLICT (classe, jour, heure)"
                     update_cols = [c for c in cols if c not in ["classe", "jour", "heure"]]
-                elif table_name == "eleves":
-                    # Si vous avez une contrainte unique, adaptez ici. 
-                    # Par exemple, si vous voulez mettre à jour selon id ou nom_complet et classe :
+                elif table_name in ["messages_parents", "travail_a_faire"]:
+                    # Si la table utilise un 'id' comme clé primaire textuelle (ex: "MSG-...")
                     conflict_clause = "ON CONFLICT (id)" if "id" in cols else ""
                     update_cols = [c for c in cols if c != "id"]
-                elif table_name == "admin_white_list" or table_name == "prof_white_list":
-                    conflict_clause = "ON CONFLICT (email)"
+                elif table_name in ["admin_white_list", "prof_white_list"]:
+                    conflict_clause = "ON CONFLICT (email)" if "email" in cols else ""
                     update_cols = [c for c in cols if c != "email"]
+                elif table_name == "eleves":
+                    conflict_clause = "ON CONFLICT (id)" if "id" in cols else ""
+                    update_cols = [c for c in cols if c != "id"]
                 else:
-                    # Comportement par défaut ou insertion simple sans conflit complexe si non requis
                     conflict_clause = ""
                     update_cols = []
 
@@ -299,6 +298,14 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         VALUES ({placeholders})
                         {conflict_clause}
                         DO UPDATE SET {update_str};
+                    """
+                elif conflict_clause and not update_cols:
+                    # Si toutes les colonnes font partie de la clé unique
+                    query = f"""
+                        INSERT INTO {table_name} ({cols_str}) 
+                        VALUES ({placeholders})
+                        {conflict_clause}
+                        DO NOTHING;
                     """
                 else:
                     # Insertion simple si pas de conflit géré
@@ -319,8 +326,6 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
         raise e
     finally:
         conn.close()
-
-
 # ==========================================
 # 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
 # ==========================================
