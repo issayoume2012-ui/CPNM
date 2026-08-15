@@ -256,22 +256,47 @@ def load_table_from_db(query, columns):
     finally:
         conn.close()
 
-def save_df_to_db(df, table_name):
+import streamlit as st
+import pandas as pd
+
+def save_df_to_db(df: pd.DataFrame, table_name: str):
+    """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase via une connexion SQL directe."""
     conn = get_db_connection()
     if conn is None:
+        st.error("Connexion à la base de données impossible.")
         return
+    
     try:
         with conn.cursor() as cur:
-            cur.execute(f"DELETE FROM {table_name};")
             if not df.empty:
-                cols = ",".join(list(df.columns))
-                vals = ",".join(["%s"] * len(df.columns))
-                query = f"INSERT INTO {table_name} ({cols}) VALUES ({vals})"
-                cur.executemany(query, df.values.tolist())
+                cols = list(df.columns)
+                cols_str = ",".join(cols)
+                
+                # Pour un upsert propre, on a besoin d'une clause ON CONFLICT sur (classe, jour, horaire)
+                # Assurez-vous d'avoir créé une contrainte unique sur ces colonnes dans Supabase.
+                placeholders = ",".join(["%s"] * len(cols))
+                
+                # Construction de la clause de mise à jour en cas de conflit
+                update_cols = [c for c in cols if c not in ["classe", "jour", "horaire"]]
+                update_str = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_cols]) if update_cols else "matiere = EXCLUDED.matiere"
+                
+                query = f"""
+                    INSERT INTO {table_name} ({cols_str}) 
+                    VALUES ({placeholders})
+                    ON CONFLICT (classe, jour, horaire) 
+                    DO UPDATE SET {update_str};
+                """
+                
+                # Conversion du DataFrame en liste de tuples
+                data_tuples = [tuple(x) for x in df.to_numpy()]
+                cur.executemany(query, data_tuples)
+                
             conn.commit()
+            return True
     except Exception as e:
         conn.rollback()
         st.error(f"Erreur de sauvegarde dans {table_name} : {e}")
+        raise e
     finally:
         conn.close()
 
@@ -973,7 +998,27 @@ if "edt_grid_db" not in st.session_state:
               if r["jour"] in grid.index and r["heure"] in grid.columns:
                   grid.loc[r["jour"], r["heure"]] = r["valeur"]
           st.session_state.edt_grid_db[cls] = grid
-
+# Chargement initial des emplois du temps depuis Supabase s'ils n'existent pas en session
+if "emploi_du_temps_db" not in st.session_state or st.session_state.emploi_du_temps_db.empty:
+    if "supabase" in st.session_state:
+        try:
+            response = st.session_state.supabase.table("emploi_du_temps").select("*").execute()
+            data = response.data
+            if data:
+                df_load = pd.DataFrame(data)
+                # Remettre les majuscules pour correspondre à votre logique interne
+                rename_map = {
+                    "classe": "Classe", 
+                    "jour": "Jour", 
+                    "horaire": "Horaire", 
+                    "matiere": "Matière", 
+                    "professeur": "Professeur"
+                }
+                st.session_state.emploi_du_temps_db = df_load.rename(columns=rename_map, errors="ignore")
+            else:
+                st.session_state.emploi_du_temps_db = pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
+        except Exception as e:
+            st.session_state.emploi_du_temps_db = pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
 
 def get_or_create_edt(classe):
   if classe not in st.session_state.edt_grid_db:
