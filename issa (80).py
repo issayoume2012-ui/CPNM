@@ -3587,26 +3587,23 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
         creneaux_cols = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h", "17h-18h", "18h-19h"]
 
-        # Extraire les données existantes pour cette classe depuis le DataFrame global s'il existe, sinon créer une grille vide pivotée
+        # Extraire les données existantes pour cette classe depuis le DataFrame global
         df_global = st.session_state.emploi_du_temps_db
         df_classe_existante = df_global[df_global["Classe"] == classe_selectionnee] if not df_global.empty and "Classe" in df_global.columns else pd.DataFrame()
 
         if not df_classe_existante.empty and "Jour" in df_classe_existante.columns and "Horaire" in df_classe_existante.columns:
-            # Reconvertir le format long (BDD) vers le format grille (Matrice Jours x Créneaux)
             edt_editable = df_classe_existante.pivot(index="Jour", columns="Horaire", values="Matière").reindex(jours).fillna("")
-            # S'assurer que toutes les colonnes de créneaux sont présentes
             for col in creneaux_cols:
                 if col not in edt_editable.columns:
                     edt_editable[col] = ""
             edt_editable = edt_editable[creneaux_cols].reset_index()
         else:
-            # Grille par défaut
             edt_editable = pd.DataFrame(index=jours, columns=creneaux_cols).fillna("")
             if "11h00-11h30" in edt_editable.columns:
                 edt_editable["11h00-11h30"] = "Récréation"
             edt_editable = edt_editable.reset_index().rename(columns={"index": "Jour"})
 
-        # Nettoyage strict pour éviter toute colonne d'index parasite ("Unnamed: 0" ou "index")
+        # Nettoyage strict des colonnes parasites
         for col_parasite in ["index", "Unnamed: 0"]:
             if col_parasite in edt_editable.columns:
                 edt_editable = edt_editable.drop(columns=[col_parasite])
@@ -3617,13 +3614,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 
         st.markdown(f"#### 🕒 Grille de saisie pour la classe : **{classe_selectionnee}**")
         
-        # Configuration pour bloquer l'édition de la colonne "Jour" tout en autorisant les créneaux
         column_configurations = {
             col: st.column_config.TextColumn(col, disabled=(col == "Jour")) 
             for col in edt_editable.columns
         }
 
-        # Éditeur de tableau dynamique interactif propre (sans index affiché)
         edited_emploi_grille = st.data_editor(
             edt_editable,
             use_container_width=True,
@@ -3635,9 +3630,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("💾 Sauvegarder et Synchroniser la grille"):
-                # Transformer la grille (Format Large) en Format Long (Lignes par créneau) pour correspondre à Supabase et aux espaces Profs/Parents
                 list_rows = []
-                for _, row in edited_emploi_grille.iterrowsでに:
+                # Correction de la syntaxe de la boucle ici
+                for _, row in edited_emploi_grille.iterrows():
                     jour = row["Jour"]
                     for horaire in creneaux_cols:
                         if horaire in row and str(row[horaire]).strip() != "":
@@ -3646,16 +3641,16 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                                 "Jour": jour,
                                 "Horaire": horaire,
                                 "Matière": str(row[horaire]),
-                                "Professeur": "" # Peut être étendu si besoin
+                                "Professeur": ""
                             })
                 
                 df_new_long = pd.DataFrame(list_rows)
 
-                # Mettre à jour le DataFrame global en session
+                # Mettre à jour le DataFrame global partagé avec les autres espaces
                 df_autres = df_global[df_global["Classe"] != classe_selectionnee] if not df_global.empty and "Classe" in df_global.columns else pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
                 st.session_state.emploi_du_temps_db = pd.concat([df_autres, df_new_long], ignore_index=True)
 
-                # Sauvegarde vers Supabase / PostgreSQL avec les noms de colonnes en minuscules attendus par la base
+                # Préparation pour Supabase (colonnes minuscules)
                 df_emploi_save = st.session_state.emploi_du_temps_db.rename(columns={
                     "Classe": "classe", "Jour": "jour", "Horaire": "horaire", "Matière": "matiere", "Professeur": "professeur"
                 }, errors="ignore")
@@ -3670,7 +3665,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                     enregistrer_log_action(
                         "Admin", "UPDATE_EMPLOI_TEMPS_GRILLE", f"Mise à jour et synchronisation de l'emploi du temps pour la classe {classe_selectionnee}"
                     )
-                st.success(f"✅ Emploi du temps de la classe **{classe_selectionnee}** sauvegardé et synchronisé pour les espaces Professeurs et Parents !")
+                st.success(f"✅ Emploi du temps de la classe **{classe_selectionnee}** sauvegardé et synchronisé instantanément pour les espaces Professeurs et Parents !")
                 st.rerun()
 
         with col_btn2:
