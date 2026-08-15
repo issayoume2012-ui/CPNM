@@ -3535,16 +3535,16 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.rerun()
 
     with ta_coeffs:
-      st.markdown("### 📐 Paramétrage des Matières & Coefficients")
+    st.markdown("### 📐 Paramétrage des Matières & Coefficients")
 
-      edited_coeffs = st.data_editor(
-          st.session_state.coefficients_db,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_coeffs_admin",
-      )
+    edited_coeffs = st.data_editor(
+        st.session_state.coefficients_db,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="editor_coeffs_admin",
+    )
 
-      if st.button("💾 Sauvegarder le Paramétrage des Coefficients"):
+    if st.button("💾 Sauvegarder le Paramétrage des Coefficients"):
         st.session_state.coefficients_db = edited_coeffs
         
         # Persistance Supabase / PostgreSQL
@@ -3559,7 +3559,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.success("✅ Configuration enregistrée dans Supabase !")
         st.rerun()
 
-    with ta_logs:
+with ta_logs:
     st.markdown("### 📜 Journal de Traçabilité & Audit")
     if (
         "audit_logs_db" in st.session_state
@@ -3578,7 +3578,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         )
     else:
         st.info("Aucune activité enregistrée dans le journal.")
-
 # ==========================================
 # 9. RAPPORTS GLOBAUX & ASSISTANT IA
 # ==========================================
