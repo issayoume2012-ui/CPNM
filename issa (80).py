@@ -319,28 +319,35 @@ def hacher_tous_les_passwords_en_clair():
         cur.close()
         conn.close()
 
+import bcrypt
+
 def verifier_mot_de_passe(email, password_saisi, hashed_db, table_name="prof_white_list"):
-    """Vérifie le mot de passe et migre automatiquement les anciens mots de passe en clair."""
+    """Version robuste supportant la vérification avec ou sans e-mail."""
     if not password_saisi or not hashed_db: 
         return False
     
     # 1. Vérification sécurisée si le mot de passe est déjà haché
-    if hashed_db.startswith('$2b$'): # Format standard bcrypt
-        return bcrypt.checkpw(password_saisi.encode("utf-8"), hashed_db.encode("utf-8"))
+    if str(hashed_db).startswith('$2b$'):
+        return bcrypt.checkpw(str(password_saisi).encode("utf-8"), str(hashed_db).encode("utf-8"))
     
-    # 2. Migration : Si le mot de passe en DB correspond au mot de passe saisi en clair
-    if password_saisi == hashed_db:
-        nouveau_hash = hacher_mot_de_passe(password_saisi)
-        conn = get_db_connection()
-        if conn:
-            with conn.cursor() as cur:
-                cur.execute(f"UPDATE {table_name} SET password = %s WHERE email = %s", (nouveau_hash, email))
-                conn.commit()
-            conn.close()
+    # 2. Si le mot de passe en DB correspond au texte clair
+    if str(password_saisi) == str(hashed_db):
+        # Si un email est fourni, on effectue la migration en base
+        if email:
+            nouveau_hash = hacher_mot_de_passe(password_saisi)
+            conn = get_db_connection()
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(f"UPDATE {table_name} SET password = %s WHERE email = %s", (nouveau_hash, email))
+                        conn.commit()
+                except Exception:
+                    pass
+                finally:
+                    conn.close()
         return True
     
     return False
-
 def normaliser_texte(texte):
     """Normalise une chaîne de caractères pour une recherche universelle (insensible aux accents, casse, espaces)."""
     if not texte: return ""
