@@ -3564,7 +3564,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     with ta_emploi:
         st.markdown("### 📅 Gestion des Emplois du Temps par Classe")
         st.info(
-            "Sélectionnez une classe pour configurer ses créneaux horaires et matières de la semaine."
+            "Sélectionnez une classe pour configurer et consulter sa grille horaire de la semaine."
             " Note : La plage horaire de **11h00 à 11h30** est strictement réservée à la **Récréation**."
         )
 
@@ -3580,76 +3580,50 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         # 1. Sélection de la classe cible
         classe_selectionnee = st.selectbox("Sélectionner la classe à configurer", classes_dispo, key="select_classe_emploi")
 
-        # Initialisation de la structure globale de l'emploi du temps en session si absente
-        if "emploi_du_temps_db" not in st.session_state:
-            st.session_state.emploi_du_temps_db = pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
-
-        # Récupération sécurisée de l'EDT pour la classe
+        # Récupération de l'emploi du temps sous forme de grille (Jours x Créneaux) via get_or_create_edt
         if "get_or_create_edt" in globals():
             edt_classe = get_or_create_edt(classe_selectionnee)
         else:
-            df_global = st.session_state.emploi_du_temps_db
-            if "Classe" not in df_global.columns:
-                df_global["Classe"] = classe_selectionnee
-            edt_classe = df_global[df_global["Classe"] == classe_selectionnee].copy()
+            # Fallback grille vide par défaut si la fonction n'existe pas
+            jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
+            creneaux_cols = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h", "17h-18h", "18h-19h"]
+            edt_classe = pd.DataFrame(index=jours, columns=creneaux_cols).fillna("")
+            if "11h00-11h30" in edt_classe.columns:
+                edt_classe["11h00-11h30"] = "Récréation"
 
-        # Sécurité : s'assurer que toutes les colonnes nécessaires existent dans le DataFrame
-        colonnes_requises = ["Jour", "Horaire", "Matière", "Professeur"]
-        for col in colonnes_requises:
-            if col not in edt_classe.columns:
-                edt_classe[col] = ""
-
-        st.markdown(f"#### 🕒 Grille des créneaux pour la classe : **{classe_selectionnee}**")
+        st.markdown(f"#### 🕒 Grille matricielle pour la classe : **{classe_selectionnee}**")
         
-        # Éditeur de tableau dynamique structuré pour les créneaux
-        edited_emploi_classe = st.data_editor(
-            edt_classe[colonnes_requises],
-            num_rows="dynamic",
+        # Éditeur de tableau dynamique en grille (Jours x Horaires)
+        edited_emploi_grille = st.data_editor(
+            edt_classe,
             use_container_width=True,
-            key=f"editor_emploi_{classe_selectionnee}",
-            column_config={
-                "Jour": st.column_config.SelectboxColumn(
-                    "Jour de la semaine",
-                    options=["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"],
-                    required=True
-                ),
-                "Horaire": st.column_config.TextColumn(
-                    "Créneau Horaire (ex: 08h00 - 09h00)",
-                    required=True
-                ),
-                "Matière": st.column_config.TextColumn("Matière", required=True),
-                "Professeur": st.column_config.TextColumn("Professeur")
-            }
+            key=f"editor_grille_emploi_{classe_selectionnee}"
         )
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
-            if st.button("💾 Sauvegarder l'Emploi du Temps de cette classe"):
-                edited_emploi_classe["Classe"] = classe_selectionnee
-                
-                df_global = st.session_state.emploi_du_temps_db
-                df_autres_classes = df_global[df_global["Classe"] != classe_selectionnee] if "Classe" in df_global.columns else pd.DataFrame(columns=["Classe", "Jour", "Horaire", "Matière", "Professeur"])
-                st.session_state.emploi_du_temps_db = pd.concat([df_autres_classes, edited_emploi_classe], ignore_index=True)
-                
-                df_emploi_save = st.session_state.emploi_du_temps_db.rename(columns={
-                    "Classe": "classe", "Jour": "jour", "Horaire": "horaire", "Matière": "matiere", "Professeur": "professeur"
-                }, errors="ignore")
+            if st.button("💾 Sauvegarder la grille de l'Emploi du Temps"):
+                # Sauvegarde de la grille dans la session ou base de données selon votre logique
+                if "emploi_du_temps_dict" not in st.session_state:
+                    st.session_state.emploi_du_temps_dict = {}
+                st.session_state.emploi_du_temps_dict[classe_selectionnee] = edited_emploi_grille
                 
                 if "save_df_to_db" in globals():
                     try:
-                        save_df_to_db(df_emploi_save, "emploi_du_temps")
+                        save_df_to_db(edited_emploi_grille.reset_index(), f"emploi_du_temps_{classe_selectionnee}")
                     except Exception:
                         pass
 
-                enregistrer_log_action(
-                    "Admin", "UPDATE_EMPLOI_TEMPS", f"Mise à jour de l'emploi du temps pour la classe {classe_selectionnee}"
-                )
-                st.success(f"✅ Emploi du temps de la classe **{classe_selectionnee}** enregistré avec succès !")
+                if "enregistrer_log_action" in globals():
+                    enregistrer_log_action(
+                        "Admin", "UPDATE_EMPLOI_TEMPS_GRILLE", f"Mise à jour de la grille d'emploi du temps pour la classe {classe_selectionnee}"
+                    )
+                st.success(f"✅ Grille d'emploi du temps de la classe **{classe_selectionnee}** enregistrée avec succès !")
                 st.rerun()
 
         with col_btn2:
             if "generer_pdf_edt" in globals():
-                pdf_edt_prof = generer_pdf_edt(classe_selectionnee, edited_emploi_classe)
+                pdf_edt_prof = generer_pdf_edt(classe_selectionnee, edited_emploi_grille)
                 st.download_button(
                     "📄 Télécharger l'Emploi du Temps (PDF Officiel)",
                     data=pdf_edt_prof,
