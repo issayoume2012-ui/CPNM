@@ -1,674 +1,700 @@
 # --- BIBLIOTHÈQUES STANDARDS (Python) ---
+
 import base64
+
 from datetime import datetime
+
 import io
+
 import json
+
 import os
+
 import zipfile
+
 import unicodedata
+
 import numpy as np
+
 import pandas as pd
+
 from fpdf import FPDF
+
 import streamlit as st
+
 import bcrypt
+
 import psycopg2
+
 from psycopg2.extras import RealDictCursor
 
+
+
 # ==========================================
+
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
+
 # ==========================================
+
 DATABASE_URL = "postgresql://postgres.dzxotavktglasrcpyrwx:xTS1vLLFnlGWJXrr@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
 
+
+
 def get_db_connection():
+
     """Établit la connexion à la base de données Supabase / PostgreSQL."""
+
     try:
+
         if "postgres" in st.secrets:
+
             conn = psycopg2.connect(
+
                 host=st.secrets["postgres"]["host"],
+
                 database=st.secrets["postgres"]["database"],
+
                 user=st.secrets["postgres"]["user"],
+
                 password=st.secrets["postgres"]["password"],
+
                 port=st.secrets["postgres"]["port"]
+
             )
+
         else:
+
             conn = psycopg2.connect(DATABASE_URL)
+
         return conn
+
     except Exception as e:
+
         st.error(f"Erreur de connexion à la base de données Supabase/PostgreSQL : {e}")
+
         return None
 
+
+
 def init_db():
+
     """Initialise les tables dans Supabase / PostgreSQL si elles n'existent pas."""
+
     conn = get_db_connection()
+
     if conn is None:
+
         return
+
     try:
+
         with conn.cursor() as cur:
+
             # Table Audit Logs
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS audit_logs (
+
                     id SERIAL PRIMARY KEY,
+
                     horodatage VARCHAR(50),
+
                     acteur VARCHAR(255),
+
                     action VARCHAR(255),
+
                     details TEXT
+
                 );
+
             """)
+
             # Table Admin Credentials / White List
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS admin_white_list (
+
                     id SERIAL PRIMARY KEY,
+
                     email VARCHAR(255) UNIQUE NOT NULL,
+
                     nom VARCHAR(255),
+
                     prenom VARCHAR(255),
+
                     password VARCHAR(255),
+
                     niveau_acces VARCHAR(255)
+
                 );
+
             """)
+
             # Table Prof Credentials / White List
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS prof_white_list (
+
                     id SERIAL PRIMARY KEY,
+
                     nom VARCHAR(255),
+
                     prenom VARCHAR(255),
+
                     email VARCHAR(255) UNIQUE,
+
                     matiere_principale VARCHAR(255),
+
                     classe_attribuee VARCHAR(255),
+
                     password VARCHAR(255),
+
                     statut_acces VARCHAR(50) DEFAULT 'Autorisé'
+
                 );
+
             """)
+
             # Table Parents White List
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS parents_white_list (
+
                     id SERIAL PRIMARY KEY,
+
                     telephone VARCHAR(50),
+
                     prenom_eleve VARCHAR(255),
+
                     nom_eleve VARCHAR(255),
+
                     annee_naissance VARCHAR(50),
+
                     classe VARCHAR(255)
+
                 );
+
             """)
+
             # Table Classes
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS classes (
+
                     id SERIAL PRIMARY KEY,
+
                     classe VARCHAR(255) UNIQUE NOT NULL,
+
                     cycle VARCHAR(255),
+
                     professeur_responsable VARCHAR(255)
+
                 );
+
             """)
+
             # Table Eleves
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS eleves (
+
                     id SERIAL PRIMARY KEY,
+
                     nom_complet VARCHAR(255),
+
                     prenom VARCHAR(255),
+
                     nom VARCHAR(255),
+
                     date_de_naissance VARCHAR(50),
+
                     classe VARCHAR(255),
+
                     photo TEXT
+
                 );
+
             """)
+
             # Table Matieres
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS matieres (
+
                     id SERIAL PRIMARY KEY,
+
                     matiere VARCHAR(255),
+
                     cycle VARCHAR(255),
+
                     coefficient FLOAT,
+
                     bareme FLOAT
+
                 );
+
             """)
+
             # Table Coefficients
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS coefficients (
+
                     id SERIAL PRIMARY KEY,
+
                     classe VARCHAR(255),
+
                     matiere VARCHAR(255),
+
                     coefficient FLOAT,
+
                     bareme FLOAT
+
                 );
+
             """)
+
             # Table Periodes
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS periodes (
+
                     id SERIAL PRIMARY KEY,
+
                     periode VARCHAR(255),
+
                     statut VARCHAR(50),
+
                     cycle VARCHAR(255)
+
                 );
+
             """)
+
             # Table Notes
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS notes (
+
                     id SERIAL PRIMARY KEY,
+
                     classe VARCHAR(255),
+
                     matiere VARCHAR(255),
+
                     periode VARCHAR(255),
+
                     eleve VARCHAR(255),
+
                     devoir1 FLOAT,
+
                     devoir2 FLOAT,
+
                     composition FLOAT,
+
                     baremenote FLOAT
+
                 );
+
             """)
+
             # Table Vie Scolaire
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS vie_scolaire (
+
                     id SERIAL PRIMARY KEY,
+
                     classe VARCHAR(255),
+
                     periode VARCHAR(255),
+
                     eleve VARCHAR(255),
+
                     absences_justifiees INT,
+
                     absences_non_justifiees INT,
+
                     retards INT,
+
                     heures_perdues INT,
+
                     observations TEXT,
+
                     decision_conseil TEXT
+
                 );
+
             """)
+
             # Table Travail à faire
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS travail_a_faire (
+
                     id VARCHAR(255) PRIMARY KEY,
+
                     professeur VARCHAR(255),
+
                     date_publication VARCHAR(50),
+
                     date_rendu VARCHAR(50),
+
                     classe VARCHAR(255),
+
                     matiere VARCHAR(255),
+
                     titre VARCHAR(255),
+
                     consignes TEXT,
+
                     lien_url TEXT,
+
                     lien_video TEXT,
+
                     fichier_nom TEXT,
+
                     fichier_b64 TEXT,
+
                     fichier_type TEXT
+
                 );
+
             """)
+
             # Table Messages Parents
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS messages_parents (
+
                     id VARCHAR(255) PRIMARY KEY,
+
                     emetteur VARCHAR(255),
+
                     role_emetteur VARCHAR(255),
+
                     date_envoi VARCHAR(50),
+
                     classe VARCHAR(255),
+
                     objet TEXT,
+
                     message TEXT,
+
                     urgent BOOLEAN
+
                 );
+
             """)
+
             # Table Emploi du Temps Grid
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS edt_grid (
+
                     id SERIAL PRIMARY KEY,
+
                     classe VARCHAR(255),
+
                     jour VARCHAR(50),
+
                     heure VARCHAR(50),
+
                     valeur TEXT
+
                 );
+
             """)
+
             # Table Cahier de Textes
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS cahier_textes (
+
                     id SERIAL PRIMARY KEY,
+
                     professeur VARCHAR(255),
+
                     date VARCHAR(50),
+
                     classe VARCHAR(255),
+
                     matiere VARCHAR(255),
+
                     contenu TEXT,
+
                     travail_a_faire TEXT
+
                 );
+
             """)
+
             # Table Absences
+
             cur.execute("""
+
                 CREATE TABLE IF NOT EXISTS absences (
+
                     id SERIAL PRIMARY KEY,
+
                     date VARCHAR(50),
+
                     classe VARCHAR(255),
+
                     eleve VARCHAR(255),
+
                     statut VARCHAR(50),
+
                     motif TEXT
+
                 );
+
             """)
+
             conn.commit()
+
     except Exception as e:
+
         conn.rollback()
+
         st.error(f"Erreur lors de l'initialisation des tables PostgreSQL : {e}")
+
     finally:
+
         conn.close()
+
+
 
 # Initialiser les tables Supabase/PostgreSQL dès le lancement
+
 init_db()
 
+
+
 # Fonctions de chargement et de synchronisation des données Supabase/PostgreSQL
+
 def load_table_from_db(query, columns):
+
     conn = get_db_connection()
+
     if conn is None:
+
         return pd.DataFrame(columns=columns)
+
     try:
+
         df = pd.read_sql(query, conn)
+
         if df.empty:
+
             return pd.DataFrame(columns=columns)
+
         return df
+
     except Exception:
+
         return pd.DataFrame(columns=columns)
+
     finally:
+
         conn.close()
+
+
 
 def save_df_to_db(df, table_name):
+
     conn = get_db_connection()
+
     if conn is None:
+
         return
+
     try:
+
         with conn.cursor() as cur:
+
             cur.execute(f"DELETE FROM {table_name};")
+
             if not df.empty:
+
                 cols = ",".join(list(df.columns))
+
                 vals = ",".join(["%s"] * len(df.columns))
+
                 query = f"INSERT INTO {table_name} ({cols}) VALUES ({vals})"
+
                 cur.executemany(query, df.values.tolist())
+
             conn.commit()
+
     except Exception as e:
+
         conn.rollback()
+
         st.error(f"Erreur de sauvegarde dans {table_name} : {e}")
+
     finally:
+
         conn.close()
 
+
+
 # ==========================================
+
 # 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
+
 # ==========================================
+
 def hacher_mot_de_passe(password: str) -> str:
+
     if not password: return ""
+
     salt = bcrypt.gensalt()
+
     return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
 
+
+
 def verifier_mot_de_passe(password: str, hashed: str) -> bool:
+
     if not password or not hashed: return False
+
     try:
+
         return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+
     except Exception:
+
         return False
 
+
+
 def normaliser_texte(texte):
+
     """Normalise une chaîne de caractères pour une recherche universelle (insensible aux accents, casse, espaces)."""
+
     if not texte: return ""
+
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
+
+
 def nettoyer_texte_pdf(texte):
+
     """Nettoie et encode le texte pour garantir la compatibilité PDF sans erreur d'affichage."""
+
     if not texte: return ""
+
     return str(texte).encode('latin-1', 'replace').decode('latin-1')
+
+
 
 ADMIN_EMAIL = "cpnm@gmail.com"
 
+
+
 def enregistrer_log_action(acteur: str, action: str, details: str):
+
     """Consigne chaque action utilisateur dans la base PostgreSQL et le session_state."""
+
     horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     if "audit_logs_db" not in st.session_state:
+
         st.session_state.audit_logs_db = pd.DataFrame(columns=["horodatage", "acteur", "action", "details"])
+
     new_log = pd.DataFrame([{"horodatage": horodatage, "acteur": acteur, "action": action, "details": details}])
+
     st.session_state.audit_logs_db = pd.concat([st.session_state.audit_logs_db, new_log], ignore_index=True)
+
     
+
     # Persistance Supabase / PostgreSQL
+
     conn = get_db_connection()
+
     if conn:
+
         try:
+
             with conn.cursor() as cur:
+
                 cur.execute("INSERT INTO audit_logs (horodatage, acteur, action, details) VALUES (%s, %s, %s, %s)",
+
                             (horodatage, acteur, action, details))
+
                 conn.commit()
+
         except Exception:
+
             conn.rollback()
+
         finally:
+
             conn.close()
+
+
 
 def trier_eleves_par_nom(df):
+
     if df is None or df.empty: return df
+
     df_copy = df.copy()
+
     if "Nom" in df_copy.columns and "Prénom" in df_copy.columns:
+
         df_copy["Nom_Sort"] = df_copy["Nom"].astype(str).str.strip().str.upper()
+
         df_copy["Prenom_Sort"] = df_copy["Prénom"].astype(str).str.strip().str.upper()
+
         df_copy = df_copy.sort_values(by=["Nom_Sort", "Prenom_Sort"]).drop(columns=["Nom_Sort", "Prenom_Sort"])
+
     return df_copy.reset_index(drop=True)
 
-def update_prof_status_db(email, status):
-    """Met à jour le statut d'accès du professeur directement dans PostgreSQL."""
-    conn = get_db_connection()
-    if conn:
-        try:
-            with conn.cursor() as cur:
-                cur.execute("UPDATE prof_white_list SET statut_acces = %s WHERE email = %s", (status, email))
-                conn.commit()
-        except Exception as e:
-            conn.rollback()
-            st.error(f"Erreur lors de la mise à jour du statut : {e}")
-        finally:
-            conn.close()
 
-# ==========================================
-# 1. APPLICATION & GESTION DES ESPACES
-# ==========================================
 
-st.set_page_config(page_title="Système de Gestion Scolaire", layout="wide")
+def synchroniser_listes_blanches():
+    """Maintient la cohérence absolue et bidirectionnelle des accès professeurs."""
+    # S'assurer que le champ de statut d'accès existe dans les deux structures si elles sont initialisées
+    for key in ["prof_credentials", "prof_white_list"]:
+        if key in st.session_state and not st.session_state[key].empty:
+            if "Niveau d'Accès / Autorisé" not in st.session_state[key].columns:
+                st.session_state[key]["Niveau d'Accès / Autorisé"] = "Autorisé (Actif)"
 
-# Initialisation du Session State
-if "user_authenticated" not in st.session_state:
-    st.session_state.user_authenticated = False
-if "user_role" not in st.session_state:
-    st.session_state.user_role = None
-if "user_data" not in st.session_state:
-    st.session_state.user_data = None
+    # Synchronisation bidirectionnelle des états en session
+    if "prof_credentials" in st.session_state and not st.session_state.prof_credentials.empty:
+        st.session_state.prof_white_list = st.session_state.prof_credentials.copy()
+    elif "prof_white_list" in st.session_state and not st.session_state.prof_white_list.empty:
+        st.session_state.prof_credentials = st.session_state.prof_white_list.copy()
 
-# Barre latérale pour la navigation
-st.sidebar.title("Navigation")
-menu_principal = st.sidebar.radio("Sélectionner un Espace", ["Accueil", "Espace Administration", "Espace Professeur", "Espace Parents"])
-
-# ------------------------------------------
-# ACCUEIL
-# ------------------------------------------
-if menu_principal == "Accueil":
-    st.title("🎓 Plateforme de Gestion Scolaire")
-    st.info("Veuillez sélectionner votre espace dans le menu de gauche pour vous connecter.")
-
-# ------------------------------------------
-# ESPACE ADMINISTRATION
-# ------------------------------------------
-elif menu_principal == "Espace Administration":
-    st.title("⚙️ Espace Administration")
-
-    if not st.session_state.user_authenticated or st.session_state.user_role != "Admin":
-        with st.form("admin_login"):
-            email = st.text_input("Email Administrateur")
-            password = st.text_input("Mot de passe", type="password")
-            submit = st.form_submit_button("Se connecter")
-            if submit:
-                # Vérification simple pour démo ou via DB
-                if email == ADMIN_EMAIL and password == "admin123":
-                    st.session_state.user_authenticated = True
-                    st.session_state.user_role = "Admin"
-                    st.session_state.user_data = {"email": email, "nom": "Admin"}
-                    enregistrer_log_action(email, "Connexion", "Connexion réussie à l'Espace Admin")
-                    st.rerun()
-                else:
-                    st.error("Identifiants Administrateur incorrects.")
-    else:
-        st.success(f"Bienvenue Administrateur ({st.session_state.user_data['email']})")
-        if st.button("Déconnexion"):
-            st.session_state.user_authenticated = False
-            st.session_state.user_role = None
-            st.rerun()
-
-        st.subheader("📋 Gestion de la Liste Blanche Professeurs (`prof_white_list`)")
+    # Validation et filtrage de l'accès professeur actif
+    if "prof_connecte" in st.session_state and st.session_state.prof_connecte:
+        prof_actuel = st.session_state.prof_connecte
+        df_wl = st.session_state.get("prof_white_list", pd.DataFrame())
         
-        # Chargement de la liste des professeurs
-        profs_df = load_table_from_db("SELECT * FROM prof_white_list ORDER BY id DESC;", 
-                                     ["id", "nom", "prenom", "email", "matiere_principale", "classe_attribuee", "password", "statut_acces"])
-
-        # Formulaire d'ajout de Professeur
-        with st.expander("➕ Ajouter un nouveau professeur"):
-            with st.form("add_prof_form"):
-                nom = st.text_input("Nom")
-                prenom = st.text_input("Prénom")
-                email = st.text_input("Email")
-                matiere = st.text_input("Matière Principale")
-                classe = st.text_input("Classe Attribuée")
-                pwd = st.text_input("Mot de passe", type="password")
-                pwd_hash = hacher_mot_de_passe(pwd)
-                
-                if st.form_submit_button("Enregistrer le professeur"):
-                    if email and pwd:
-                        conn = get_db_connection()
-                        if conn:
-                            try:
-                                with conn.cursor() as cur:
-                                    cur.execute("""
-                                        INSERT INTO prof_white_list (nom, prenom, email, matiere_principale, classe_attribuee, password, statut_acces)
-                                        VALUES (%s, %s, %s, %s, %s, %s, 'Autorisé')
-                                    """, (nom, prenom, email, matiere, classe, pwd_hash))
-                                    conn.commit()
-                                st.success("Professeur ajouté avec succès !")
-                                enregistrer_log_action(st.session_state.user_data['email'], "Ajout Prof", f"Ajout de {email}")
-                                st.rerun()
-                            except Exception as e:
-                                conn.rollback()
-                                st.error(f"Erreur lors de l'ajout : {e}")
-                            finally:
-                                conn.close()
-                    else:
-                        st.warning("L'email et le mot de passe sont obligatoires.")
-
-        # Affichage et Gestion du statut Autorisé / Suspendu
-        if not profs_df.empty:
-            st.write("### Professeurs Enregistrés")
-            for idx, row in profs_df.iterrows():
-                col1, col2, col3, col4, col5 = st.columns([2, 3, 2, 2, 2])
-                col1.write(f"**{row['nom']} {row['prenom']}**")
-                col2.write(row['email'])
-                col3.write(f"Class: {row['classe_attribuee']}")
-                
-                # Statut Actuel
-                current_status = row['statut_acces'] if row['statut_acces'] else 'Autorisé'
-                
-                if current_status == "Autorisé":
-                    col4.success("Autorisé")
-                    if col5.button("Bloquer", key=f"btn_block_{row['id']}"):
-                        update_prof_status_db(row['email'], "Suspendu")
-                        enregistrer_log_action(st.session_state.user_data['email'], "Blocage Professeur", f"Statut de {row['email']} changé à Suspendu")
-                        st.rerun()
-                else:
-                    col4.error("Suspendu")
-                    if col5.button("Autoriser", key=f"btn_allow_{row['id']}"):
-                        update_prof_status_db(row['email'], "Autorisé")
-                        enregistrer_log_action(st.session_state.user_data['email'], "Autorisation Professeur", f"Statut de {row['email']} changé à Autorisé")
-                        st.rerun()
-                st.divider()
-
-# ------------------------------------------
-# ESPACE PROFESSEUR
-# ------------------------------------------
-elif menu_principal == "Espace Professeur":
-    st.title("👨‍🏫 Espace Professeur")
-
-    # Vérification d'authentification
-    if not st.session_state.user_authenticated or st.session_state.user_role != "Professeur":
-        st.subheader("Connexion Enseignant")
-        with st.form("prof_login"):
-            email_prof = st.text_input("Email Professeur")
-            pwd_prof = st.text_input("Mot de passe", type="password")
-            btn_conn = st.form_submit_button("Se connecter")
-
-            if btn_conn:
-                conn = get_db_connection()
-                if conn:
-                    try:
-                        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                            cur.execute("SELECT * FROM prof_white_list WHERE email = %s;", (email_prof,))
-                            user = cur.fetchone()
-
-                            if user:
-                                # 1. Vérification de l'autorisation de la Liste Blanche
-                                if user.get("statut_acces") != "Autorisé":
-                                    st.error("⛔ Accès refusé : Votre compte a été suspendu par l'administration.")
-                                    enregistrer_log_action(email_prof, "Tentative Connexion Refusée", "Compte non autorisé/suspendu")
-                                # 2. Vérification du mot de passe
-                                elif verifier_mot_de_passe(pwd_prof, user["password"]):
-                                    st.session_state.user_authenticated = True
-                                    st.session_state.user_role = "Professeur"
-                                    st.session_state.user_data = user
-                                    enregistrer_log_action(email_prof, "Connexion Professeur", "Connexion réussie")
-                                    st.rerun()
-                                else:
-                                    st.error("Mot de passe incorrect.")
-                            else:
-                                st.error("Email non présent dans la liste blanche.")
-                    finally:
-                        conn.close()
-
-    else:
-        # **SÉCURITÉ CONTINUE :** Vérification en temps réel du statut d'accès
-        conn = get_db_connection()
-        if conn:
-            try:
-                with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                    cur.execute("SELECT statut_acces FROM prof_white_list WHERE email = %s;", (st.session_state.user_data["email"],))
-                    check_status = cur.fetchone()
-                    if not check_status or check_status.get("statut_acces") != "Autorisé":
-                        st.session_state.user_authenticated = False
-                        st.session_state.user_role = None
-                        st.session_state.user_data = None
-                        st.error("⛔ Votre accès a été révoqué par l'administration.")
-                        st.button("Retour à l'accueil")
-                        st.stop()
-            finally:
-                conn.close()
-
-        # Professeur Authentifié & Validé dans la liste blanche
-        prof_info = st.session_state.user_data
-        st.sidebar.markdown(f"**Connecté en tant que :** {prof_info['prenom']} {prof_info['nom']}")
-        if st.sidebar.button("Déconnexion"):
-            st.session_state.user_authenticated = False
-            st.session_state.user_role = None
-            st.rerun()
-
-        # Navigation Sous-Modules Professeur
-        sub_module = st.selectbox("Modules de Gestion", ["Cahier de Texte", "Saisie des Notes", "Feuille d'Appel", "Devoirs & Travail à faire"])
-
-        # 1. MODULE CAHIER DE TEXTE
-        if sub_module == "Cahier de Texte":
-            st.subheader("📖 Cahier de Texte")
-            with st.form("form_cahier"):
-                date_cours = st.date_input("Date du cours")
-                classe = st.text_input("Classe", value=prof_info.get("classe_attribuee", ""))
-                matiere = st.text_input("Matière", value=prof_info.get("matiere_principale", ""))
-                contenu = st.text_area("Contenu de la séance")
-                travail = st.text_area("Travail à faire")
-                
-                if st.form_submit_button("Enregistrer la séance"):
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                    INSERT INTO cahier_textes (professeur, date, classe, matiere, contenu, travail_a_faire)
-                                    VALUES (%s, %s, %s, %s, %s, %s)
-                                """, (f"{prof_info['nom']} {prof_info['prenom']}", str(date_cours), classe, matiere, contenu, travail))
-                                conn.commit()
-                            st.success("Séance ajoutée au cahier de texte et synchronisée !")
-                            enregistrer_log_action(prof_info['email'], "Saisie Cahier de texte", f"Séance ajoutée pour {classe}")
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"Erreur d'enregistrement : {e}")
-                        finally:
-                            conn.close()
-
-        # 2. MODULE SAISIE DES NOTES
-        elif sub_module == "Saisie des Notes":
-            st.subheader("📝 Saisie des Notes")
-            with st.form("form_notes"):
-                classe = st.text_input("Classe", value=prof_info.get("classe_attribuee", ""))
-                matiere = st.text_input("Matière", value=prof_info.get("matiere_principale", ""))
-                periode = st.selectbox("Période", ["Trimestre 1", "Trimestre 2", "Trimestre 3", "Semestre 1", "Semestre 2"])
-                nom_eleve = st.text_input("Nom de l'élève")
-                dev1 = st.number_input("Note Devoir 1", min_value=0.0, max_value=20.0, step=0.25)
-                dev2 = st.number_input("Note Devoir 2", min_value=0.0, max_value=20.0, step=0.25)
-                compo = st.number_input("Note Composition", min_value=0.0, max_value=20.0, step=0.25)
-                
-                if st.form_submit_button("Enregistrer Note"):
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                    INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, 20.0)
-                                """, (classe, matiere, periode, nom_eleve, dev1, dev2, compo))
-                                conn.commit()
-                            st.success(f"Notes enregistrées immédiatement dans la base pour {nom_eleve} !")
-                            enregistrer_log_action(prof_info['email'], "Saisie Note", f"Notes saisies pour {nom_eleve}")
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"Erreur d'enregistrement : {e}")
-                        finally:
-                            conn.close()
-
-        # 3. MODULE FEUILLE D'APPEL
-        elif sub_module == "Feuille d'Appel":
-            st.subheader("📋 Feuille d'Appel / Présences")
-            with st.form("form_absence"):
-                date_abs = st.date_input("Date")
-                classe_abs = st.text_input("Classe", value=prof_info.get("classe_attribuee", ""))
-                eleve_abs = st.text_input("Nom complet de l'élève")
-                statut_abs = st.selectbox("Statut", ["Absent", "Retard", "Exclus"])
-                motif = st.text_input("Motif / Remarque")
-
-                if st.form_submit_button("Valider la présence"):
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                    INSERT INTO absences (date, classe, eleve, statut, motif)
-                                    VALUES (%s, %s, %s, %s, %s)
-                                """, (str(date_abs), classe_abs, eleve_abs, statut_abs, motif))
-                                conn.commit()
-                            st.success("Appel synchronisé avec la base Supabase !")
-                            enregistrer_log_action(prof_info['email'], "Feuille Appel", f"{statut_abs} marqué pour {eleve_abs}")
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"Erreur : {e}")
-                        finally:
-                            conn.close()
-
-        # 4. MODULE DEVOIRS ET TRAVAIL À FAIRE
-        elif sub_module == "Devoirs & Travail à faire":
-            st.subheader("📌 Publier un travail à faire")
-            with st.form("form_travail"):
-                date_pub = datetime.now().strftime("%Y-%m-%d")
-                date_rendu = st.date_input("Date de rendu")
-                classe = st.text_input("Classe", value=prof_info.get("classe_attribuee", ""))
-                matiere = st.text_input("Matière", value=prof_info.get("matiere_principale", ""))
-                titre = st.text_input("Titre du devoir")
-                consignes = st.text_area("Consignes")
-                
-                if st.form_submit_button("Publier le devoir"):
-                    dev_id = f"DEV_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    conn = get_db_connection()
-                    if conn:
-                        try:
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                    INSERT INTO travail_a_faire (id, professeur, date_publication, date_rendu, classe, matiere, titre, consignes)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                                """, (dev_id, f"{prof_info['nom']} {prof_info['prenom']}", date_pub, str(date_rendu), classe, matiere, titre, consignes))
-                                conn.commit()
-                            st.success("Devoir publié et immédiatement accessible aux parents / élèves !")
-                            enregistrer_log_action(prof_info['email'], "Publication Devoir", f"Devoir '{titre}' publié")
-                        except Exception as e:
-                            conn.rollback()
-                            st.error(f"Erreur de sauvegarde : {e}")
-                        finally:
-                            conn.close()
-
-# ------------------------------------------
-# ESPACE PARENTS
-# ------------------------------------------
-elif menu_principal == "Espace Parents":
-    st.title("👨‍👩‍👧 Espace Parents")
-    st.info("Consultez ici les données enregistrées en temps réel par les enseignants et l'administration.")
-    
-    # Visualisation publique ou par élève des notes/devoirs synchronisés
-    search_classe = st.text_input("Rechercher par Classe (ex: 6eme A)")
-    if search_classe:
-        st.write(f"### Travail à faire pour la classe {search_classe}")
-        df_devoirs = load_table_from_db(f"SELECT * FROM travail_a_faire WHERE classe = '{search_classe}';", 
-                                        ["id", "professeur", "date_pub", "date_rendu", "classe", "matiere", "titre", "consignes", "url", "vid", "nom_f", "b64", "type"])
-        if not df_devoirs.empty:
-            st.dataframe(df_devoirs[["date_rendu", "matiere", "titre", "consignes", "professeur"]])
-        else:
-            st.write("Aucun travail enregistré pour le moment.")
-
+        if not df_wl.empty and "Nom" in df_wl.columns:
+            ligne_prof = df_wl[df_wl["Nom"].str.strip().str.upper() == str(prof_actuel).strip().upper()]
+            if not ligne_prof.empty:
+                statut_acces = ligne_prof.iloc[0].get("Niveau d'Accès / Autorisé", "Autorisé (Actif)")
+                if statut_acces == "Suspendu / Bloqué":
+                    st.warning("⚠️ Votre compte professeur a été suspendu ou bloqué par l'administration.")
+                    st.session_state.prof_connecte = None
+                    st.rerun()
 # ==========================================
 # 0. TER. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
