@@ -1403,78 +1403,78 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
 # 9. RAPPORTS GLOBAUX & ASSISTANT IA
 # ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
-  st.markdown(
-      '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🏫'
-      " Rapports Globaux, Documents PDF & Assistant IA</div>",
-      unsafe_allow_html=True,
-  )
-
-  tr_bulletins, tr_listes, tr_ia = st.tabs([
-      "📄 Génération des Bulletins PDF",
-      "📋 Listes de Classes & Absences",
-      "🤖 Assistant Pédagogique Intelligent",
-  ])
-
-  with tr_bulletins:
-    st.markdown("### 📄 Impression Globale des Bulletins PDF")
-
-    classes_dispo = (
-        st.session_state.classes_db["Classe"].unique().tolist()
-        if "classes_db" in st.session_state
-        and "Classe" in st.session_state.classes_db.columns
-        else ["6ème A", "CP"]
+    st.markdown(
+        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🏫'
+        " Rapports Globaux, Documents PDF & Assistant IA</div>",
+        unsafe_allow_html=True,
     )
 
-    col_gb1, col_gb2 = st.columns(2)
-    with col_gb1:
-      cls_export = st.selectbox("Sélectionner la Classe", classes_dispo)
-    with col_gb2:
-      pers_export = obtenir_periodes_pour_classe(cls_export)
-      per_export = st.selectbox("Sélectionner la Période", pers_export)
+    tr_bulletins, tr_listes, tr_ia = st.tabs([
+        "📄 Génération des Bulletins PDF",
+        "📋 Listes de Classes & Absences",
+        "🤖 Assistant Pédagogique Intelligent",
+    ])
 
-    if st.button("📦 Générer le Pack Complet des Bulletins (Archive ZIP)"):
-      zip_bytes = generer_zip_bulletins_classe(cls_export, per_export)
-      st.download_button(
-          "⬇️ Télécharger le Pack ZIP des Bulletins",
-          data=zip_bytes,
-          file_name=f"Bulletins_{cls_export}_{per_export}.zip",
-          mime="application/zip",
-      )
+    with tr_bulletins:
+        st.markdown("### 📄 Impression Globale des Bulletins PDF")
 
-  with tr_listes:
-    st.markdown("### 📋 Export des Fiches Officielles")
+        classes_dispo = (
+            st.session_state.classes_db["Classe"].unique().tolist()
+            if "classes_db" in st.session_state
+            and "Classe" in st.session_state.classes_db.columns
+            else ["6ème A", "CP"]
+        )
 
-    c_ex1, c_ex2 = st.columns(2)
-    with c_ex1:
-      cls_fiche = st.selectbox("Fiche de Classe", classes_dispo, key="cls_fiche_sel")
-      pdf_fiche = generer_pdf_liste_eleves_classe(cls_fiche)
-      st.download_button(
-          "📄 Télécharger la Liste des Élèves (PDF)",
-          data=pdf_fiche,
-          file_name=f"Liste_Eleves_{cls_fiche}.pdf",
-          mime="application/pdf",
-      )
+        col_gb1, col_gb2 = st.columns(2)
+        with col_gb1:
+            cls_export = st.selectbox("Sélectionner la Classe", classes_dispo)
+        with col_gb2:
+            pers_export = obtenir_periodes_pour_classe(cls_export)
+            per_export = st.selectbox("Sélectionner la Période", pers_export)
 
-    with c_ex2:
-      pdf_abs_tot = generer_pdf_liste_absences("Toutes")
-      st.download_button(
-          "📄 Télécharger le Registre Global des Absences (PDF)",
-          data=pdf_abs_tot,
-          file_name="Registre_Global_Absences.pdf",
-          mime="application/pdf",
-      )
+        if st.button("📦 Générer le Pack Complet des Bulletins (Archive ZIP)"):
+            zip_bytes = generer_zip_bulletins_classe(cls_export, per_export)
+            st.download_button(
+                "⬇️ Télécharger le Pack ZIP des Bulletins",
+                data=zip_bytes,
+                file_name=f"Bulletins_{cls_export}_{per_export}.zip",
+                mime="application/zip",
+            )
 
-  with tr_ia:
-    st.markdown("### 🤖 Assistant Pédagogique Virtual - Mandela IA")
-    q_user = st.text_input("Posez votre question à l'assistant virtuel :")
-    if q_user:
-      reponse = assistant_ia_repondre(q_user)
-      st.markdown(
-          f"""
-            <div style="background: #F0F9FF; border: 2px solid #0EA5E9; padding: 20px; border-radius: 18px; margin-top: 15px;">
-                <b style="color: #0EA5E9;">Réponse de l'Assistant :</b><br/>
-                <p style="color: #0F172A; margin-top: 8px; font-size: 1.05rem;">{reponse}</p>
-            </div>
-            """,
-          unsafe_allow_html=True,
-      )
+    with tr_listes:
+        st.markdown("### 📋 Export des Fiches Officielles")
+
+        c_ex1, c_ex2 = st.columns(2)
+        with c_ex1:
+            cls_fiche = st.selectbox("Fiche de Classe", classes_dispo, key="cls_fiche_sel")
+            pdf_fiche = generer_pdf_liste_eleves_classe(cls_fiche)
+            st.download_button(
+                "📄 Télécharger la Liste des Élèves (PDF)",
+                data=pdf_fiche,
+                file_name=f"Liste_Eleves_{cls_fiche}.pdf",
+                mime="application/pdf",
+            )
+
+        with c_ex2:
+            pdf_abs_tot = generer_pdf_liste_absences("Toutes")
+            st.download_button(
+                "📄 Télécharger le Registre Global des Absences (PDF)",
+                data=pdf_abs_tot,
+                file_name="Registre_Global_Absences.pdf",
+                mime="application/pdf",
+            )
+
+    with tr_ia:
+        st.markdown("### 🤖 Assistant Pédagogique Virtual - Mandela IA")
+        q_user = st.text_input("Posez votre question à l'assistant virtuel :")
+        if q_user:
+            reponse = assistant_ia_repondre(q_user)
+            st.markdown(
+                f"""
+                <div style="background: #F0F9FF; border: 2px solid #0EA5E9; padding: 20px; border-radius: 18px; margin-top: 15px;">
+                    <b style="color: #0EA5E9;">Réponse de l'Assistant :</b><br/>
+                    <p style="color: #0F172A; margin-top: 8px; font-size: 1.05rem;">{reponse}</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
