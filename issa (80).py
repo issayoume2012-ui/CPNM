@@ -3559,25 +3559,25 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         st.success("✅ Configuration enregistrée dans Supabase !")
         st.rerun()
 
-with ta_logs:
-    st.markdown("### 📜 Journal de Traçabilité & Audit")
-    if (
-        "audit_logs_db" in st.session_state
-        and not st.session_state.audit_logs_db.empty
-    ):
-        df_logs = st.session_state.audit_logs_db.copy()
-        if "horodatage" in df_logs.columns:
-            df_logs["horodatage"] = pd.to_datetime(df_logs["horodatage"], errors="coerce")
-            df_logs = df_logs.sort_values(
-                by="horodatage", ascending=False, na_position="last"
+    with ta_logs:
+        st.markdown("### 📜 Journal de Traçabilité & Audit")
+        if (
+            "audit_logs_db" in st.session_state
+            and not st.session_state.audit_logs_db.empty
+        ):
+            df_logs = st.session_state.audit_logs_db.copy()
+            if "horodatage" in df_logs.columns:
+                df_logs["horodatage"] = pd.to_datetime(df_logs["horodatage"], errors="coerce")
+                df_logs = df_logs.sort_values(
+                    by="horodatage", ascending=False, na_position="last"
+                )
+                
+            st.dataframe(
+                df_logs,
+                use_container_width=True,
             )
-            
-        st.dataframe(
-            df_logs,
-            use_container_width=True,
-        )
-    else:
-        st.info("Aucune activité enregistrée dans le journal.")
+        else:
+            st.info("Aucune activité enregistrée dans le journal.")
 # ==========================================
 # 9. RAPPORTS GLOBAUX & ASSISTANT IA
 # ==========================================
