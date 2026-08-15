@@ -2896,120 +2896,211 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                 else:
                     st.error("Veuillez remplir votre nom et votre message.")
 
+# ==========================================
+# 8. ESPACE ADMINISTRATION (SÉCURISÉ & HABILITATIONS)
+# ==========================================
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
-    st.markdown("<h2 style='color: #0EA5E9;'>🔒 Espace Administration & Pilotage</h2>", unsafe_allow_html=True)
-    
+    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Administration & Contrôle des Accès</div>', unsafe_allow_html=True)
+
     if not st.session_state.authenticated_admin:
-        with st.form("login_admin_form"):
-            e_adm = st.text_input("Identifiant Administrateur (Email)")
-            p_adm = st.text_input("Mot de passe", type="password")
-            b_adm = st.form_submit_button("Connexion Admin")
-            if b_adm:
-                if (e_adm == ADMIN_EMAIL or e_adm == "admin") and (p_adm == "cpnm2026"):
+        st.warning("🔐 Connexion obligatoire pour accéder aux privilèges administratifs.")
+        with st.form("form_login_admin"):
+            email_a = st.text_input("Adresse Email Administrative", value=ADMIN_EMAIL)
+            pwd_a = st.text_input("Mot de Passe", type="password")
+            if st.form_submit_button("Se Connecter"):
+                df_adm = st.session_state.admin_credentials
+                valid = False
+                for _, r in df_adm.iterrows():
+                    if r["Email"] == email_a and verifier_mot_de_passe(pwd_a, r["Mot de passe"]):
+                        valid = True
+                        break
+                if valid or (email_a == ADMIN_EMAIL and pwd_a == "cpnm2026"):
                     st.session_state.authenticated_admin = True
-                    st.success("Connexion réussie !")
+                    enregistrer_log_action(email_a, "LOGIN_ADMIN", "Connexion Administration réussie")
+                    st.success("Accès Autorisé.")
                     st.rerun()
                 else:
-                    st.error("Identifiants Administrateur invalides.")
+                    st.error("Identifiants incorrects.")
     else:
-        if st.button("Se déconnecter Admin"):
+        st.success("🔓 Session Administrateur Active.")
+        if st.button("Déconnexion Admin"):
             st.session_state.authenticated_admin = False
             st.rerun()
 
         st.markdown("---")
-        t_ad1, t_ad2, t_ad3, t_ad4 = st.tabs(["👥 Gestion des Élèves", "🏫 Gestion des Classes", "📚 Matières & Coefficients", "📋 Journal d'Audit"])
+        ta1, ta2, ta3, ta4, ta5 = st.tabs([
+            "💬 Message aux Parents",
+            "👥 Gestion des Élèves & Classes",
+            "👨‍🏫 Liste Blanche Professeurs",
+            "📚 Structure Matières & Coeffs",
+            "📋 Journal d'Audit & Logs"
+        ])
 
-        with t_ad1:
-            st.markdown("### 👥 Registre Général des Élèves")
-            edited_el = st.data_editor(st.session_state.eleves_db, num_rows="dynamic", use_container_width=True, key="ed_eleves")
-            if st.button("💾 Enregistrer Registre Élèves"):
-                st.session_state.eleves_db = edited_el
-                df_el_save = edited_el.rename(columns={
+        with ta1:
+            st.markdown("### 💬 Publier un Message / Convocation aux Parents")
+            with st.form("form_admin_msg", clear_on_submit=True):
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    cls_target = st.selectbox("Classe Destinataire", ["Toutes"] + st.session_state.classes_db["Classe"].tolist())
+                    objet_msg = st.text_input("Objet du message / Intitulé")
+                with col_m2:
+                    is_urgent = st.checkbox("Marquer comme URGENT 🚨")
+                    emetteur_msg = st.text_input("Nom de l'émetteur", value="La Direction")
+
+                contenu_msg = st.text_area("Corps du message")
+
+                if st.form_submit_button("📣 Diffuser le message"):
+                    if objet_msg and contenu_msg:
+                        msg_id = f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        new_msg = pd.DataFrame([{
+                            "ID": msg_id,
+                            "Emetteur": emetteur_msg,
+                            "RoleEmetteur": "Administration",
+                            "DateEnvoi": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                            "Classe": cls_target,
+                            "Objet": objet_msg,
+                            "Message": contenu_msg,
+                            "Urgent": is_urgent
+                        }])
+                        st.session_state.messages_parents_db = pd.concat([st.session_state.messages_parents_db, new_msg], ignore_index=True)
+
+                        df_msg_save = st.session_state.messages_parents_db.rename(columns={
+                            "ID": "id", "Emetteur": "emetteur", "RoleEmetteur": "role_emetteur",
+                            "DateEnvoi": "date_envoi", "Classe": "classe", "Objet": "objet",
+                            "Message": "message", "Urgent": "urgent"
+                        })[["id", "emetteur", "role_emetteur", "date_envoi", "classe", "objet", "message", "urgent"]]
+                        save_df_to_db(df_msg_save, "messages_parents")
+
+                        enregistrer_log_action(emetteur_msg, "SEND_MESSAGE", f"Message aux parents classe {cls_target}")
+                        st.success("✅ Message diffusé et sauvegardé dans Supabase !")
+                        st.rerun()
+
+        with ta2:
+            st.markdown("### 👥 Gestion du Répertoire des Élèves")
+            df_el_ed = st.session_state.eleves_db
+            st.markdown("#### ✏️ Éditeur direct de la BDD Élèves (Ordre Alphabétique)")
+            
+            df_el_ed_sorted = trier_eleves_par_nom(df_el_ed)
+            edited_el = st.data_editor(df_el_ed_sorted, num_rows="dynamic", use_container_width=True, key="editor_eleves_admin")
+
+            if st.button("💾 Sauvegarder Répertoire Élèves"):
+                st.session_state.eleves_db = trier_eleves_par_nom(edited_el)
+
+                df_el_save = st.session_state.eleves_db.rename(columns={
                     "Nom Complet": "nom_complet", "Prénom": "prenom", "Nom": "nom",
                     "Date de Naissance": "date_de_naissance", "Classe": "classe", "Photo": "photo"
                 })[["nom_complet", "prenom", "nom", "date_de_naissance", "classe", "photo"]]
                 save_df_to_db(df_el_save, "eleves")
-                st.success("Élèves sauvegardés dans Supabase !")
+
+                st.success("✅ Élèves mis à jour dans PostgreSQL !")
                 st.rerun()
 
-        with t_ad2:
-            st.markdown("### 🏫 Structure des Classes")
-            edited_cls = st.data_editor(st.session_state.classes_db, num_rows="dynamic", use_container_width=True, key="ed_classes")
-            if st.button("💾 Enregistrer Classes"):
-                st.session_state.classes_db = edited_cls
-                df_cls_save = edited_cls.rename(columns={
-                    "Classe": "classe", "Cycle": "cycle", "Professeur Responsable": "professeur_responsable"
-                })[["classe", "cycle", "professeur_responsable"]]
-                save_df_to_db(df_cls_save, "classes")
-                st.success("Classes sauvegardées !")
+        with ta3:
+            st.markdown("### 👨‍🏫 Liste Blanche & Accès Professeurs")
+            edited_prof = st.data_editor(st.session_state.prof_credentials, num_rows="dynamic", use_container_width=True, key="editor_prof_admin")
+            if st.button("💾 Sauvegarder Accès Enseignants"):
+                st.session_state.prof_credentials = edited_prof
+                
+                df_prof_save = edited_prof.rename(columns={
+                    "Nom": "nom", "Prénom": "prenom", "Email": "email",
+                    "Matière Principale": "matiere_principale", "Classe Attribuée": "classe_attribuee",
+                    "Mot de passe": "password"
+                })[["nom", "prenom", "email", "matiere_principale", "classe_attribuee", "password"]]
+                save_df_to_db(df_prof_save, "prof_white_list")
+
+                st.success("✅ Liste blanche enseignants mise à jour !")
                 st.rerun()
 
-        with t_ad3:
-            st.markdown("### 📚 Paramétrage des Matières")
-            edited_mat = st.data_editor(st.session_state.matieres_def, num_rows="dynamic", use_container_width=True, key="ed_matieres")
-            if st.button("💾 Enregistrer Matières"):
-                st.session_state.matieres_def = edited_mat
-                df_mat_save = edited_mat.rename(columns={
-                    "Matière": "matiere", "Cycle": "cycle", "Coefficient": "coefficient", "Barème": "bareme"
-                })[["matiere", "cycle", "coefficient", "bareme"]]
-                save_df_to_db(df_mat_save, "matieres")
-                st.success("Matières sauvegardées !")
+        with ta4:
+            st.markdown("### 📚 Configuration des Matières et Coefficients")
+            edited_coeff = st.data_editor(st.session_state.coefficients_db, num_rows="dynamic", use_container_width=True, key="editor_coeff_admin")
+            if st.button("💾 Sauvegarder Table des Coefficients"):
+                st.session_state.coefficients_db = edited_coeff
+                
+                df_c_save = edited_coeff.rename(columns={
+                    "Classe": "classe", "Matière": "matiere", "Coefficient": "coefficient", "Barème": "bareme"
+                })[["classe", "matiere", "coefficient", "bareme"]]
+                save_df_to_db(df_c_save, "coefficients")
+
+                st.success("✅ Coefficients sauvegardés dans Supabase !")
                 st.rerun()
 
-        with t_ad4:
-            st.markdown("### 📋 Historique & Logs d'Audit")
+        with ta5:
+            st.markdown("### 📋 Logs d'Audit de l'Établissement")
             st.dataframe(st.session_state.audit_logs_db, use_container_width=True)
 
+# ==========================================
+# 9. RAPPORTS GLOBAUX & STATISTIQUES (ADMINISTRATION XXL)
+# ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
-    st.markdown("<h2 style='color: #0EA5E9;'>🏫 Rapports Globaux & Génération des Bulletins</h2>", unsafe_allow_html=True)
-    
-    t_rp1, t_rp2 = st.tabs(["📑 Édition Bulletins PDF", "🤖 Assistant IA Pédagogique"])
-    
-    with t_rp1:
-        st.markdown("### 📄 Générateur de Bulletins & Exports ZIP")
-        classes_rp = list(st.session_state.classes_db["Classe"].unique()) if "classes_db" in st.session_state and not st.session_state.classes_db.empty else ["6ème A"]
-        
-        c_sel_rp = st.selectbox("Classe", classes_rp, key="rp_cls")
-        pers_rp = obtenir_periodes_pour_classe(c_sel_rp)
-        p_sel_rp = st.selectbox("Période", pers_rp, key="rp_per")
-        
-        df_el_rp = trier_eleves_par_nom(st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == c_sel_rp]) if "eleves_db" in st.session_state and not st.session_state.eleves_db.empty else pd.DataFrame()
-        
-        if not df_el_rp.empty:
-            list_el_rp = df_el_rp["Nom Complet"].tolist()
-            el_sel_rp = st.selectbox("Sélectionner l'Élève", list_el_rp)
-            
-            col_b1, col_b2 = st.columns(2)
-            with col_b1:
-                if st.button("👁️ Calculer & Afficher Bulletin"):
-                    data_b = calculer_bulletin_eleve(c_sel_rp, el_sel_rp, p_sel_rp)
-                    st.write(data_b)
-            
-            with col_b2:
-                data_b = calculer_bulletin_eleve(c_sel_rp, el_sel_rp, p_sel_rp)
-                pdf_b = generer_pdf_bulletin(data_b)
-                st.download_button(
-                    "📄 Télécharger Bulletin Individuel (PDF)",
-                    data=pdf_b,
-                    file_name=f"Bulletin_{c_sel_rp}_{el_sel_rp}.pdf",
-                    mime="application/pdf"
-                )
-            
-            st.markdown("---")
-            st.markdown("#### 📦 Export Global de Classe")
-            zip_b = generer_zip_bulletins_classe(c_sel_rp, p_sel_rp)
-            st.download_button(
-                "📦 Télécharger TOUS les Bulletins de la classe (Archive ZIP)",
-                data=zip_b,
-                file_name=f"Bulletins_{c_sel_rp}_{p_sel_rp}.zip",
-                mime="application/zip"
-            )
-        else:
-            st.info("Aucun élève trouvé dans cette classe.")
+    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports Globaux, Impression PDF & Statistiques</div>', unsafe_allow_html=True)
 
-    with t_rp2:
-        st.markdown("### 🤖 Assistant Pédagogique Intelligent Nelson Mandela")
-        q_ia = st.text_input("Posez votre question concernant les bulletins, la discipline ou le suivi :")
+    tr1, tr2, tr3, tr4 = st.tabs([
+        "📄 Impression Liste Classe (Ordre Alphabétique)",
+        "📊 Statistiques Académiques & Performance",
+        "📦 Exportation Bulletins (ZIP / PDF)",
+        "🤖 Assistant Virtuel Pédagogique IA"
+    ])
+
+    with tr1:
+        st.markdown("### 📋 Téléchargement Fiche de Classe par Ordre Alphabétique")
+        cls_imp = st.selectbox("Sélectionner la classe à exporter", st.session_state.classes_db["Classe"].unique().tolist(), key="sel_cls_pdf")
+
+        if st.button("⚡ Générer Liste Officielle (PDF)"):
+            pdf_liste = generer_pdf_liste_eleves_classe(cls_imp)
+            st.download_button(f"📥 Télécharger Fiche Classe {cls_imp} (PDF)", pdf_liste, file_name=f"Liste_Eleves_{cls_imp}.pdf", mime="application/pdf")
+
+    with tr2:
+        st.markdown("### 📊 Tableau de Bord Statistiques de l'Établissement")
+        
+        col_st1, col_st2 = st.columns(2)
+        with col_st1:
+            cls_stat = st.selectbox("Sélectionner une classe", st.session_state.classes_db["Classe"].unique().tolist(), key="stat_cls_sel")
+        with col_st2:
+            pers_stat = obtenir_periodes_pour_classe(cls_stat)
+            per_stat = st.selectbox("Période", pers_stat if pers_stat else ["1er Semestre"], key="stat_per_sel")
+
+        df_el_st = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_stat] if "eleves_db" in st.session_state and "Classe" in st.session_state.eleves_db.columns else pd.DataFrame()
+        df_el_st = trier_eleves_par_nom(df_el_st)
+
+        if not df_el_st.empty:
+            list_moyen = []
+            for el in df_el_st["Nom Complet"].tolist():
+                b_stat = calculer_bulletin_eleve(cls_stat, el, per_stat)
+                list_moyen.append(b_stat["moyenne_generale"])
+
+            arr_m = np.array(list_moyen)
+            m_classe = round(np.mean(arr_m), 2)
+            m_max = round(np.max(arr_m), 2)
+            m_min = round(np.min(arr_m), 2)
+            taux_reussite = round((np.sum(arr_m >= 10.0) / len(arr_m)) * 100, 1) if len(arr_m) > 0 else 0
+
+            ms1, ms2, ms3, ms4 = st.columns(4)
+            ms1.metric("Moyenne de Classe", f"{m_classe} / 20")
+            ms2.metric("Note Maximale", f"{m_max} / 20")
+            ms3.metric("Note Minimale", f"{m_min} / 20")
+            ms4.metric("Taux de Réussite (≥10)", f"{taux_reussite} %")
+
+            st.markdown("#### 📈 Distribution des Moyennes")
+            df_chart = pd.DataFrame({"Élèves": df_el_st["Nom Complet"].tolist(), "Moyenne": list_moyen})
+            st.bar_chart(df_chart.set_index("Élèves"))
+        else:
+            st.warning("Aucune donnée d'élève disponible pour calculer des statistiques.")
+
+    with tr3:
+        st.markdown("### 📦 Exportation des Bulletins de Classe")
+        col_ex1, col_ex2 = st.columns(2)
+        with col_ex1:
+            cls_zip = st.selectbox("Classe concernée", st.session_state.classes_db["Classe"].unique().tolist(), key="zip_cls_sel")
+        with col_ex2:
+            per_zip = st.selectbox("Période", obtenir_periodes_pour_classe(cls_zip), key="zip_per_sel")
+
+        if st.button("⚡ Générer l'Archive ZIP de tous les bulletins"):
+            zip_data = generer_zip_bulletins_classe(cls_zip, per_zip)
+            st.download_button(f"📥 Télécharger Archive ZIP ({cls_zip})", zip_data, file_name=f"Bulletins_{cls_zip}_{per_zip}.zip", mime="application/zip")
+
+    with tr4:
+        st.markdown("### 🤖 Assistant Pédagogique Intégré")
+        q_ia = st.text_input("Posez une question sur l'organisation ou les statistiques :")
         if q_ia:
-            rep_ia = assistant_ia_repondre(q_ia)
-            st.info(f"<b>Réponse de l'Assistant :</b> {rep_ia}")
+            st.info(f"<b>Réponse de l'IA Mandela :</b> {assistant_ia_repondre(q_ia)}", icon="🦁")
