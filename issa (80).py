@@ -3580,7 +3580,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         # 1. Sélection de la classe cible
         classe_selectionnee = st.selectbox("Sélectionner la classe à configurer", classes_dispo, key="select_classe_emploi")
 
-        # Récupération de l'emploi du temps sous forme de grille
+        # Récupération ou initialisation de la grille
         if "get_or_create_edt" in globals():
             edt_classe = get_or_create_edt(classe_selectionnee)
         else:
@@ -3590,7 +3590,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             if "11h00-11h30" in edt_classe.columns:
                 edt_classe["11h00-11h30"] = "Récréation"
 
-        # S'assurer que les jours ne sont pas dans l'index pour permettre l'édition des cellules
+        # S'assurer que le DataFrame est propre et que les jours sont une colonne normale
         if edt_classe.index.name == "Jour" or "Lundi" in str(edt_classe.index[0]):
             edt_editable = edt_classe.reset_index()
             if "index" in edt_editable.columns:
@@ -3602,13 +3602,24 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             if "Jour" not in edt_editable.columns:
                 edt_editable.insert(0, "Jour", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"][:len(edt_editable)])
 
+        # FORCER TOUTES LES COLONNES DE CRÉNEAUX EN TYPE TEXTE STR (Évite le blocage de saisie)
+        for col in edt_editable.columns:
+            edt_editable[col] = edt_editable[col].astype(str).fillna("")
+
         st.markdown(f"#### 🕒 Grille de saisie pour la classe : **{classe_selectionnee}**")
         
-        # Éditeur de tableau dynamique (permet la saisie libre dans les cellules)
+        # Configuration des colonnes pour autoriser la saisie partout sauf sur le Jour
+        column_configurations = {
+            col: st.column_config.TextColumn(col, disabled=(col == "Jour")) 
+            for col in edt_editable.columns
+        }
+
+        # Éditeur de tableau dynamique interactif
         edited_emploi_grille = st.data_editor(
             edt_editable,
             use_container_width=True,
             hide_index=True,
+            column_config=column_configurations,
             key=f"editor_grille_emploi_{classe_selectionnee}"
         )
 
