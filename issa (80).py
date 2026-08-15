@@ -231,7 +231,7 @@ def save_df_to_db(df, table_name):
         conn.close()
 
 # ==========================================
-# 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
+# 0. BIS. GESTION DE LA SÉCURITÉ LOCALE & CONTOURNEMENTS
 # ==========================================
 def hacher_mot_de_passe(password: str) -> str:
     if not password: return ""
@@ -301,6 +301,34 @@ def synchroniser_listes_blanches():
         st.session_state.parents_white_list = st.session_state.parents_credentials.copy()
     elif "parents_white_list" in st.session_state and not st.session_state.parents_white_list.empty:
         st.session_state.parents_credentials = st.session_state.parents_white_list.copy()
+
+def verifier_connexion_professeur(email_saisi, password_saisi):
+    """
+    Fonction de contournement robuste pour valider l'accès professeur 
+    en contournant les problèmes de casse, d'espaces et de cache obsolète.
+    """
+    query = "SELECT nom, prenom, email, matiere_principale, classe_attribuee, password FROM prof_white_list"
+    df_profs = load_table_from_db(query, ["nom", "prenom", "email", "matiere_principale", "classe_attribuee", "password"])
+    
+    if df_profs.empty and "prof_white_list" in st.session_state:
+        df_profs = st.session_state.prof_white_list
+
+    if df_profs.empty:
+        return False, "La liste blanche des professeurs est vide ou inaccessible."
+
+    email_clean = normaliser_texte(email_saisi)
+
+    for row in df_profs.itertuples(index=False):
+        db_email = normaliser_texte(getattr(row, "email", ""))
+        
+        if db_email == email_clean:
+            db_pass = getattr(row, "password", "")
+            if not db_pass or password_saisi == db_pass or verifier_mot_de_passe(password_saisi, db_pass):
+                return True, row
+            else:
+                return False, "Mot de passe incorrect."
+
+    return False, "Identifiants incorrects ou e-mail/nom non répertoriés dans la liste blanche des professeurs."
 # ==========================================
 # 0. TER. GESTION DU DESIGN ET DU DRAPEAU
 # ==========================================
