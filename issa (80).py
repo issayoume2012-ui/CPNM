@@ -274,11 +274,11 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                 placeholders = ",".join(["%s"] * len(cols))
                 
                 # Adaptation dynamique de la clause CONFLICT selon la table
-                if table_name == "edt_grid":
-                    conflict_clause = "ON CONFLICT (classe, jour, heure)"
-                    update_cols = [c for c in cols if c not in ["classe", "jour", "heure"]]
+                if table_name in ["edt_grid", "emploi_du_temps"]:
+                    # Utilisation de la contrainte explicite si elle existe dans la BDD
+                    conflict_clause = "ON CONFLICT ON CONSTRAINT unique_classe_jour_horaire"
+                    update_cols = [c for c in cols if c not in ["classe", "jour", "horaire"]]
                 elif table_name in ["messages_parents", "travail_a_faire"]:
-                    # Si la table utilise un 'id' comme clé primaire textuelle (ex: "MSG-...")
                     conflict_clause = "ON CONFLICT (id)" if "id" in cols else ""
                     update_cols = [c for c in cols if c != "id"]
                 elif table_name in ["admin_white_list", "prof_white_list"]:
@@ -300,7 +300,6 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         DO UPDATE SET {update_str};
                     """
                 elif conflict_clause and not update_cols:
-                    # Si toutes les colonnes font partie de la clé unique
                     query = f"""
                         INSERT INTO {table_name} ({cols_str}) 
                         VALUES ({placeholders})
