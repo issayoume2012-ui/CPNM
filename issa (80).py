@@ -3580,37 +3580,48 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         # 1. Sélection de la classe cible
         classe_selectionnee = st.selectbox("Sélectionner la classe à configurer", classes_dispo, key="select_classe_emploi")
 
-        # Récupération de l'emploi du temps sous forme de grille (Jours x Créneaux) via get_or_create_edt
+        # Récupération de l'emploi du temps sous forme de grille
         if "get_or_create_edt" in globals():
             edt_classe = get_or_create_edt(classe_selectionnee)
         else:
-            # Fallback grille vide par défaut si la fonction n'existe pas
             jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
             creneaux_cols = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h", "17h-18h", "18h-19h"]
             edt_classe = pd.DataFrame(index=jours, columns=creneaux_cols).fillna("")
             if "11h00-11h30" in edt_classe.columns:
                 edt_classe["11h00-11h30"] = "Récréation"
 
-        st.markdown(f"#### 🕒 Grille matricielle pour la classe : **{classe_selectionnee}**")
+        # S'assurer que les jours ne sont pas dans l'index pour permettre l'édition des cellules
+        if edt_classe.index.name == "Jour" or "Lundi" in str(edt_classe.index[0]):
+            edt_editable = edt_classe.reset_index()
+            if "index" in edt_editable.columns:
+                edt_editable = edt_editable.rename(columns={"index": "Jour"})
+            elif edt_editable.columns[0] != "Jour":
+                edt_editable = edt_editable.rename(columns={edt_editable.columns[0]: "Jour"})
+        else:
+            edt_editable = edt_classe.copy()
+            if "Jour" not in edt_editable.columns:
+                edt_editable.insert(0, "Jour", ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"][:len(edt_editable)])
+
+        st.markdown(f"#### 🕒 Grille de saisie pour la classe : **{classe_selectionnee}**")
         
-        # Éditeur de tableau dynamique en grille (Jours x Horaires)
+        # Éditeur de tableau dynamique (permet la saisie libre dans les cellules)
         edited_emploi_grille = st.data_editor(
-            edt_classe,
+            edt_editable,
             use_container_width=True,
+            hide_index=True,
             key=f"editor_grille_emploi_{classe_selectionnee}"
         )
 
         col_btn1, col_btn2 = st.columns(2)
         with col_btn1:
             if st.button("💾 Sauvegarder la grille de l'Emploi du Temps"):
-                # Sauvegarde de la grille dans la session ou base de données selon votre logique
                 if "emploi_du_temps_dict" not in st.session_state:
                     st.session_state.emploi_du_temps_dict = {}
                 st.session_state.emploi_du_temps_dict[classe_selectionnee] = edited_emploi_grille
                 
                 if "save_df_to_db" in globals():
                     try:
-                        save_df_to_db(edited_emploi_grille.reset_index(), f"emploi_du_temps_{classe_selectionnee}")
+                        save_df_to_db(edited_emploi_grille, f"emploi_du_temps_{classe_selectionnee}")
                     except Exception:
                         pass
 
