@@ -1254,14 +1254,17 @@ def generer_pdf_cahier_textes(df_ct, classe="Global"):
 # ==========================================
 # 4. EN-TÊTE ET NAVIGATION GLOBALE DESIGN XXL
 # ==========================================
-logo_data_uri = obtenir_logo_base64()
-if logo_data_uri:
-  logo_element_html = f'<img src="{logo_data_uri}" alt="Logo Mandela" />'
-else:
-  logo_element_html = (
-      '<div class="emblem-box"><span style="font-size: 3.2rem;">🇸🇳</span></div>'
-  )
-
+def obtenir_logo_base64():
+    """Convertit l'image du logo en base64 pour l'affichage HTML/Streamlit."""
+    try:
+        if os.path.exists("nm.jpg"):
+            with open("nm.jpg", "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode("utf-8")
+        elif "SCEAU_SENEGAL_B64" in globals() and SCEAU_SENEGAL_B64:
+            return SCEAU_SENEGAL_B64
+    except Exception:
+        pass
+    return ""
 header_complet_html = f"""
 <div class="header-institutionnel">
     <div class="header-inner">
