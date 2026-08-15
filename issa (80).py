@@ -278,17 +278,42 @@ def save_df_to_db(df, table_name):
 # ==========================================
 # 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
 # ==========================================
-def hacher_mot_de_passe(password: str) -> str:
-    if not password: return ""
-    salt = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), salt).decode("utf-8")
+def hacher_tous_les_passwords_en_clair():
+    """Script de maintenance à exécuter une fois."""
+    conn = get_db_connection()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("SELECT email, password FROM prof_white_list")
+    profs = cur.fetchall()
+    
+    for prof in profs:
+        # Si ça ne commence pas par '$2b$', c'est probablement du texte clair
+        if prof['password'] and not prof['password'].startswith('$2b$'):
+            new_hash = hacher_mot_de_passe(prof['password'])
+            cur.execute("UPDATE prof_white_list SET password = %s WHERE email = %s", (new_hash, prof['email']))
+    conn.commit()
+    conn.close()
 
-def verifier_mot_de_passe(password: str, hashed: str) -> bool:
-    if not password or not hashed: return False
-    try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
-    except Exception:
+def verifier_mot_de_passe(email, password_saisi, hashed_db, table_name="prof_white_list"):
+    """Vérifie le mot de passe et migre automatiquement les anciens mots de passe en clair."""
+    if not password_saisi or not hashed_db: 
         return False
+    
+    # 1. Vérification sécurisée si le mot de passe est déjà haché
+    if hashed_db.startswith('$2b$'): # Format standard bcrypt
+        return bcrypt.checkpw(password_saisi.encode("utf-8"), hashed_db.encode("utf-8"))
+    
+    # 2. Migration : Si le mot de passe en DB correspond au mot de passe saisi en clair
+    if password_saisi == hashed_db:
+        nouveau_hash = hacher_mot_de_passe(password_saisi)
+        conn = get_db_connection()
+        if conn:
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE {table_name} SET password = %s WHERE email = %s", (nouveau_hash, email))
+                conn.commit()
+            conn.close()
+        return True
+    
+    return False
 
 def normaliser_texte(texte):
     """Normalise une chaîne de caractères pour une recherche universelle (insensible aux accents, casse, espaces)."""
