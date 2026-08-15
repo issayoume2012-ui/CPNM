@@ -1139,106 +1139,81 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             else:
                 st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
 
-        with t_notes_p:
-            st.markdown("### 📊 Bulletin Officiel & Relevé de Notes")
-            periodes_p = obtenir_periodes_pour_classe(classe_p)
-            if periodes_p:
-                per_selected_p = st.selectbox("Sélectionner la période", periodes_p, key="sel_per_parent")
-                bul_parent = calculer_bulletin_eleve(classe_p, eleve_nom, per_selected_p)
+        def calculer_bulletin_eleve(classe, nom_eleve, periode):
+    """
+    Calcule la moyenne générale, le rang et rassemble les lignes de notes 
+    pour un élève donné sur une période spécifique.
+    """
+    notes_df = st.session_state.get("notes_db", pd.DataFrame())
+    coeffs_df = st.session_state.get("coefficients_db", pd.DataFrame())
+    
+    # Valeur par défaut en cas d'absence de notes
+    resultat_vide = {
+        "moyenne_generale": 0.0,
+        "total_bareme": 20,
+        "rang": "N/A",
+        "lignes": []
+    }
+    
+    if notes_df.empty:
+        return resultat_vide
+        
+    # Filtrer les notes pour la classe, l'élève et la période
+    # (Adaptez les noms de colonnes selon votre structure de base de données)
+    filtre = notes_df[
+        (notes_df.get("Classe", "") == classe) & 
+        (notes_df.get("Élève", "") == nom_eleve) & 
+        (notes_df.get("Période", "") == periode)
+    ]
+    
+    if filtre.empty:
+        return resultat_vide
+        
+    lignes_bulletin = []
+    total_points = 0.0
+    total_coefficients = 0.0
+    
+    for _, row in filtre.iterrows():
+        matiere = row.get("Matière", "Matière")
+        note = float(row.get("Note", 0))
+        bareme = float(row.get("Barème", 20))
+        
+        # Récupérer le coefficient de la matière pour cette classe
+        coef = 1.0
+        if not coeffs_df.empty:
+            match_coef = coeffs_df[
+                (coeffs_df.get("Classe", "") == classe) & 
+                (coeffs_df.get("Matière", "") == matiere)
+            ]
+            if not match_coef.empty:
+                coef = float(match_coef.iloc[0].get("Coefficient", 1.0))
+                
+        lignes_bulletin.append({
+            "Matière": matiere,
+            "Note": note,
+            "Barème": bareme,
+            "Coefficient": coef,
+            Appréciation: row.get("Appréciation", "")
+        })
+        
+        # Ramener la note sur 20 pour le calcul de la moyenne générale si nécessaire
+        note_sur_20 = (note / bareme) * 20 if bareme > 0 else note
+        total_points += note_sur_20 * coef
+        total_coefficients += coef
+        
+    moyenne_gen = round(total_points / total_coefficients, 2) if total_coefficients > 0 else 0.0
+    
+    return {
+        "moyenne_generale": moyenne_gen,
+        "total_bareme": 20,
+        "rang": "1er", # Logique de calcul du rang à personnaliser si besoin
+        "lignes": lignes_bulletin
+    }
 
-                st.markdown(
-                    f"#### Moyenne Générale : **{bul_parent['moyenne_generale']} / {bul_parent['total_bareme']}** | Rang : **{bul_parent['rang']}**"
-                )
-
-                if bul_parent["lignes"]:
-                    df_bul_p = pd.DataFrame(bul_parent["lignes"])
-                    st.dataframe(df_bul_p, use_container_width=True)
-
-                    pdf_bul_bytes = generer_pdf_bulletin(bul_parent)
-                    st.download_button(
-                        "📄 Télécharger le Bulletin Officiel (PDF Certifié)",
-                        data=pdf_bul_bytes,
-                        file_name=f"Bulletin_{eleve_nom.replace(' ', '_')}_{per_selected_p}.pdf",
-                        mime="application/pdf",
-                    )
-                else:
-                    st.warning("Aucune note enregistrée pour cette période.")
-
-        with t_abs_p:
-            st.markdown("### 📋 Assiduité & Vie Scolaire de l'Élève")
-            df_abs_p = pd.DataFrame()
-            if (
-                "absences_db" in st.session_state
-                and not st.session_state.absences_db.empty
-                and "Élève" in st.session_state.absences_db.columns
-            ):
-                df_abs_p = st.session_state.absences_db[
-                    st.session_state.absences_db["Élève"] == eleve_nom
-                ]
-
-            if not df_abs_p.empty:
-                st.dataframe(df_abs_p, use_container_width=True)
-            else:
-                st.success("✅ Aucune absence ou retard signalé pour cet élève !")
-
-        with t_edt_p:
-            st.markdown("### 📅 Emploi du Temps de la Classe")
-            st.info("Récréation quotidienne fixée de **11h00 à 11h30**.")
-            edt_p = get_or_create_edt(classe_p)
-            st.dataframe(edt_p, use_container_width=True)
-
-            pdf_edt_p = generer_pdf_edt(classe_p, edt_p)
-            st.download_button(
-                "📄 Télécharger l'Emploi du Temps (PDF)",
-                data=pdf_edt_p,
-                file_name=f"Emploi_du_temps_{classe_p}.pdf",
-                mime="application/pdf",
-            )
-
-        with t_msg_p:
-            st.markdown("### 💬 Messages & Communications École-Famille")
-            with st.form("form_msg_parent", clear_on_submit=True):
-                obj_msg = st.text_input("Objet de votre message")
-                body_msg = st.text_area("Votre message à destination de l'administration ou des professeurs")
-                is_urgent = st.checkbox("Signaler comme URGENT")
-                btn_send_msg = st.form_submit_button("📨 Envoyer le message")
-
-                if btn_send_msg:
-                    if obj_msg and body_msg:
-                        msg_id = f"MSG-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                        new_msg = {
-                            "ID": msg_id,
-                            "Emetteur": f"Parent de {eleve_nom}",
-                            "RoleEmetteur": "Parent",
-                            "DateEnvoi": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                            "Classe": classe_p,
-                            "Objet": obj_msg,
-                            "Message": body_msg,
-                            "Urgent": is_urgent,
-                        }
-
-                        if "messages_parents_db" not in st.session_state or st.session_state.messages_parents_db.empty:
-                            st.session_state.messages_parents_db = pd.DataFrame([new_msg])
-                        else:
-                            st.session_state.messages_parents_db = pd.concat(
-                                [st.session_state.messages_parents_db, pd.DataFrame([new_msg])],
-                                ignore_index=True,
-                            )
-
-                        df_msg_save = st.session_state.messages_parents_db.rename(columns={
-                            "ID": "id", "Emetteur": "emetteur", "RoleEmetteur": "role_emetteur",
-                            "DateEnvoi": "date_envoi", "Classe": "classe", "Objet": "objet",
-                            "Message": "message", "Urgent": "urgent"
-                        })[["id", "emetteur", "role_emetteur", "date_envoi", "classe", "objet", "message", "urgent"]]
-                        save_df_to_db(df_msg_save, "messages_parents")
-
-                        enregistrer_log_action(
-                            f"Parent de {eleve_nom}",
-                            "ENVOI_MESSAGE",
-                            f"Nouveau message transmis : {obj_msg}",
-                        )
-                        st.success("✅ Votre message a été transmis à l'établissement !")
-                        st.rerun()
+def obtenir_periodes_pour_classe(classe):
+    """Retourne la liste des périodes disponibles (ex: Trimestre 1, Trimestre 2...)."""
+    # Vous pouvez adapter cette liste selon votre configuration
+    return ["Trimestre 1", "Trimestre 2", "Trimestre 3"]
 
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration & Gestion des Listes Blanches</div>', unsafe_allow_html=True)
