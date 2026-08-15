@@ -3032,59 +3032,59 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
         # À ajouter dans la section 8 (🔒 Espace Administration) parmi les onglets ta1, ta2...
 
         with ta6:  # Onglet dédié à la gestion des EDT par l'administration
-    st.markdown("### 📅 Saisie & Gestion Globale des Emplois du Temps")
-    st.info("Sélectionnez une classe pour créer, modifier ou publier son emploi du temps officiel.")
-
-    # 1. Sélection de la classe par l'administrateur
-    classes_list = st.session_state.classes_db["Classe"].unique().tolist() if "classes_db" in st.session_state else ["6ème A"]
-    cls_admin_edt = st.selectbox("Sélectionner la classe à configurer", classes_list, key="admin_cls_edt_select")
-
-    # 2. Chargement de la grille dynamique d'emploi du temps
-    grid_edt_admin = get_or_create_edt(cls_admin_edt)
-    edited_edt_admin = st.data_editor(grid_edt_admin, use_container_width=True, key=f"edt_editor_admin_{cls_admin_edt}")
-
-    # 3. Sauvegarde dans la base de données Supabase / PostgreSQL
-    col_edt_b1, col_edt_b2 = st.columns(2)
-    with col_edt_b1:
-        if st.button("💾 Sauvegarder L'Emploi du Temps", key="btn_save_edt_admin"):
-            st.session_state.edt_grid_db[cls_admin_edt] = edited_edt_admin
-            
-            # Reprojection pour PostgreSQL / Supabase
-            rows_edt_save = []
-            for j in edited_edt_admin.index:
-                for h in edited_edt_admin.columns:
-                    rows_edt_save.append({
-                        "classe": cls_admin_edt,
-                        "jour": j,
-                        "heure": h,
-                        "valeur": str(edited_edt_admin.loc[j, h])
-                    })
-            
-            conn = get_db_connection()
-            if conn:
-                try:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM edt_grid WHERE classe = %s;", (cls_admin_edt,))
-                        for r_e in rows_edt_save:
-                            cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s);",
-                                        (r_e["classe"], r_e["jour"], r_e["heure"], r_e["valeur"]))
-                        conn.commit()
-                except Exception as e:
-                    conn.rollback()
-                    st.error(f"Erreur lors de l'enregistrement Supabase : {e}")
-                finally:
-                    conn.close()
-
-            enregistrer_log_action("ADMIN", "EDT_UPDATE", f"Mise à jour de l'EDT de la classe {cls_admin_edt}")
-            st.success(f"✅ Emploi du temps de la classe {cls_admin_edt} sauvegardé avec succès !")
-            st.rerun()
-
-    with col_edt_b2:
-        # Téléchargement au format PDF
-        pdf_edt_admin_b = generer_pdf_edt(cls_admin_edt, edited_edt_admin)
-        st.download_button("📥 Télécharger L'Emploi du Temps (PDF Officiel)", pdf_edt_admin_b, file_name=f"Emploi_du_temps_{cls_admin_edt}.pdf", mime="application/pdf")
-
-# ==========================================
+            st.markdown("### 📅 Saisie & Gestion Globale des Emplois du Temps")
+            st.info("Sélectionnez une classe pour créer, modifier ou publier son emploi du temps officiel.")
+        
+            # 1. Sélection de la classe par l'administrateur
+            classes_list = st.session_state.classes_db["Classe"].unique().tolist() if "classes_db" in st.session_state else ["6ème A"]
+            cls_admin_edt = st.selectbox("Sélectionner la classe à configurer", classes_list, key="admin_cls_edt_select")
+        
+            # 2. Chargement de la grille dynamique d'emploi du temps
+            grid_edt_admin = get_or_create_edt(cls_admin_edt)
+            edited_edt_admin = st.data_editor(grid_edt_admin, use_container_width=True, key=f"edt_editor_admin_{cls_admin_edt}")
+        
+            # 3. Sauvegarde dans la base de données Supabase / PostgreSQL
+            col_edt_b1, col_edt_b2 = st.columns(2)
+            with col_edt_b1:
+                if st.button("💾 Sauvegarder L'Emploi du Temps", key="btn_save_edt_admin"):
+                    st.session_state.edt_grid_db[cls_admin_edt] = edited_edt_admin
+                    
+                    # Reprojection pour PostgreSQL / Supabase
+                    rows_edt_save = []
+                    for j in edited_edt_admin.index:
+                        for h in edited_edt_admin.columns:
+                            rows_edt_save.append({
+                                "classe": cls_admin_edt,
+                                "jour": j,
+                                "heure": h,
+                                "valeur": str(edited_edt_admin.loc[j, h])
+                            })
+                    
+                    conn = get_db_connection()
+                    if conn:
+                        try:
+                            with conn.cursor() as cur:
+                                cur.execute("DELETE FROM edt_grid WHERE classe = %s;", (cls_admin_edt,))
+                                for r_e in rows_edt_save:
+                                    cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s);",
+                                                (r_e["classe"], r_e["jour"], r_e["heure"], r_e["valeur"]))
+                                conn.commit()
+                        except Exception as e:
+                            conn.rollback()
+                            st.error(f"Erreur lors de l'enregistrement Supabase : {e}")
+                        finally:
+                            conn.close()
+        
+                    enregistrer_log_action("ADMIN", "EDT_UPDATE", f"Mise à jour de l'EDT de la classe {cls_admin_edt}")
+                    st.success(f"✅ Emploi du temps de la classe {cls_admin_edt} sauvegardé avec succès !")
+                    st.rerun()
+        
+            with col_edt_b2:
+                # Téléchargement au format PDF
+                pdf_edt_admin_b = generer_pdf_edt(cls_admin_edt, edited_edt_admin)
+                st.download_button("📥 Télécharger L'Emploi du Temps (PDF Officiel)", pdf_edt_admin_b, file_name=f"Emploi_du_temps_{cls_admin_edt}.pdf", mime="application/pdf")
+        
+        # ==========================================
 # 9. RAPPORTS GLOBAUX & STATISTIQUES (ADMINISTRATION XXL)
 # ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
