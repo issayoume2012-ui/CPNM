@@ -805,7 +805,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 input_val_norm = normaliser_texte(p_email_or_name)
                 input_prenom_norm = normaliser_texte(p_prenom)
 
-                # Synchronisation complète avant vérification
                 synchroniser_listes_blanches()
                 
                 targets = []
@@ -1139,76 +1138,38 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             else:
                 st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
 
+        with t_notes_p:
+            st.markdown("### 📊 Bulletin & Notes de l'Élève")
+            periodes_dispo = obtenir_periodes_pour_classe(classe_p)
+            periode_choisie = st.selectbox("Sélectionner la période", periodes_dispo, key="parent_periode_sel")
+            
+            bulletin_res = calculer_bulletin_eleve(classe_p, eleve_nom, periode_choisie)
+            col_m1, col_m2 = st.columns(2)
+            with col_m1:
+                st.metric("Moyenne Générale", f"{bulletin_res['moyenne_generale']} / {bulletin_res['total_bareme']}")
+            with col_m2:
+                st.metric("Rang dans la classe", bulletin_res['rang'])
 
-def calculer_bulletin_eleve(classe, nom_eleve, periode):
-    """
-    Calcule la moyenne générale, le rang et rassemble les lignes de notes 
-    pour un élève donné sur une période spécifique.
-    """
-    notes_df = st.session_state.get("notes_db", pd.DataFrame())
-    coeffs_df = st.session_state.get("coefficients_db", pd.DataFrame())
-    
-    resultat_vide = {
-        "moyenne_generale": 0.0,
-        "total_bareme": 20,
-        "rang": "N/A",
-        "lignes": []
-    }
-    
-    if notes_df.empty:
-        return resultat_vide
-        
-    filtre = notes_df[
-        (notes_df.get("Classe", "") == classe) & 
-        (notes_df.get("Élève", "") == nom_eleve) & 
-        (notes_df.get("Période", "") == periode)
-    ]
-    
-    if filtre.empty:
-        return resultat_vide
-        
-    lignes_bulletin = []
-    total_points = 0.0
-    total_coefficients = 0.0
-    
-    for _, row in filtre.iterrows():
-        matiere = row.get("Matière", "Matière")
-        note = float(row.get("Note", 0))
-        bareme = float(row.get("Barème", 20))
-        
-        coef = 1.0
-        if not coeffs_df.empty:
-            match_coef = coeffs_df[
-                (coeffs_df.get("Classe", "") == classe) & 
-                (coeffs_df.get("Matière", "") == matiere)
-            ]
-            if not match_coef.empty:
-                coef = float(match_coef.iloc[0].get("Coefficient", 1.0))
-                
-        lignes_bulletin.append({
-            "Matière": matiere,
-            "Note": note,
-            "Barème": bareme,
-            "Coefficient": coef,
-            "Appréciation": row.get("Appréciation", "")
-        })
-        
-        note_sur_20 = (note / bareme) * 20 if bareme > 0 else note
-        total_points += note_sur_20 * coef
-        total_coefficients += coef
-        
-    moyenne_gen = round(total_points / total_coefficients, 2) if total_coefficients > 0 else 0.0
-    
-    return {
-        "moyenne_generale": moyenne_gen,
-        "total_bareme": 20,
-        "rang": "1er",
-        "lignes": lignes_bulletin
-    }
+            if bulletin_res['lignes']:
+                df_lignes = pd.DataFrame(bulletin_res['lignes'])
+                st.dataframe(df_lignes, use_container_width=True)
+            else:
+                st.info("Aucune note saisie pour cette période.")
 
-def obtenir_periodes_pour_classe(classe):
-    """Retourne la liste des périodes disponibles (ex: Trimestre 1, Trimestre 2...)."""
-    return ["Trimestre 1", "Trimestre 2", "Trimestre 3"]
+        with t_abs_p:
+            st.markdown("### 📋 Assiduité & Discipline")
+            st.info("Registre des absences et des retards.")
+
+        with t_edt_p:
+            st.markdown("### 📅 Emploi du Temps de la Classe")
+            if classe_p in st.session_state.edt_grid_db:
+                st.dataframe(st.session_state.edt_grid_db[classe_p], use_container_width=True)
+            else:
+                st.info("Emploi du temps non disponible.")
+
+        with t_msg_p:
+            st.markdown("### 💬 Communications École-Famille")
+            st.info("Messagerie directe avec l'équipe pédagogique.")
 
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration & Gestion des Listes Blanches</div>', unsafe_allow_html=True)
@@ -1398,83 +1359,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
                     use_container_width=True,
                 )
             else:
-                st.info("Aucune activité enregistrée dans le journal.")
+                st.info("Aucun journal d'audit disponible.")
 
-# 9. RAPPORTS GLOBAUX & ASSISTANT IA
-# ==========================================
 elif st.session_state.espace_actif == "🏫 Administration XXL & Rapports":
-    st.markdown(
-        '<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">🏫'
-        " Rapports Globaux, Documents PDF & Assistant IA</div>",
-        unsafe_allow_html=True,
-    )
-
-    tr_bulletins, tr_listes, tr_ia = st.tabs([
-        "📄 Génération des Bulletins PDF",
-        "📋 Listes de Classes & Absences",
-        "🤖 Assistant Pédagogique Intelligent",
-    ])
-
-    with tr_bulletins:
-        st.markdown("### 📄 Impression Globale des Bulletins PDF")
-
-        classes_dispo = (
-            st.session_state.classes_db["Classe"].unique().tolist()
-            if "classes_db" in st.session_state
-            and "Classe" in st.session_state.classes_db.columns
-            else ["6ème A", "CP"]
-        )
-
-        col_gb1, col_gb2 = st.columns(2)
-        with col_gb1:
-            cls_export = st.selectbox("Sélectionner la Classe", classes_dispo)
-        with col_gb2:
-            pers_export = obtenir_periodes_pour_classe(cls_export)
-            per_export = st.selectbox("Sélectionner la Période", pers_export)
-
-        if st.button("📦 Générer le Pack Complet des Bulletins (Archive ZIP)"):
-            zip_bytes = generer_zip_bulletins_classe(cls_export, per_export)
-            st.download_button(
-                "⬇️ Télécharger le Pack ZIP des Bulletins",
-                data=zip_bytes,
-                file_name=f"Bulletins_{cls_export}_{per_export}.zip",
-                mime="application/zip",
-            )
-
-    with tr_listes:
-        st.markdown("### 📋 Export des Fiches Officielles")
-
-        c_ex1, c_ex2 = st.columns(2)
-        with c_ex1:
-            cls_fiche = st.selectbox("Fiche de Classe", classes_dispo, key="cls_fiche_sel")
-            pdf_fiche = generer_pdf_liste_eleves_classe(cls_fiche)
-            st.download_button(
-                "📄 Télécharger la Liste des Élèves (PDF)",
-                data=pdf_fiche,
-                file_name=f"Liste_Eleves_{cls_fiche}.pdf",
-                mime="application/pdf",
-            )
-
-        with c_ex2:
-            pdf_abs_tot = generer_pdf_liste_absences("Toutes")
-            st.download_button(
-                "📄 Télécharger le Registre Global des Absences (PDF)",
-                data=pdf_abs_tot,
-                file_name="Registre_Global_Absences.pdf",
-                mime="application/pdf",
-            )
-
-    with tr_ia:
-        st.markdown("### 🤖 Assistant Pédagogique Virtual - Mandela IA")
-        q_user = st.text_input("Posez votre question à l'assistant virtuel :")
-        if q_user:
-            reponse = assistant_ia_repondre(q_user)
-            st.markdown(
-                f"""
-                <div style="background: #F0F9FF; border: 2px solid #0EA5E9; padding: 20px; border-radius: 18px; margin-top: 15px;">
-                    <b style="color: #0EA5E9;">Réponse de l'Assistant :</b><br/>
-                    <p style="color: #0F172A; margin-top: 8px; font-size: 1.05rem;">{reponse}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Rapports Globaux & Administration XXL</div>', unsafe_allow_html=True)
+    st.info("Module de génération globale des rapports et statistiques de l'établissement.")
