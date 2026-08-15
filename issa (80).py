@@ -1088,58 +1088,59 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         ])
 
         with t_taf_p:
-            st.markdown("### 📌 Devoirs & Travail à Faire")
-            df_taf_p = pd.DataFrame()
-            if (
-                "travail_a_faire_db" in st.session_state
-                and not st.session_state.travail_a_faire_db.empty
-                and "Classe" in st.session_state.travail_a_faire_db.columns
-            ):
-                df_taf_p = st.session_state.travail_a_faire_db[
-                    st.session_state.travail_a_faire_db["Classe"] == classe_p
-                ]
+    st.markdown("### 📌 Devoirs & Travail à Faire")
+    df_taf_p = pd.DataFrame()
+    if (
+        "travail_a_faire_db" in st.session_state
+        and not st.session_state.travail_a_faire_db.empty
+        and "Classe" in st.session_state.travail_a_faire_db.columns
+    ):
+        df_taf_p = st.session_state.travail_a_faire_db[
+            st.session_state.travail_a_faire_db["Classe"] == classe_p
+        ]
 
-            if not df_taf_p.empty:
-                for idx, row in df_taf_p.iterrows():
-                    with st.container():
-                        st.markdown(
-                            f"""
-                            <div class="work-card">
-                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                                    <span style="background: #0EA5E9; color: white; padding: 4px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">{row.get('Matière', 'Général')}</span>
-                                    <span style="color: #64748B; font-weight: 600; font-size: 0.9rem;">À rendre pour le : <b>{row.get('DateRendu', 'N/A')}</b></span>
-                                </div>
-                                <h4 style="color: #0F172A; margin: 8px 0; font-size: 1.2rem;">{row.get('Titre', 'Sans titre')}</h4>
-                                <p style="color: #334155; font-size: 1rem; line-height: 1.5;">{row.get('Consignes', '')}</p>
-                                <div style="font-size: 0.85rem; color: #64748B; margin-top: 8px;">Enseignant : {row.get('Professeur', 'N/A')} | Publié le : {row.get('DatePublication', 'N/A')}</div>
-                            </div>
-                            """,
-                            unsafe_allow_html=True,
-                        )
+    if not df_taf_p.empty:
+        for idx, row in df_taf_p.iterrows():
+            with st.container():
+                st.markdown(
+                    f"""
+                    <div class="work-card">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="background: #0EA5E9; color: white; padding: 4px 12px; border-radius: 12px; font-weight: 700; font-size: 0.85rem;">{row.get('Matière', 'Général')}</span>
+                            <span style="color: #64748B; font-weight: 600; font-size: 0.9rem;">À rendre pour le : <b>{row.get('DateRendu', 'N/A')}</b></span>
+                        </div>
+                        <h4 style="color: #0F172A; margin: 8px 0; font-size: 1.2rem;">{row.get('Titre', 'Sans titre')}</h4>
+                        <p style="color: #334155; font-size: 1rem; line-height: 1.5;">{row.get('Consignes', '')}</p>
+                        <div style="font-size: 0.85rem; color: #64748B; margin-top: 8px;">Enseignant : {row.get('Professeur', 'N/A')} | Publié le : {row.get('DatePublication', 'N/A')}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-                        c_l1, c_l2 = st.columns(2)
-                        with c_l1:
-                            if pd.notna(row.get("LienUrl")) and str(row.get("LienUrl")).strip():
-                                st.markdown(f"🔗 [Consulter le lien web]({row.get('LienUrl')})")
-                            if pd.notna(row.get("LienVideo")) and str(row.get("LienVideo")).strip():
-                                st.markdown(f"🎬 [Visionner la vidéo explicative]({row.get('LienVideo')})")
-                        with c_l2:
-                            if pd.notna(row.get("FichierB64")) and str(row.get("FichierB64")).strip():
-                                try:
-                                    f_data = base64.b64decode(str(row.get("FichierB64")))
-                                    st.download_button(
-                                        f"📎 Télécharger : {row.get('FichierNom', 'Document')}",
-                                        data=f_data,
-                                        file_name=str(row.get("FichierNom", "Fichier_joint")),
-                                        key=f"dl_taf_{idx}",
-                                    )
-                                except Exception:
-                                    pass
-                    st.markdown("---")
-            else:
-                st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
+                c_l1, c_l2 = st.columns(2)
+                with c_l1:
+                    if pd.notna(row.get("LienUrl")) and str(row.get("LienUrl")).strip():
+                        st.markdown(f"🔗 [Consulter le lien web]({row.get('LienUrl')})")
+                    if pd.notna(row.get("LienVideo")) and str(row.get("LienVideo")).strip():
+                        st.markdown(f"🎬 [Visionner la vidéo explicative]({row.get('LienVideo')})")
+                with c_l2:
+                    if pd.notna(row.get("FichierB64")) and str(row.get("FichierB64")).strip():
+                        try:
+                            f_data = base64.b64decode(str(row.get("FichierB64")))
+                            st.download_button(
+                                f"📎 Télécharger : {row.get('FichierNom', 'Document')}",
+                                data=f_data,
+                                file_name=str(row.get("FichierNom", "Fichier_joint")),
+                                key=f"dl_taf_{idx}",
+                            )
+                        except Exception:
+                            pass
+            st.markdown("---")
+    else:
+        st.info("🎉 Aucun travail à faire actuellement pour cette classe !")
 
-        def calculer_bulletin_eleve(classe, nom_eleve, periode):
+
+def calculer_bulletin_eleve(classe, nom_eleve, periode):
     """
     Calcule la moyenne générale, le rang et rassemble les lignes de notes 
     pour un élève donné sur une période spécifique.
@@ -1159,7 +1160,6 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
         return resultat_vide
         
     # Filtrer les notes pour la classe, l'élève et la période
-    # (Adaptez les noms de colonnes selon votre structure de base de données)
     filtre = notes_df[
         (notes_df.get("Classe", "") == classe) & 
         (notes_df.get("Élève", "") == nom_eleve) & 
@@ -1193,9 +1193,21 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             "Note": note,
             "Barème": bareme,
             "Coefficient": coef,
-            Appréciation: row.get("Appréciation", "")
+            "Appréciation": row.get("Appréciation", "")
         })
         
+        note_sur_20 = (note / bareme) * 20 if bareme > 0 else note
+        total_points += note_sur_20 * coef
+        total_coefficients += coef
+        
+    moyenne_gen = round(total_points / total_coefficients, 2) if total_coefficients > 0 else 0.0
+    
+    return {
+        "moyenne_generale": moyenne_gen,
+        "total_bareme": 20,
+        "rang": "1er",
+        "lignes": lignes_bulletin
+    }
         # Ramener la note sur 20 pour le calcul de la moyenne générale si nécessaire
         note_sur_20 = (note / bareme) * 20 if bareme > 0 else note
         total_points += note_sur_20 * coef
