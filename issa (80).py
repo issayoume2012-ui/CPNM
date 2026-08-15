@@ -774,7 +774,25 @@ if "classes_db" not in st.session_state:
 
 # Chargement Élèves
 if "eleves_db" not in st.session_state:
-  df_eleves = load_table_from_db("SELECT nom_complet AS \"Nom Complet\", prenom AS \"Prénom\", nom AS \"Nom\", date_de_naissance AS \"Date de Naissance\", classe AS \"Classe\", photo AS \"Photo\" FROM eleves", ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"])
+  df_el_save = edited_eleves.rename(
+    columns={
+        "Nom Complet": "nom_complet",
+        "Prénom": "prenom",
+        "Nom": "nom",
+        "Date de Naissance": "date_de_naissance",
+        "Classe": "classe",
+        "Photo": "photo",
+    }
+    )[
+    [
+        "nom_complet",
+        "prenom",
+        "nom",
+        "date_de_naissance",
+        "classe",
+        "photo",
+    ]
+    ]    
   st.session_state.eleves_db = df_eleves
 
 for col_req in [
