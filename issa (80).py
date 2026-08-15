@@ -3561,7 +3561,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.success("✅ Configuration enregistrée dans Supabase !")
             st.rerun()
 
-   with ta_emploi:
+    with ta_emploi:
         st.markdown("### 📅 Gestion des Emplois du Temps par Classe")
         st.info("Sélectionnez une classe pour configurer ses créneaux horaires et matières de la semaine.")
 
