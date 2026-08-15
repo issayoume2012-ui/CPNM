@@ -278,20 +278,46 @@ def save_df_to_db(df, table_name):
 # ==========================================
 # 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
 # ==========================================
+import bcrypt
+from psycopg2.extras import RealDictCursor
+
+def hacher_mot_de_passe(password: str) -> str:
+    """Hache un mot de passe en utilisant bcrypt."""
+    if not password:
+        return ""
+    sel = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode("utf-8"), sel).decode("utf-8")
+
 def hacher_tous_les_passwords_en_clair():
     """Script de maintenance à exécuter une fois."""
     conn = get_db_connection()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT email, password FROM prof_white_list")
-    profs = cur.fetchall()
-    
-    for prof in profs:
-        # Si ça ne commence pas par '$2b$', c'est probablement du texte clair
-        if prof['password'] and not prof['password'].startswith('$2b$'):
-            new_hash = hacher_mot_de_passe(prof['password'])
-            cur.execute("UPDATE prof_white_list SET password = %s WHERE email = %s", (new_hash, prof['email']))
-    conn.commit()
-    conn.close()
+    if not conn:
+        print("Erreur de connexion à la base de données.")
+        return
+        
+    try:
+        # Utilisation d'un curseur sous forme de dictionnaire
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT email, password FROM prof_white_list")
+        profs = cur.fetchall()
+        
+        for prof in profs:
+            pwd = prof.get('password')
+            # Si le mot existe et ne commence pas par le préfixe bcrypt '$2b$'
+            if pwd and not pwd.startswith('$2b$'):
+                new_hash = hacher_mot_de_passe(pwd)
+                cur.execute(
+                    "UPDATE prof_white_list SET password = %s WHERE email = %s", 
+                    (new_hash, prof['email'])
+                )
+        conn.commit()
+        print("Migration des mots de passe des professeurs réussie avec succès !")
+    except Exception as e:
+        conn.rollback()
+        print(f"Erreur lors de la migration : {e}")
+    finally:
+        cur.close()
+        conn.close()
 
 def verifier_mot_de_passe(email, password_saisi, hashed_db, table_name="prof_white_list"):
     """Vérifie le mot de passe et migre automatiquement les anciens mots de passe en clair."""
