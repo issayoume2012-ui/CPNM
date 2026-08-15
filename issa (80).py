@@ -1242,213 +1242,193 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
 
 elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900;">Espace Administration & Gestion des Listes Blanches</div>', unsafe_allow_html=True)
-    if not st.session_state.authenticated_admin:
-    with st.form("form_admin_auth"):
-      admin_email = st.text_input("Identifiant Administrateur (Email)")
-      admin_pwd = st.text_input("Mot de passe Administrateur", type="password")
-      btn_auth_admin = st.form_submit_button("Connexion Administration")
-
-      if btn_auth_admin:
-        admin_match = False
-        df_a = st.session_state.admin_white_list
-        if not df_a.empty:
-          for _, r in df_a.iterrows():
-            e_db = str(r.get("Email", "")).strip().lower()
-            p_db = str(r.get("Mot de passe", ""))
-            if e_db == admin_email.strip().lower() and (
-                verifier_mot_de_passe(admin_pwd, p_db) or admin_pwd == "cpnm2026"
-            ):
-              admin_match = True
-              break
-
-        if admin_match or (
-            admin_email.strip().lower() == ADMIN_EMAIL.lower()
-            and admin_pwd == "cpnm2026"
-        ):
-          st.session_state.authenticated_admin = True
-          enregistrer_log_action(
-              admin_email,
-              "CONNEXION_ADMIN",
-              "Connexion à l'espace d'administration",
-          )
-          st.success("Accès Administrateur accordé !")
-          st.rerun()
-        else:
-          st.error("Identifiants Administrateur non valides.")
-  else:
-    st.success("🔓 Session Administrateur Active")
-    if st.button("Se déconnecter du rôle Administrateur"):
-      st.session_state.authenticated_admin = False
-      st.rerun()
-
-    st.markdown("---")
-
-    ta_users, ta_classes, ta_eleves, ta_coeffs, ta_logs = st.tabs([
-        "👥 Gestion Utilisateurs & Habilitations",
-        "🏫 Gestion des Classes & Cycles",
-        "🎒 Répertoire Général des Élèves",
-        "📐 Matières, Barèmes & Coefficients",
-        "📜 Journal d'Audit & Sécurité",
-    ])
     
     if not st.session_state.authenticated_admin:
-        with st.form("admin_login_form"):
-            adm_email = st.text_input("Email administrateur", value=ADMIN_EMAIL)
-            adm_pass = st.text_input("Mot de passe", type="password")
-            if st.form_submit_button("Connexion Admin"):
-                if adm_email.strip().lower() == ADMIN_EMAIL.lower() and (adm_pass == "cpnm2026" or verifier_mot_de_passe(adm_pass, hacher_mot_de_passe("cpnm2026"))):
+        with st.form("form_admin_auth"):
+            admin_email = st.text_input("Identifiant Administrateur (Email)")
+            admin_pwd = st.text_input("Mot de passe Administrateur", type="password")
+            btn_auth_admin = st.form_submit_button("Connexion Administration")
+
+            if btn_auth_admin:
+                admin_match = False
+                df_a = st.session_state.admin_white_list if "admin_white_list" in st.session_state else pd.DataFrame()
+                if not df_a.empty:
+                    for _, r in df_a.iterrows():
+                        e_db = str(r.get("Email", "")).strip().lower()
+                        p_db = str(r.get("Mot de passe", ""))
+                        if e_db == admin_email.strip().lower() and (
+                            verifier_mot_de_passe(admin_pwd, p_db) or admin_pwd == "cpnm2026"
+                        ):
+                            admin_match = True
+                            break
+
+                if admin_match or (
+                    admin_email.strip().lower() == "admin@nelsonmandela.edu"
+                    and admin_pwd == "cpnm2026"
+                ):
                     st.session_state.authenticated_admin = True
-                    st.success("Connexion administrateur réussie !")
+                    enregistrer_log_action(
+                        admin_email,
+                        "CONNEXION_ADMIN",
+                        "Connexion à l'espace d'administration",
+                    )
+                    st.success("Accès Administrateur accordé !")
                     st.rerun()
                 else:
-                    st.error("Identifiants administrateur incorrects.")
+                    st.error("Identifiants Administrateur non valides.")
     else:
-        st.success("✅ Connecté en tant qu'Administrateur principal.")
-        if st.button("Se déconnecter admin"):
+        st.success("🔓 Session Administrateur Active")
+        if st.button("Se déconnecter du rôle Administrateur"):
             st.session_state.authenticated_admin = False
             st.rerun()
 
-        st.markdown("### 👥 Gestion de la Liste Blanche des Professeurs")
-        synchroniser_listes_blanches()
-        
-        edited_prof_wl = st.data_editor(
-            st.session_state.prof_white_list,
-            num_rows="dynamic",
-            use_container_width=True,
-            key="admin_prof_whitelist_editor"
-        )
-        
-        if st.button("💾 Enregistrer la Liste Blanche des Professeurs dans Supabase"):
-            st.session_state.prof_white_list = edited_prof_wl.copy()
-            st.session_state.prof_credentials = edited_prof_wl.copy()
+        st.markdown("---")
+
+        ta_users, ta_classes, ta_eleves, ta_coeffs, ta_logs = st.tabs([
+            "👥 Gestion Utilisateurs & Habilitations",
+            "🏫 Gestion des Classes & Cycles",
+            "🎒 Répertoire Général des Élèves",
+            "📐 Matières, Barèmes & Coefficients",
+            "📜 Journal d'Audit & Sécurité",
+        ])
+
+        with ta_users:
+            st.markdown("### 👥 Gestion de la Liste Blanche des Professeurs")
+            synchroniser_listes_blanches()
             
-            # Sauvegarde en base de données PostgreSQL
-            save_df_to_db(edited_prof_wl.rename(columns={
-                "Nom": "nom", "Prénom": "prenom", "Email": "email",
-                "Matière Principale": "matiere_principale", "Classe Attribuée": "classe_attribuee", "Mot de passe": "password"
-            }), "prof_white_list")
+            edited_prof_wl = st.data_editor(
+                st.session_state.prof_white_list,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="admin_prof_whitelist_editor"
+            )
             
-            enregistrer_log_action("Admin", "UPDATE_PROF_WHITELIST", "Mise à jour de la liste blanche des professeurs.")
-            st.success("✅ Liste blanche des professeurs synchronisée et sauvegardée avec succès dans Supabase !")
-            st.rerun()
-    st.markdown("---")
-      st.markdown("### 👨‍👩‍👧 Liste Blanche des Parents")
+            if st.button("💾 Enregistrer la Liste Blanche des Professeurs dans Supabase"):
+                st.session_state.prof_white_list = edited_prof_wl.copy()
+                st.session_state.prof_credentials = edited_prof_wl.copy()
+                
+                save_df_to_db(edited_prof_wl.rename(columns={
+                    "Nom": "nom", "Prénom": "prenom", "Email": "email",
+                    "Matière Principale": "matiere_principale", "Classe Attribuée": "classe_attribuee", "Mot de passe": "password"
+                }), "prof_white_list")
+                
+                enregistrer_log_action("Admin", "UPDATE_PROF_WHITELIST", "Mise à jour de la liste blanche des professeurs.")
+                st.success("✅ Liste blanche des professeurs synchronisée et sauvegardée avec succès dans Supabase !")
+                st.rerun()
 
-      edited_parents = st.data_editor(
-          st.session_state.parents_white_list,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_parents_admin",
-      )
+            st.markdown("---")
+            st.markdown("### 👨‍👩‍👧 Liste Blanche des Parents")
 
-      if st.button("💾 Enregistrer la Liste Blanche des Parents"):
-        st.session_state.parents_white_list = edited_parents
-        
-        # Persistance Supabase / PostgreSQL
-        df_par_save = edited_parents.rename(columns={
-            "Téléphone": "telephone", "Prénom Élève": "prenom_eleve", "Nom Élève": "nom_eleve",
-            "Année Naissance": "annee_naissance", "Classe": "classe"
-        })[["telephone", "prenom_eleve", "nom_eleve", "annee_naissance", "classe"]]
-        save_df_to_db(df_par_save, "parents_white_list")
+            edited_parents = st.data_editor(
+                st.session_state.parents_white_list,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_parents_admin",
+            )
 
-        enregistrer_log_action(
-            "Admin", "UPDATE_PARENTS", "Mise à jour de la liste blanche parents"
-        )
-        st.success("✅ Liste des parents enregistrée dans Supabase !")
-        st.rerun()
+            if st.button("💾 Enregistrer la Liste Blanche des Parents"):
+                st.session_state.parents_white_list = edited_parents
+                
+                df_par_save = edited_parents.rename(columns={
+                    "Téléphone": "telephone", "Prénom Élève": "prenom_eleve", "Nom Élève": "nom_eleve",
+                    "Année Naissance": "annee_naissance", "Classe": "classe"
+                })[["telephone", "prenom_eleve", "nom_eleve", "annee_naissance", "classe"]]
+                save_df_to_db(df_par_save, "parents_white_list")
 
-    with ta_classes:
-      st.markdown("### 🏫 Structure des Classes")
+                enregistrer_log_action(
+                    "Admin", "UPDATE_PARENTS", "Mise à jour de la liste blanche parents"
+                )
+                st.success("✅ Liste des parents enregistrée dans Supabase !")
+                st.rerun()
 
-      edited_classes = st.data_editor(
-          st.session_state.classes_db,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_classes_admin",
-      )
+        with ta_classes:
+            st.markdown("### 🏫 Structure des Classes")
 
-      if st.button("💾 Sauvegarder la Structure des Classes"):
-        st.session_state.classes_db = edited_classes
-        
-        # Persistance Supabase / PostgreSQL
-        df_cls_save = edited_classes.rename(columns={
-            "Classe": "classe", "Cycle": "cycle", "Professeur Responsable": "professeur_responsable"
-        })[["classe", "cycle", "professeur_responsable"]]
-        save_df_to_db(df_cls_save, "classes")
+            edited_classes = st.data_editor(
+                st.session_state.classes_db,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_classes_admin",
+            )
 
-        enregistrer_log_action(
-            "Admin", "UPDATE_CLASSES", "Mise à jour de la structure des classes"
-        )
-        st.success("✅ Classes mises à jour dans Supabase !")
-        st.rerun()
+            if st.button("💾 Sauvegarder la Structure des Classes"):
+                st.session_state.classes_db = edited_classes
+                
+                df_cls_save = edited_classes.rename(columns={
+                    "Classe": "classe", "Cycle": "cycle", "Professeur Responsable": "professeur_responsable"
+                })[["classe", "cycle", "professeur_responsable"]]
+                save_df_to_db(df_cls_save, "classes")
 
-    with ta_eleves:
-      st.markdown("### 🎒 Répertoire et Inscription des Élèves")
+                enregistrer_log_action(
+                    "Admin", "UPDATE_CLASSES", "Mise à jour de la structure des classes"
+                )
+                st.success("✅ Classes mises à jour dans Supabase !")
+                st.rerun()
 
-      edited_eleves = st.data_editor(
-          st.session_state.eleves_db,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_eleves_admin",
-      )
+        with ta_eleves:
+            st.markdown("### 🎒 Répertoire et Inscription des Élèves")
 
-      if st.button("💾 Enregistrer le Répertoire des Élèves"):
-        edited_eleves = trier_eleves_par_nom(edited_eleves)
-        st.session_state.eleves_db = edited_eleves
-        
-        # Persistance Supabase / PostgreSQL
-        df_el_save = edited_eleves.rename(columns={
-            "Nom Complet": "nom_complet", "Prénom": "prenom", "Nom": "nom",
-            "Date de Naissance": "date_de_naissance", "Classe": "classe", "Photo": "photo"
-        })[["nom_complet", "prenom", "nom", "date_de_naissance", "classe", "photo"]]
-        save_df_to_db(df_el_save, "eleves")
+            edited_eleves = st.data_editor(
+                st.session_state.eleves_db,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_eleves_admin",
+            )
 
-        enregistrer_log_action(
-            "Admin", "UPDATE_ELEVES", "Mise à jour du répertoire des élèves"
-        )
-        st.success("✅ Répertoire des élèves sauvegardé dans Supabase !")
-        st.rerun()
+            if st.button("💾 Enregistrer le Répertoire des Élèves"):
+                edited_eleves = trier_eleves_par_nom(edited_eleves)
+                st.session_state.eleves_db = edited_eleves
+                
+                df_el_save = edited_eleves.rename(columns={
+                    "Nom Complet": "nom_complet", "Prénom": "prenom", "Nom": "nom",
+                    "Date de Naissance": "date_de_naissance", "Classe": "classe", "Photo": "photo"
+                })[["nom_complet", "prenom", "nom", "date_de_naissance", "classe", "photo"]]
+                save_df_to_db(df_el_save, "eleves")
 
-    with ta_coeffs:
-      st.markdown("### 📐 Paramétrage des Matières & Coefficients")
+                enregistrer_log_action(
+                    "Admin", "UPDATE_ELEVES", "Mise à jour du répertoire des élèves"
+                )
+                st.success("✅ Répertoire des élèves sauvegardé dans Supabase !")
+                st.rerun()
 
-      edited_coeffs = st.data_editor(
-          st.session_state.coefficients_db,
-          num_rows="dynamic",
-          use_container_width=True,
-          key="editor_coeffs_admin",
-      )
+        with ta_coeffs:
+            st.markdown("### 📐 Paramétrage des Matières & Coefficients")
 
-      if st.button("💾 Sauvegarder le Paramétrage des Coefficients"):
-        st.session_state.coefficients_db = edited_coeffs
-        
-        # Persistance Supabase / PostgreSQL
-        df_coeff_save = edited_coeffs.rename(columns={
-            "Classe": "classe", "Matière": "matiere", "Coefficient": "coefficient", "Barème": "bareme"
-        })[["classe", "matiere", "coefficient", "bareme"]]
-        save_df_to_db(df_coeff_save, "coefficients")
+            edited_coeffs = st.data_editor(
+                st.session_state.coefficients_db,
+                num_rows="dynamic",
+                use_container_width=True,
+                key="editor_coeffs_admin",
+            )
 
-        enregistrer_log_action(
-            "Admin", "UPDATE_COEFFS", "Mise à jour des coefficients de cours"
-        )
-        st.success("✅ Configuration enregistrée dans Supabase !")
-        st.rerun()
+            if st.button("💾 Sauvegarder le Paramétrage des Coefficients"):
+                st.session_state.coefficients_db = edited_coeffs
+                
+                df_coeff_save = edited_coeffs.rename(columns={
+                    "Classe": "classe", "Matière": "matiere", "Coefficient": "coefficient", "Barème": "bareme"
+                })[["classe", "matiere", "coefficient", "bareme"]]
+                save_df_to_db(df_coeff_save, "coefficients")
 
-    with ta_logs:
-      st.markdown("### 📜 Journal de Traçabilité & Audit")
-      if (
-          "audit_logs_db" in st.session_state
-          and not st.session_state.audit_logs_db.empty
-      ):
-        st.dataframe(
-            st.session_state.audit_logs_db.sort_values(
-                by="horodatage", ascending=False
-            ),
-            use_container_width=True,
-        )
-      else:
-        st.info("Aucune activité enregistrée dans le journal.")
+                enregistrer_log_action(
+                    "Admin", "UPDATE_COEFFS", "Mise à jour des coefficients de cours"
+                )
+                st.success("✅ Configuration enregistrée dans Supabase !")
+                st.rerun()
 
+        with ta_logs:
+            st.markdown("### 📜 Journal de Traçabilité & Audit")
+            if (
+                "audit_logs_db" in st.session_state
+                and not st.session_state.audit_logs_db.empty
+            ):
+                st.dataframe(
+                    st.session_state.audit_logs_db.sort_values(
+                        by="horodatage", ascending=False
+                    ),
+                    use_container_width=True,
+                )
+            else:
+                st.info("Aucune activité enregistrée dans le journal.")
 # ==========================================
 # 9. RAPPORTS GLOBAUX & ASSISTANT IA
 # ==========================================
