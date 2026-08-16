@@ -259,23 +259,25 @@ def load_table_from_db(query, columns):
 import streamlit as st
 import pandas as pd
 
+import pandas as pd
+import streamlit as st
+
 def save_df_to_db(df: pd.DataFrame, table_name: str):
     """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase de manière dynamique selon la table."""
     conn = get_db_connection()
     if conn is None:
         st.error("Connexion à la base de données impossible.")
-        return
+        return False
     
     try:
         with conn.cursor() as cur:
             if not df.empty:
                 cols = list(df.columns)
-                cols_str = ",".join(cols)
+                cols_str = ",".join([f'"{col}"' for col in cols])  # Échappement des noms de colonnes
                 placeholders = ",".join(["%s"] * len(cols))
                 
                 # Adaptation dynamique de la clause CONFLICT selon la table
                 if table_name in ["edt_grid", "emploi_du_temps"]:
-                    # Utilisation de la contrainte explicite si elle existe dans la BDD
                     conflict_clause = "ON CONFLICT ON CONSTRAINT unique_classe_jour_horaire"
                     update_cols = [c for c in cols if c not in ["classe", "jour", "horaire"]]
                 elif table_name in ["messages_parents", "travail_a_faire"]:
@@ -292,7 +294,7 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     update_cols = []
 
                 if conflict_clause and update_cols:
-                    update_str = ", ".join([f"{col} = EXCLUDED.{col}" for col in update_cols])
+                    update_str = ", ".join([f'"{col}" = EXCLUDED="{col}"' for col in update_cols])
                     query = f"""
                         INSERT INTO {table_name} ({cols_str}) 
                         VALUES ({placeholders})
@@ -307,24 +309,27 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         DO NOTHING;
                     """
                 else:
-                    # Insertion simple si pas de conflit géré
                     query = f"""
                         INSERT INTO {table_name} ({cols_str}) 
                         VALUES ({placeholders});
                     """
                 
-                # Conversion du DataFrame en liste de tuples
-                data_tuples = [tuple(x) for x in df.to_numpy()]
+                # Conversion sécurisée du DataFrame en liste de tuples (remplacement des NaN par None pour SQL NULL)
+                df_cleaned = df.where(pd.notnull(df), None)
+                data_tuples = [tuple(x) for x in df_cleaned.to_numpy()]
+                
                 cur.executemany(query, data_tuples)
                 
-            conn.commit()
-            return True
+        conn.commit()
+        return True
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         st.error(f"Erreur de sauvegarde dans {table_name} : {e}")
         raise e
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 # ==========================================
 # 0. BIS. GESTION DE LA SÉCURITÉ LOCALE
 # ==========================================
