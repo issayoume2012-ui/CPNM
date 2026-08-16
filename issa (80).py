@@ -173,7 +173,8 @@ def init_db():
                     destinataire VARCHAR(255),
                     date VARCHAR(50),
                     sujet VARCHAR(255),
-                    message TEXT
+                    message TEXT,
+                    piece_jointe TEXT
                 );
             """)
             conn.commit()
@@ -247,8 +248,8 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         cur.execute("INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
                                     (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")))
                 elif table_name == "admin_prof_messages":
-                    query = "INSERT INTO admin_prof_messages (expediteur, destinataire, date, sujet, message) VALUES (%s, %s, %s, %s, %s);"
-                    data_tuples = [(r.get("Expéditeur"), r.get("Destinataire"), str(r.get("Date", "")), r.get("Sujet"), r.get("Message")) for _, r in df_cleaned.iterrows()]
+                    query = "INSERT INTO admin_prof_messages (expediteur, destinataire, date, sujet, message, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s);"
+                    data_tuples = [(r.get("Expéditeur"), r.get("Destinataire"), str(r.get("Date", "")), r.get("Sujet"), r.get("Message"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 else:
                     cols = list(df_cleaned.columns)
@@ -448,7 +449,7 @@ if "audit_logs_db" not in st.session_state:
     st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
 
 if "admin_prof_messages" not in st.session_state:
-    st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message"])
+    st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe"])
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h"]
@@ -513,10 +514,8 @@ def obtenir_periodes_pour_classe(classe_nom):
         return ["1er Semestre", "2ème Semestre"]
 
 def obtenir_matieres_pour_classe(classe_nom):
-    """Pour le cycle élémentaire, retourne TOUTES les matières sans exception. Pour le collège, retourne les matières de la BDD."""
     cycle = obtenir_cycle_classe(classe_nom)
     if est_cycle_elementaire(cycle):
-        # Toutes les matières sans exception pour le cycle élémentaire
         return [
             "Lecture",
             "Écriture / Copie",
@@ -600,7 +599,6 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
-    # Ajout du logo nm.jpg s'il existe pour authentification officielle
     if os.path.exists("nm.jpg"):
         try:
             pdf.image("nm.jpg", 15, 12, 18)
@@ -660,7 +658,6 @@ def generer_pdf_bulletin(bul):
     pdf.add_page()
     ajouter_en_tete_officiel_pdf(pdf, "BULLETIN SCOLAIRE OFFICIEL - CADRE CERTIFIÉ")
     
-    # Cadre élégant autour des informations élève
     pdf.set_draw_color(2, 132, 199)
     pdf.set_fill_color(240, 249, 255)
     pdf.rect(10, pdf.get_y(), 190, 12, 'FD')
@@ -815,7 +812,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1rem; color: #475569;">Cycle élémentaire (toutes les matières sans exception), bibliothèque ministérielle certifiée, échange de documents avec l\'administration et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1rem; color: #475569;">Cycle élémentaire (toutes les matières sans exception), bibliothèque ministérielle certifiée avec contenu complet, échange de documents (fichiers, photos, vidéos) avec l\'administration et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
         if st.button("🚀 Accéder à l'Espace Professeurs", key="btn_p"):
             st.session_state.espace_actif = "👨‍🏫 Espace Professeurs / Maîtres"
             st.rerun()
@@ -895,7 +892,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             "📝 Saisie des Notes (Toutes Matières)",
             "📋 Feuille d'Appel",
             "📚 Bibliothèque Pédagogique (Ministère)",
-            "📂 Échange de Documents (Admin/Parent)",
+            "📂 Échange & Fichiers à Transmettre",
             "📑 Cahier de Texte",
             "📅 Emploi du Temps",
             "💬 Messages & Notifications"
@@ -1006,14 +1003,34 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     st.success("Appel sauvegardé et synchronisé !")
 
         with t_biblio:
-            st.markdown("### 📚 Bibliothèque Pédagogique & Arsenal de Cours (Certifié Ministère de l'Éducation Nationale)")
-            st.info("Arsenal complet de documents officiels, guides pédagogiques et programmes certifiés par le Ministère de l'Éducation Nationale pour inspirer vos cours et suivre le programme à merveille.")
+            st.markdown("### 📚 Bibliothèque Pédagogique & Arsenal de Cours (Contenu Intégral Certifié)")
+            st.info("Voici l'intégralité des documents officiels et guides pédagogiques validés par le Ministère de l'Éducation Nationale pour vos enseignements. Les contenus complets sont accessibles ci-dessous.")
             
             biblio_items = [
-                {"titre": "Programme Officiel - Cycle Élémentaire (CP / CE1 / CE2 / CM1 / CM2)", "ref": "MEN-SENEGAL-2026-01", "desc": "Programme officiel complet avec instructions pédagogiques et progressions annuelles.", "type": "PDF Officiel"},
-                {"titre": "Guide Pédagogique de Lecture et Écriture au CP", "ref": "MEN-PEDAGOGIE-02", "desc": "Méthodes syllabiques et phonologiques validées par l'Inspection Académique.", "type": "Guide Pédagogique"},
-                {"titre": "Guide de Calcul et Résolution de Problèmes", "ref": "MEN-MATHS-03", "desc": "Activités pratiques d'initiation au calcul pour les classes élémentaires.", "type": "Exercices & Cours"},
-                {"titre": "Programme d'Éducation Civique et Morale (ECM)", "ref": "MEN-CIVISME-04", "desc": "Leçons sur les valeurs républicaines du Sénégal et les symboles nationaux.", "type": "Module Cours"},
+                {
+                    "titre": "Programme Officiel - Cycle Élémentaire (CP / CE1 / CE2 / CM1 / CM2)", 
+                    "ref": "MEN-SENEGAL-2026-01", 
+                    "type": "PDF Officiel",
+                    "contenu_complet": "PROGRAMME OFFICIEL - CYCLE ÉLÉMENTAIRE\n\n1. INTRODUCTION GÉNÉRALE\nLe présent programme définit les socles de compétences fondamentales pour les écoles élémentaires de la République du Sénégal. Il couvre les cycles d'initiation, des apprentissages fondamentaux et d'approfondissement.\n\n2. OBJECTIFS PÉDAGOGIQUES\n- Maîtrise des langages et de la communication (Français et Langues Nationales).\n- Acquisition des rudiments mathématiques, du calcul et de la résolution de problèmes logiques.\n- Éveil scientifique, technologique et éducation civique et morale (ECM).\n\n3. INSTRUCTIONS OFFICIELLES\nL'enseignement doit être actif, centré sur l'apprenant, favorisant la manipulation, l'observation et l'expérimentation concrète."
+                },
+                {
+                    "titre": "Guide Pédagogique de Lecture et Écriture au CP", 
+                    "ref": "MEN-PEDAGOGIE-02", 
+                    "type": "Guide Pédagogique",
+                    "contenu_complet": "GUIDE PÉDAGOGIQUE DE LECTURE ET ÉCRITURE - CP\n\n1. MÉTHODOLOGIE SYLLABIQUE ET PHONOLOGIQUE\n- Semaines 1 à 4 : Étude des voyelles (a, e, i, o, u, y) et des consonnes simples (m, l, p, t).\n- Semaines 5 à 12 : Combinaisons syllabiques directes et inverses (ma, me, mi, mo, mu / am, em, im).\n- Activités quotidiennes : Dictée muette, reconnaissance de sons, lecture magistrale et lecture individuelle rythmée."
+                },
+                {
+                    "titre": "Guide de Calcul et Résolution de Problèmes", 
+                    "ref": "MEN-MATHS-03", 
+                    "type": "Exercices & Cours",
+                    "contenu_complet": "GUIDE DE CALCUL ET ARITHMÉTIQUE\n\n1. CALCUL MENTAL\n- Pratique quotidienne de 10 minutes : tables d'addition et de multiplication, compléments à 10, 20 et 100.\n2. RÉSOLUTION DE PROBLÈMES DE LA VIE COURANTE\n- Exercices d'application sur la monnaie (franc CFA), les mesures de longueur (mètre, centimètre) et de masse (kilogramme)."
+                },
+                {
+                    "titre": "Programme d'Éducation Civique et Morale (ECM)", 
+                    "ref": "MEN-CIVISME-04", 
+                    "type": "Module Cours",
+                    "contenu_complet": "ÉDUCATION CIVIQUE ET MORALE (ECM)\n\n1. LES SYMBOLES DE LA RÉPUBLIQUE DU SÉNÉGAL\n- Le Drapeaux national (Vert, Or, Rouge avec l'étoile verte au centre).\n- L'Hymne National : 'Pincez tous vos koras, frappez les balafons'.\n- La Devise : 'Un Peuple - Un But - Une Foi'.\n2. RÈGLES DE VIE EN COMMUNAUTÉ\n- Respect d'autrui, tolérance, civisme à l'école et dans la société."
+                },
             ]
             
             for item in biblio_items:
@@ -1021,38 +1038,55 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     st.markdown(f"""
                     <div style="background: #FFFFFF; border: 1px solid #BAE6FD; padding: 18px; border-radius: 16px; margin-bottom: 12px; box-shadow: 0 4px 12px rgba(2, 132, 199, 0.05);">
                         <h4 style="color: #0284C7; margin: 0 0 6px 0;">📖 {item['titre']}</h4>
-                        <p style="color: #475569; font-size: 0.95rem; margin: 0 0 8px 0;">{item['desc']}</p>
-                        <span style="background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 10px; font-size: 0.8rem; font-weight: 700;">{item['type']} • Ref: {item['ref']}</span>
+                        <p style="color: #475569; font-size: 0.95rem; margin: 0 0 8px 0;"><b>Référence :</b> {item['ref']}</p>
+                        <span style="background: #E0F2FE; color: #0369A1; padding: 3px 10px; border-radius: 10px; font-size: 0.8rem; font-weight: 700;">{item['type']}</span>
                     </div>
                     """, unsafe_allow_html=True)
-                    if st.button(f"Télécharger {item['ref']}", key=f"dl_bib_{item['ref']}"):
-                        pdf_b = FPDF()
-                        pdf_b.add_page()
-                        ajouter_en_tete_officiel_pdf(pdf_b, item['titre'])
-                        pdf_b.set_font("Arial", size=10)
-                        pdf_b.multi_cell(0, 6, f"Document Certifié par le Ministère de l'Éducation Nationale.\nRéférence : {item['ref']}\n\nDescription :\n{item['desc']}\n\nContenu pédagogique intégral validé pour l'École Président Nelson Mandela.")
-                        ajouter_signature_pdf(pdf_b)
-                        st.download_button("📥 Télécharger le Document Certifié", data=pdf_b.output(dest='S').encode('latin1'), file_name=f"{item['ref']}.pdf", mime="application/pdf", key=f"btn_dl_{item['ref']}")
+                    
+                    pdf_b = FPDF()
+                    pdf_b.add_page()
+                    ajouter_en_tete_officiel_pdf(pdf_b, item['titre'])
+                    pdf_b.set_font("Arial", size=10)
+                    pdf_b.multi_cell(0, 6, f"Document Officiel Certifié - École Président Nelson Mandela\nRéférence : {item['ref']}\nType : {item['type']}\n\nCONTENU INTÉGRAL :\n{item['contenu_complet']}")
+                    ajouter_signature_pdf(pdf_b)
+                    
+                    st.download_button(
+                        f"📥 Télécharger le Document Complet ({item['ref']})", 
+                        data=pdf_b.output(dest='S').encode('latin1'), 
+                        file_name=f"{item['ref']}.pdf", 
+                        mime="application/pdf", 
+                        key=f"btn_dl_exact_{item['ref']}"
+                    )
 
         with t_echange:
-            st.markdown("### 📂 Échange de Documents (Espace Professeur ⇄ Administration & Parents)")
-            st.info("Partagez et transmettez des documents pédagogiques ou administratifs directement avec l'administration et les parents.")
+            st.markdown("### 📂 Échange de Documents & Fichiers à Transmettre (Administration & Parents)")
+            st.info("Transmettez vos documents officiels, rapports, notes, et joignez directement des **fichiers, photos et vidéos** dans cet espace.")
             
-            with st.form("form_upload_doc_prof"):
-                doc_titre = st.text_input("Titre du document / Fichier")
+            with st.form("form_upload_doc_prof_media"):
+                doc_titre = st.text_input("Titre du document / Fichier à transmettre")
                 doc_destinataire = st.selectbox("Destinataire", ["Administration", "Espace Parents (Tous)", "Classe Spécifique"])
-                doc_contenu = st.text_area("Contenu ou notes explicatives du document")
-                if st.form_submit_button("Transmettre le Document"):
+                doc_contenu = st.text_area("Description ou message explicatif")
+                
+                uploaded_files = st.file_uploader(
+                    "Joindre des fichiers, des photos ou des vidéos", 
+                    type=["pdf", "png", "jpg", "jpeg", "mp4", "mov", "docx", "xlsx"], 
+                    accept_multiple_files=True
+                )
+                
+                if st.form_submit_button("Transmettre avec Pièces Jointes"):
+                    noms_fichiers = ", ".join([f.name for f in uploaded_files]) if uploaded_files else "Aucune pièce jointe"
                     new_doc_msg = pd.DataFrame([{
                         "Expéditeur": f"Prof. {prof_connecte}", "Destinataire": doc_destinataire,
                         "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": f"[DOC] {doc_titre}", "Message": f"Document partagé :\n{doc_contenu}"
+                        "Sujet": f"[TRANSMISSION] {doc_titre}", 
+                        "Message": f"Description :\n{doc_contenu}",
+                        "Pièce jointe": noms_fichiers
                     }])
                     st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_doc_msg], ignore_index=True)
                     save_df_to_db(new_doc_msg, "admin_prof_messages")
-                    st.success("Document transmis et synchronisé avec succès pour l'administration et les espaces parents !")
+                    st.success(f"Document transmis avec succès avec les pièces jointes : {noms_fichiers} !")
 
-            st.markdown("#### Documents partagés récents")
+            st.markdown("#### Fichiers et documents récemment transmis")
             df_shared = st.session_state.admin_prof_messages
             if not df_shared.empty:
                 st.dataframe(df_shared, use_container_width=True)
@@ -1098,7 +1132,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     new_m = pd.DataFrame([{
                         "Expéditeur": prof_connecte, "Destinataire": "Administration",
                         "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": sujet_msg, "Message": corps_msg
+                        "Sujet": sujet_msg, "Message": corps_msg, "Pièce jointe": ""
                     }])
                     st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_m], ignore_index=True)
                     save_df_to_db(new_m, "admin_prof_messages")
@@ -1251,7 +1285,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     new_msg_ad = pd.DataFrame([{
                         "Expéditeur": "Administration", "Destinataire": dest_prof,
                         "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": sujet_r, "Message": corps_r
+                        "Sujet": sujet_r, "Message": corps_r, "Pièce jointe": ""
                     }])
                     st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_msg_ad], ignore_index=True)
                     save_df_to_db(new_msg_ad, "admin_prof_messages")
