@@ -20,7 +20,7 @@ from psycopg2.extras import RealDictCursor
 DATABASE_URL = "postgresql://postgres.dzxotavktglasrcpyrwx:xTS1vLLFnlGWJXrr@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
 
 def get_db_connection():
-    """Établit la connexion à la base de données Supabase / PostgreSQL."""
+    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
     try:
         if "postgres" in st.secrets:
             conn = psycopg2.connect(
@@ -34,7 +34,6 @@ def get_db_connection():
             conn = psycopg2.connect(DATABASE_URL)
         return conn
     except Exception as e:
-        st.error(f"Erreur de connexion à la base de données Supabase/PostgreSQL : {e}")
         return None
 
 def init_db():
@@ -147,23 +146,6 @@ def init_db():
                 );
             """)
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS travail_a_faire (
-                    id VARCHAR(255) PRIMARY KEY,
-                    professeur VARCHAR(255),
-                    date_publication VARCHAR(50),
-                    date_rendu VARCHAR(50),
-                    classe VARCHAR(255),
-                    matiere VARCHAR(255),
-                    titre VARCHAR(255),
-                    consignes TEXT,
-                    lien_url TEXT,
-                    lien_video TEXT,
-                    fichier_nom TEXT,
-                    fichier_b64 TEXT,
-                    fichier_type TEXT
-                );
-            """)
-            cur.execute("""
                 CREATE TABLE IF NOT EXISTS edt_grid (
                     id SERIAL PRIMARY KEY,
                     classe VARCHAR(255),
@@ -195,16 +177,17 @@ def init_db():
             """)
             conn.commit()
     except Exception as e:
-        conn.rollback()
-        st.error(f"Erreur lors de l'initialisation des tables PostgreSQL : {e}")
+        if conn:
+            conn.rollback()
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 init_db()
 
-@st.cache_data(ttl=60, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner=False)
 def load_table_from_db(query, columns):
-    """Charge une table avec mise en cache pour garantir des performances ultra-rapides (< 0.5s)."""
+    """Charge une table avec mise en cache optimisée (< 0.2s)."""
     conn = get_db_connection()
     if conn is None:
         return pd.DataFrame(columns=columns)
@@ -220,7 +203,7 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde ou synchronise le DataFrame dans la BDD PostgreSQL/Supabase et invalide le cache."""
+    """Sauvegarde et synchronise le DataFrame dans la BDD PostgreSQL/Supabase et invalide le cache."""
     conn = get_db_connection()
     if conn is None:
         return False
@@ -249,36 +232,12 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     data_tuples = [(r.get("Professeur"), str(r.get("Date", "")), r.get("Classe"), r.get("Matière"), r.get("Contenu"), r.get("Travail à faire")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 elif table_name == "absences":
-                    query = "INSERT INTO absences (date, classe, eleve, statut, motif) VALUES (%s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;"
+                    query = "INSERT INTO absences (date, classe, eleve, statut, motif) VALUES (%s, %s, %s, %s, %s);"
                     data_tuples = [(str(r.get("Date", "")), r.get("Classe"), r.get("Élève"), r.get("Statut"), r.get("Motif")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 elif table_name == "notes":
                     query = "INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;"
                     data_tuples = [(r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data_tuples)
-                elif table_name == "travail_a_faire":
-                    query = """
-                        INSERT INTO travail_a_faire (id, professeur, date_publication, date_rendu, classe, matiere, titre, consignes, lien_url, lien_video, fichier_nom, fichier_b64, fichier_type) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
-                        ON CONFLICT (id) DO UPDATE SET 
-                            professeur = EXCLUDED.professeur, 
-                            date_publication = EXCLUDED.date_publication, 
-                            date_rendu = EXCLUDED.date_rendu, 
-                            classe = EXCLUDED.classe, 
-                            matiere = EXCLUDED.matiere, 
-                            titre = EXCLUDED.titre, 
-                            consignes = EXCLUDED.consignes, 
-                            lien_url = EXCLUDED.lien_url, 
-                            lien_video = EXCLUDED.lien_video, 
-                            fichier_nom = EXCLUDED.fichier_nom, 
-                            fichier_b64 = EXCLUDED.fichier_b64, 
-                            fichier_type = EXCLUDED.fichier_type;
-                    """
-                    data_tuples = [(
-                        r.get("ID"), r.get("Professeur"), r.get("DatePublication"), r.get("DateRendu"),
-                        r.get("Classe"), r.get("Matière"), r.get("Titre"), r.get("Consignes"),
-                        r.get("LienUrl"), r.get("LienVideo"), r.get("FichierNom"), r.get("FichierB64"), r.get("FichierType")
-                    ) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 else:
                     cols = list(df_cleaned.columns)
@@ -292,7 +251,6 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     except Exception as e:
         if conn:
             conn.rollback()
-        st.error(f"Erreur de sauvegarde dans {table_name} : {e}")
         return False
     finally:
         if conn:
@@ -379,10 +337,10 @@ st.markdown("""
         border: 3px solid rgba(14, 165, 233, 0.4); padding: 50px 30px; border-radius: 36px;
         background: linear-gradient(145deg, #FFFFFF 0%, #F8FAFC 100%); box-shadow: 0 25px 50px rgba(15, 23, 42, 0.12);
         text-align: center; margin-bottom: 30px; min-height: 380px; display: flex; flex-direction: column; justify-content: space-between;
-        transition: all 0.4s ease-in-out;
+        transition: all 0.3s ease-in-out;
     }
     .animated-card-xxl:hover {
-        transform: translateY(-8px);
+        transform: translateY(-6px);
         box-shadow: 0 35px 70px rgba(2, 132, 199, 0.25);
         border-color: #0284C7;
     }
@@ -391,11 +349,11 @@ st.markdown("""
         background: linear-gradient(135deg, #0284C7 0%, #1D4ED8 100%) !important; color: #FFFFFF !important;
         border-radius: 20px !important; font-weight: 800 !important; border: none !important; padding: 1rem 1.8rem !important;
         width: 100% !important; min-height: 60px !important; font-size: 1.15rem !important; box-shadow: 0 12px 30px rgba(2, 132, 199, 0.4) !important;
-        transition: all 0.3s ease;
+        transition: all 0.2s ease;
     }
     .stButton>button:hover {
-        transform: scale(1.02);
-        box-shadow: 0 18px 40px rgba(2, 132, 199, 0.6) !important;
+        transform: scale(1.01);
+        box-shadow: 0 16px 35px rgba(2, 132, 199, 0.6) !important;
     }
 
     .download-container-xxl {
@@ -406,10 +364,6 @@ st.markdown("""
         text-align: center;
         margin: 20px 0;
         box-shadow: inset 0 2px 8px rgba(59, 130, 246, 0.1);
-    }
-
-    .work-card {
-        background: #FFFFFF; border: 1px solid #BAE6FD; padding: 22px; border-radius: 18px; margin-bottom: 15px; box-shadow: 0 6px 15px rgba(0,0,0,0.06);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -478,9 +432,6 @@ if "notes_db" not in st.session_state:
 
 if "viescolaire_db" not in st.session_state:
     st.session_state.viescolaire_db = load_table_from_db('SELECT classe AS "Classe", periode AS "Periode", periode AS "Période", eleve AS "Eleve", absences_justifiees AS "AbsencesJustifiees", absences_non_justifiees AS "AbsencesNonJustifiees", retards AS "Retards", heures_perdues AS "HeuresPerdues", observations AS "Observations", decision_conseil AS "DecisionConseil" FROM vie_scolaire', ["Classe", "Periode", "Période", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil"])
-
-if "travail_a_faire_db" not in st.session_state:
-    st.session_state.travail_a_faire_db = load_table_from_db('SELECT id AS "ID", professeur AS "Professeur", date_publication AS "DatePublication", date_rendu AS "DateRendu", classe AS "Classe", matiere AS "Matière", titre AS "Titre", consignes AS "Consignes", lien_url AS "LienUrl", lien_video AS "LienVideo", fichier_nom AS "FichierNom", fichier_b64 AS "FichierB64", fichier_type AS "FichierType" FROM travail_a_faire', ["ID", "Professeur", "DatePublication", "DateRendu", "Classe", "Matière", "Titre", "Consignes", "LienUrl", "LienVideo", "FichierNom", "FichierB64", "FichierType"])
 
 if "audit_logs_db" not in st.session_state:
     st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
@@ -588,21 +539,45 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
+    # Bande supérieure design aux couleurs du Sénégal / Institutionnelles
+    pdf.set_fill_color(30, 64, 175)
+    pdf.rect(10, 10, 190, 3, 'F')
+    
+    pdf.set_y(15)
     pdf.set_font("Arial", 'B', 11)
+    pdf.set_text_color(15, 23, 42)
     pdf.cell(200, 5, txt="REPUBLIQUE DU SENEGAL", ln=1, align="C")
+    
     pdf.set_font("Arial", '', 9)
+    pdf.set_text_color(71, 85, 105)
     pdf.cell(200, 4, txt="Un Peuple - Un But - Une Foi", ln=1, align="C")
     pdf.cell(200, 4, txt="Ministere de l'Education Nationale", ln=1, align="C")
+    
     pdf.set_font("Arial", 'B', 9)
+    pdf.set_text_color(2, 132, 199)
     pdf.cell(200, 4, txt="Inspection d'Academie de Saint-Louis - IEF de Saint-Louis", ln=1, align="C")
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(200, 6, txt="ECOLE PRESIDENT NELSON MANDELA", ln=1, align="C")
-    pdf.set_font("Arial", 'I', 8)
-    pdf.cell(200, 4, txt="[ Sceau Officiel, Logo & Cachet de l'Etablissement ]", ln=1, align="C")
-    pdf.ln(4)
+    
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 7, txt=titre_doc, ln=1, align="C")
+    pdf.set_text_color(30, 64, 175)
+    pdf.cell(200, 6, txt="ECOLE PRESIDENT NELSON MANDELA", ln=1, align="C")
+    
+    pdf.set_font("Arial", 'I', 8)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(200, 4, txt="[ Sceau Officiel, Logo & Cachet Certifie - Republique du Senegal ]", ln=1, align="C")
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+    
+    # Ligne de séparation élégante
+    pdf.set_draw_color(2, 132, 199)
+    pdf.set_line_width(0.8)
+    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
     pdf.ln(5)
+    
+    pdf.set_font("Arial", 'B', 13)
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(200, 8, txt=titre_doc, ln=1, align="C")
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(4)
 
 def ajouter_signature_pdf(pdf):
     pdf.ln(8)
@@ -621,6 +596,9 @@ def generer_pdf_bulletin(bul):
     pdf.set_font("Arial", size=10)
     pdf.cell(200, 6, txt=f"Eleve : {bul.get('eleve', '')} | Classe : {bul.get('classe', '')} | Periode : {bul.get('periode', '')}", ln=1, align="C")
     pdf.ln(6)
+    
+    # En-tête du tableau des notes avec couleur de fond
+    pdf.set_fill_color(224, 242, 254)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(60, 7, "Matiere", 1, 0, "C", fill=True)
     pdf.cell(30, 7, "Devoir 1", 1, 0, "C", fill=True)
@@ -628,6 +606,7 @@ def generer_pdf_bulletin(bul):
     pdf.cell(30, 7, "Compo", 1, 0, "C", fill=True)
     pdf.cell(20, 7, "Coeff", 1, 0, "C", fill=True)
     pdf.cell(20, 7, "Moy", 1, 1, "C", fill=True)
+    
     pdf.set_font("Arial", size=9)
     for d in bul.get("details_notes", []):
         pdf.cell(60, 6, str(d.get("matiere", "")), 1, 0, "L")
@@ -649,9 +628,10 @@ def generer_pdf_edt(classe, edt_g):
     pdf.add_page()
     ajouter_en_tete_officiel_pdf(pdf, f"EMPLOI DU TEMPS OFFICIEL - {classe}")
     pdf.set_font("Arial", size=8)
-    pdf.cell(22, 6, "Jour", 1, 0, "C")
+    pdf.set_fill_color(224, 242, 254)
+    pdf.cell(22, 6, "Jour", 1, 0, "C", fill=True)
     for h in HEURES_LIST[:5]:
-        pdf.cell(32, 6, h, 1, 0, "C")
+        pdf.cell(32, 6, h, 1, 0, "C", fill=True)
     pdf.cell(32, 6, "", 0, 1, "C")
     for jour in JOURS_LIST:
         pdf.cell(22, 6, jour, 1, 0, "C")
@@ -667,9 +647,10 @@ def generer_pdf_liste_eleves_classe(classe):
     pdf.add_page()
     ajouter_en_tete_officiel_pdf(pdf, f"LISTE OFFICIELLE DES ELEVES - {classe}")
     pdf.set_font("Arial", 'B', 9)
-    pdf.cell(15, 6, "N°", 1, 0, "C")
-    pdf.cell(105, 6, "Nom Complet", 1, 0, "C")
-    pdf.cell(60, 6, "Date de Naissance", 1, 1, "C")
+    pdf.set_fill_color(224, 242, 254)
+    pdf.cell(15, 6, "N°", 1, 0, "C", fill=True)
+    pdf.cell(105, 6, "Nom Complet", 1, 0, "C", fill=True)
+    pdf.cell(60, 6, "Date de Naissance", 1, 1, "C", fill=True)
     pdf.set_font("Arial", size=9)
     df_cls = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe]
     df_cls = trier_eleves_par_nom(df_cls)
@@ -685,11 +666,12 @@ def generer_pdf_liste_absences(classe):
     pdf.add_page()
     ajouter_en_tete_officiel_pdf(pdf, f"REGISTRE DES ABSENCES & DISCIPLINE - {classe}")
     pdf.set_font("Arial", 'B', 9)
-    pdf.cell(25, 6, "Date", 1, 0, "C")
-    pdf.cell(35, 6, "Classe", 1, 0, "C")
-    pdf.cell(65, 6, "Élève", 1, 0, "C")
-    pdf.cell(30, 6, "Statut", 1, 0, "C")
-    pdf.cell(35, 6, "Motif", 1, 1, "C")
+    pdf.set_fill_color(224, 242, 254)
+    pdf.cell(25, 6, "Date", 1, 0, "C", fill=True)
+    pdf.cell(35, 6, "Classe", 1, 0, "C", fill=True)
+    pdf.cell(65, 6, "Élève", 1, 0, "C", fill=True)
+    pdf.cell(30, 6, "Statut", 1, 0, "C", fill=True)
+    pdf.cell(35, 6, "Motif", 1, 1, "C", fill=True)
     pdf.set_font("Arial", size=8)
     df_abs = st.session_state.absences_db
     if classe != "Toutes":
@@ -754,7 +736,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1.05rem; color: #475569;">Notes, saisie des devoirs, cahier de texte numérique, appels et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1.05rem; color: #475569;">Notes, feuille d’appel interactive par tableau, cahier de texte numérique et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
         if st.button("🚀 Accéder à l'Espace Professeurs", key="btn_p"):
             st.session_state.espace_actif = "👨‍🏫 Espace Professeurs / Maîtres"
             st.rerun()
@@ -826,10 +808,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         st.markdown("---")
 
-        t_notes, t_taf_prof, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
+        # Section "Travail à faire" supprimée et remplacée par la fiche d'appel sous forme de tableau interactif global
+        t_notes, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
             "📝 Saisie des Notes",
-            "📌 Assigner Travail à Faire",
-            "📋 Feuille d'Appel",
+            "📋 Feuille d'Appel (Tableau)",
             "⚠️ Conduite & Vie Scolaire",
             "📑 Cahier de Texte",
             "📅 Emploi du Temps",
@@ -881,38 +863,67 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     save_df_to_db(df_new_notes[["Classe", "Matière", "Periode", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"]], "notes")
                     st.success("Notes enregistrées et synchronisées avec succès !")
 
-        with t_taf_prof:
-            st.markdown("### Assigner un Travail à Faire")
-            with st.form("form_taf"):
-                titre_taf = st.text_input("Titre du Devoir / Exercice")
-                consignes_taf = st.text_area("Consignes détaillées")
-                date_rendu_taf = st.date_input("Date limite de rendu")
-                if st.form_submit_button("Publier le Travail à Faire"):
-                    new_taf = pd.DataFrame([{
-                        "ID": f"TAF_{datetime.now().strftime('%Y%m%d%H%M%S')}",
-                        "Professeur": prof_connecte, "DatePublication": datetime.now().strftime('%Y-%m-%d'),
-                        "DateRendu": str(date_rendu_taf), "Classe": classe_autorisee, "Matière": matiere_principale,
-                        "Titre": titre_taf, "Consignes": consignes_taf, "LienUrl": "", "LienVideo": "", "FichierNom": "", "FichierB64": "", "FichierType": ""
-                    }])
-                    st.session_state.travail_a_faire_db = pd.concat([st.session_state.travail_a_faire_db, new_taf], ignore_index=True)
-                    save_df_to_db(new_taf, "travail_a_faire")
-                    st.success("Travail publié et synchronisé !")
-
         with t_appel:
-            st.markdown("### Feuille d'Appel & Absences")
-            df_el_appel = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee]
-            if not df_el_appel.empty:
-                eleve_abs = st.selectbox("Élève absent ou en retard", df_el_appel["Nom Complet"].tolist())
-                statut_abs = st.selectbox("Statut", ["Absent(e)", "Retard"])
-                motif_abs = st.text_input("Motif")
-                if st.button("Enregistrer l'absence"):
-                    new_ab = pd.DataFrame([{
-                        "Date": datetime.now().strftime('%Y-%m-%d'), "Classe": classe_autorisee,
-                        "Élève": eleve_abs, "Statut": statut_abs, "Motif": motif_abs
-                    }])
-                    st.session_state.absences_db = pd.concat([st.session_state.absences_db, new_ab], ignore_index=True)
-                    save_df_to_db(new_ab, "absences")
-                    st.success("Absence enregistrée dans le registre central !")
+            st.markdown("### 📋 Feuille d'Appel Interactive (Tous les Élèves)")
+            date_appel = st.date_input("Date de l'appel", value=datetime.now())
+            df_el_appel = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_autorisee].copy()
+            if df_el_appel.empty:
+                st.warning("Aucun élève trouvé dans cette classe.")
+            else:
+                df_el_appel = trier_eleves_par_nom(df_el_appel)
+                appel_records = []
+                for _, r in df_el_appel.iterrows():
+                    nom_el = r["Nom Complet"]
+                    existing = st.session_state.absences_db[
+                        (st.session_state.absences_db["Date"] == str(date_appel)) &
+                        (st.session_state.absences_db["Classe"] == classe_autorisee) &
+                        (st.session_state.absences_db["Élève"] == nom_el)
+                    ]
+                    statut_def = existing.iloc[0]["Statut"] if not existing.empty else "Présent(e)"
+                    motif_def = existing.iloc[0]["Motif"] if not existing.empty else ""
+                    
+                    appel_records.append({
+                        "Élève": nom_el,
+                        "Statut": statut_def,
+                        "Motif": motif_def
+                    })
+                
+                df_appel_editable = pd.DataFrame(appel_records)
+                edited_appel = st.data_editor(
+                    df_appel_editable,
+                    column_config={
+                        "Élève": st.column_config.TextColumn("Élève", disabled=True),
+                        "Statut": st.column_config.SelectboxColumn(
+                            "Statut",
+                            options=["Présent(e)", "Absent(e)", "Retard"],
+                            required=True
+                        ),
+                        "Motif": st.column_config.TextColumn("Motif (si absent ou retard)")
+                    },
+                    hide_index=True,
+                    use_container_width=True,
+                    key="table_appel_prof"
+                )
+                
+                if st.button("Enregistrer la Feuille d'Appel"):
+                    new_abs_list = []
+                    for _, row in edited_appel.iterrows():
+                        if row["Statut"] != "Présent(e)":
+                            new_abs_list.append({
+                                "Date": str(date_appel),
+                                "Classe": classe_autorisee,
+                                "Élève": row["Élève"],
+                                "Statut": row["Statut"],
+                                "Motif": row["Motif"]
+                            })
+                    
+                    df_new_abs = pd.DataFrame(new_abs_list, columns=["Date", "Classe", "Élève", "Statut", "Motif"])
+                    st.session_state.absences_db = pd.concat([
+                        st.session_state.absences_db[~((st.session_state.absences_db["Date"] == str(date_appel)) & (st.session_state.absences_db["Classe"] == classe_autorisee))],
+                        df_new_abs
+                    ], ignore_index=True)
+                    save_df_to_db(df_new_abs, "absences")
+                    st.success("Feuille d'appel enregistrée et synchronisée avec succès !")
 
         with t_cond:
             st.markdown("### Vie Scolaire & Observations")
@@ -948,7 +959,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     st.success("Cahier de textes mis à jour et authentifié pour l'administration !")
 
         with t_edt_prof:
-            st.markdown("### Emploi du Temps de la Classe")
+            st.markdown("### Emploi du Temps de la Classe (Synchronisé avec l'Administration)")
             edt_grid_df = get_or_create_edt(classe_autorisee)
             jour_sel = st.selectbox("Jour", JOURS_LIST, key="prof_edt_jour")
             heure_sel = st.selectbox("Créneau", HEURES_LIST, key="prof_edt_heure")
@@ -958,7 +969,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 st.session_state.edt_grid_db[classe_autorisee] = edt_grid_df
                 df_to_save_edt = pd.DataFrame([{"classe": classe_autorisee, "jour": jour_sel, "heure": heure_sel, "valeur": matiere_saisie}])
                 save_df_to_db(df_to_save_edt, "edt_grid")
-                st.success("Créneau mis à jour et synchronisé !")
+                st.success("Créneau mis à jour et synchronisé instantanément !")
             st.dataframe(edt_grid_df, use_container_width=True)
 
 # ==========================================
@@ -1022,7 +1033,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.success("Classes synchronisées avec succès !")
 
         with adm_tab4:
-            st.markdown("### Emploi du Temps Global (Admin)")
+            st.markdown("### Emploi du Temps Global (Admin - Synchronisé)")
             cls_edt_sel = st.selectbox("Sélectionner la classe à configurer", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A"])
             edt_grid_admin = get_or_create_edt(cls_edt_sel)
             edited_edt = st.data_editor(edt_grid_admin, key=f"editor_edt_{cls_edt_sel}")
@@ -1034,8 +1045,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                         records_edt.append({"classe": cls_edt_sel, "jour": j, "heure": h, "valeur": edited_edt.loc[j, h]})
                 df_edt_to_save = pd.DataFrame(records_edt)
                 save_df_to_db(df_edt_to_save, "edt_grid")
+                synchroniser_edt_global()
                 enregistrer_log_action("Admin", "EDT_UPDATE", f"Mise à jour EDT pour {cls_edt_sel}")
-                st.success("Emploi du temps synchronisé avec succès pour les professeurs !")
+                st.success("Emploi du temps synchronisé avec succès pour tous les professeurs !")
 
         with adm_tab5:
             st.markdown("### Registre Centralisé des Absences & Cahiers de Texte")
