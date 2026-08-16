@@ -102,15 +102,6 @@ def init_db():
                 );
             """)
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS coefficients (
-                    id SERIAL PRIMARY KEY,
-                    classe VARCHAR(255),
-                    matiere VARCHAR(255),
-                    coefficient FLOAT,
-                    bareme FLOAT
-                );
-            """)
-            cur.execute("""
                 CREATE TABLE IF NOT EXISTS periodes (
                     id SERIAL PRIMARY KEY,
                     periode VARCHAR(255),
@@ -175,6 +166,16 @@ def init_db():
                     motif TEXT
                 );
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS admin_prof_messages (
+                    id SERIAL PRIMARY KEY,
+                    expediteur VARCHAR(255),
+                    destinataire VARCHAR(255),
+                    date VARCHAR(50),
+                    sujet VARCHAR(255),
+                    message TEXT
+                );
+            """)
             conn.commit()
     except Exception as e:
         if conn:
@@ -223,12 +224,16 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     cur.execute("DELETE FROM prof_white_list;")
                     query = "INSERT INTO prof_white_list (nom, prenom, email, matiere_principale, classe_attribuee, password) VALUES (%s, %s, %s, %s, %s, %s)"
                     cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
+                elif table_name == "matieres":
+                    cur.execute("DELETE FROM matieres;")
+                    query = "INSERT INTO matieres (matiere, cycle, coefficient, bareme) VALUES (%s, %s, %s, %s)"
+                    cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
                 elif table_name == "edt_grid":
                     for _, r in df_cleaned.iterrows():
                         cur.execute("DELETE FROM edt_grid WHERE classe = %s AND jour = %s AND heure = %s;", (r.get("classe"), r.get("jour"), r.get("heure")))
                         cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s);", (r.get("classe"), r.get("jour"), r.get("heure"), r.get("valeur")))
                 elif table_name == "cahier_textes":
-                    query = "INSERT INTO cahier_textes (professeur, date, classe, matiere, contenu, travail_a_faire) VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;"
+                    query = "INSERT INTO cahier_textes (professeur, date, classe, matiere, contenu, travail_a_faire) VALUES (%s, %s, %s, %s, %s, %s);"
                     data_tuples = [(r.get("Professeur"), str(r.get("Date", "")), r.get("Classe"), r.get("Matière"), r.get("Contenu"), r.get("Travail à faire")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 elif table_name == "absences":
@@ -236,8 +241,14 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     data_tuples = [(str(r.get("Date", "")), r.get("Classe"), r.get("Élève"), r.get("Statut"), r.get("Motif")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 elif table_name == "notes":
-                    query = "INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;"
-                    data_tuples = [(r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")) for _, r in df_cleaned.iterrows()]
+                    for _, r in df_cleaned.iterrows():
+                        cur.execute("DELETE FROM notes WHERE classe = %s AND matiere = %s AND (periode = %s) AND eleve = %s;", 
+                                    (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve")))
+                        cur.execute("INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
+                                    (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")))
+                elif table_name == "admin_prof_messages":
+                    query = "INSERT INTO admin_prof_messages (expediteur, destinataire, date, sujet, message) VALUES (%s, %s, %s, %s, %s);"
+                    data_tuples = [(r.get("Expéditeur"), r.get("Destinataire"), str(r.get("Date", "")), r.get("Sujet"), r.get("Message")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
                 else:
                     cols = list(df_cleaned.columns)
@@ -413,19 +424,17 @@ if "prof_white_list" not in st.session_state or st.session_state.prof_white_list
     else:
         st.session_state.prof_white_list = df_prof
 
-if "matieres_def" not in st.session_state:
-    st.session_state.matieres_def = pd.DataFrame([
-        {"Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4, "Barème": 20},
-        {"Matière": "Français", "Cycle": "Collège", "Coefficient": 5, "Barème": 20},
-        {"Matière": "Lecture / Langage", "Cycle": "Élémentaire", "Coefficient": 1, "Barème": 50},
-        {"Matière": "Calcul / Mathématiques", "Cycle": "Élémentaire", "Coefficient": 1, "Barème": 50},
-    ])
-
-if "coefficients_db" not in st.session_state:
-    st.session_state.coefficients_db = pd.DataFrame([
-        {"Classe": "6ème A", "Matière": "Mathématiques", "Coefficient": 4, "Barème": 20},
-        {"Classe": "6ème A", "Matière": "Français", "Coefficient": 5, "Barème": 20}
-    ])
+if "matieres_def" not in st.session_state or st.session_state.matieres_def.empty:
+    df_mat = load_table_from_db('SELECT matiere AS "Matière", cycle AS "Cycle", coefficient AS "Coefficient", bareme AS "Barème" FROM matieres', ["Matière", "Cycle", "Coefficient", "Barème"])
+    if df_mat.empty:
+        st.session_state.matieres_def = pd.DataFrame([
+            {"Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4.0, "Barème": 20.0},
+            {"Matière": "Français", "Cycle": "Collège", "Coefficient": 5.0, "Barème": 20.0},
+            {"Matière": "Lecture / Langage", "Cycle": "Élémentaire", "Coefficient": 1.0, "Barème": 50.0},
+            {"Matière": "Calcul / Mathématiques", "Cycle": "Élémentaire", "Coefficient": 1.0, "Barème": 50.0},
+        ])
+    else:
+        st.session_state.matieres_def = df_mat
 
 if "notes_db" not in st.session_state:
     st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
@@ -435,6 +444,9 @@ if "viescolaire_db" not in st.session_state:
 
 if "audit_logs_db" not in st.session_state:
     st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
+
+if "admin_prof_messages" not in st.session_state:
+    st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message"])
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h"]
@@ -475,6 +487,11 @@ if "absences_db" not in st.session_state:
 # ==========================================
 def obtenir_cycle_classe(classe_nom):
     if not classe_nom: return "Élémentaire"
+    # Vérification dans la table classes_db
+    if "classes_db" in st.session_state and not st.session_state.classes_db.empty:
+        res = st.session_state.classes_db[st.session_state.classes_db["Classe"] == classe_nom]
+        if not res.empty and pd.notna(res.iloc[0].get("Cycle")):
+            return str(res.iloc[0]["Cycle"])
     classe_str = str(classe_nom).strip().upper()
     if any(c in classe_str for c in ["6ÈME", "6EME", "5ÈME", "5EME", "4ÈME", "4EME", "3ÈME", "3EME", "COLLÈGE", "COLLEGE"]):
         return "Collège"
@@ -494,18 +511,26 @@ def obtenir_periodes_pour_classe(classe_nom):
     else:
         return ["1er Semestre", "2ème Semestre"]
 
-def obtenir_coefficient_matiere(classe, matiere):
-    if "coefficients_db" in st.session_state and not st.session_state.coefficients_db.empty:
-        c_db = st.session_state.coefficients_db
-        if "Classe" in c_db.columns and "Matière" in c_db.columns:
-            res = c_db[(c_db["Classe"] == classe) & (c_db["Matière"] == matiere)]
-            if not res.empty and pd.notna(res.iloc[0].get("Coefficient")):
-                return float(res.iloc[0]["Coefficient"])
-    return 1.0
+def obtenir_parametres_matiere(cycle, matiere_nom):
+    """Récupère le barème et le coefficient configurés pour une matière et un cycle."""
+    if "matieres_def" in st.session_state and not st.session_state.matieres_def.empty:
+        m_df = st.session_state.matieres_def
+        res = m_df[(m_df["Cycle"].str.lower() == cycle.lower()) & (m_df["Matière"].str.lower() == matiere_nom.lower())]
+        if not res.empty:
+            r = res.iloc[0]
+            coef = float(r["Coefficient"]) if pd.notna(r.get("Coefficient")) else 1.0
+            bareme = float(r["Barème"]) if pd.notna(r.get("Barème")) else (20.0 if cycle.lower() == "collège" else 50.0)
+            return coef, bareme
+    if cycle.lower() == "élémentaire":
+        return 1.0, 50.0
+    return 1.0, 20.0
 
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
+    cycle = obtenir_cycle_classe(classe)
+    elementaire = est_cycle_elementaire(cycle)
     notes_df = st.session_state.notes_db
     notes_eleve = []
+    
     if not notes_df.empty:
         match_notes = notes_df[
             (notes_df["Classe"] == classe) & 
@@ -514,19 +539,33 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         ]
         total_points = 0.0
         total_coeffs = 0.0
+        
         for _, row in match_notes.iterrows():
             mat = row["Matière"]
-            d1 = float(row["Devoir1"]) if pd.notna(row["Devoir1"]) else 0.0
-            d2 = float(row["Devoir2"]) if pd.notna(row["Devoir2"]) else 0.0
-            comp = float(row["Composition"]) if pd.notna(row["Composition"]) else 0.0
-            moy_mat = (d1 + d2 + (comp * 2)) / 4.0 if (d1 or d2 or comp) else 0.0
-            coeff = obtenir_coefficient_matiere(classe, mat)
-            total_points += moy_mat * coeff
-            total_coeffs += coeff
-            notes_eleve.append({
-                "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
-                "moyenne": round(moy_mat, 2), "coefficient": coeff
-            })
+            coef, bareme = obtenir_parametres_matiere(cycle, mat)
+            
+            if elementaire:
+                comp = float(row["Composition"]) if pd.notna(row["Composition"]) else 0.0
+                # Normalisation sur 20 pour le calcul de la moyenne générale si barème différent
+                moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 0.0
+                notes_eleve.append({
+                    "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp}/{bareme}",
+                    "moyenne": round(moy_mat, 2), "coefficient": 1
+                })
+                total_points += moy_mat * 1.0
+                total_coeffs += 1.0
+            else:
+                d1 = float(row["Devoir1"]) if pd.notna(row["Devoir1"]) else 0.0
+                d2 = float(row["Devoir2"]) if pd.notna(row["Devoir2"]) else 0.0
+                comp = float(row["Composition"]) if pd.notna(row["Composition"]) else 0.0
+                moy_mat = (d1 + d2 + (comp * 2)) / 4.0 if (d1 or d2 or comp) else 0.0
+                notes_eleve.append({
+                    "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
+                    "moyenne": round(moy_mat, 2), "coefficient": coef
+                })
+                total_points += moy_mat * coef
+                total_coeffs += coef
+
         moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 12.5
     else:
         moy_gen = 13.0
@@ -535,11 +574,10 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
     return {
         "eleve": eleve_nom, "classe": classe, "periode": periode,
         "moyenne_generale": moy_gen, "total_bareme": 20, "rang": "2ème / 30",
-        "decision": "Tableau d'honneur", "details_notes": notes_eleve
+        "decision": "Tableau d'honneur", "details_notes": notes_eleve, "is_elementaire": elementaire
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
-    # Bande supérieure design aux couleurs du Sénégal / Institutionnelles
     pdf.set_fill_color(30, 64, 175)
     pdf.rect(10, 10, 190, 3, 'F')
     
@@ -567,7 +605,6 @@ def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
     pdf.set_text_color(0, 0, 0)
     pdf.ln(3)
     
-    # Ligne de séparation élégante
     pdf.set_draw_color(2, 132, 199)
     pdf.set_line_width(0.8)
     pdf.line(15, pdf.get_y(), 195, pdf.get_y())
@@ -597,24 +634,33 @@ def generer_pdf_bulletin(bul):
     pdf.cell(200, 6, txt=f"Eleve : {bul.get('eleve', '')} | Classe : {bul.get('classe', '')} | Periode : {bul.get('periode', '')}", ln=1, align="C")
     pdf.ln(6)
     
-    # En-tête du tableau des notes avec couleur de fond
     pdf.set_fill_color(224, 242, 254)
     pdf.set_font("Arial", 'B', 10)
-    pdf.cell(60, 7, "Matiere", 1, 0, "C", fill=True)
-    pdf.cell(30, 7, "Devoir 1", 1, 0, "C", fill=True)
-    pdf.cell(30, 7, "Devoir 2", 1, 0, "C", fill=True)
-    pdf.cell(30, 7, "Compo", 1, 0, "C", fill=True)
-    pdf.cell(20, 7, "Coeff", 1, 0, "C", fill=True)
-    pdf.cell(20, 7, "Moy", 1, 1, "C", fill=True)
-    
-    pdf.set_font("Arial", size=9)
-    for d in bul.get("details_notes", []):
-        pdf.cell(60, 6, str(d.get("matiere", "")), 1, 0, "L")
-        pdf.cell(30, 6, str(d.get("devoir1", 0)), 1, 0, "C")
-        pdf.cell(30, 6, str(d.get("devoir2", 0)), 1, 0, "C")
-        pdf.cell(30, 6, str(d.get("composition", 0)), 1, 0, "C")
-        pdf.cell(20, 6, str(d.get("coefficient", 1)), 1, 0, "C")
-        pdf.cell(20, 6, str(d.get("moyenne", 0)), 1, 1, "C")
+    if bul.get("is_elementaire", False):
+        pdf.cell(90, 7, "Matiere", 1, 0, "C", fill=True)
+        pdf.cell(50, 7, "Composition", 1, 0, "C", fill=True)
+        pdf.cell(30, 7, "Moy/20", 1, 1, "C", fill=True)
+        pdf.set_font("Arial", size=9)
+        for d in bul.get("details_notes", []):
+            pdf.cell(90, 6, str(d.get("matiere", "")), 1, 0, "L")
+            pdf.cell(50, 6, str(d.get("composition", 0)), 1, 0, "C")
+            pdf.cell(30, 6, str(d.get("moyenne", 0)), 1, 1, "C")
+    else:
+        pdf.cell(60, 7, "Matiere", 1, 0, "C", fill=True)
+        pdf.cell(30, 7, "Devoir 1", 1, 0, "C", fill=True)
+        pdf.cell(30, 7, "Devoir 2", 1, 0, "C", fill=True)
+        pdf.cell(30, 7, "Compo", 1, 0, "C", fill=True)
+        pdf.cell(20, 7, "Coeff", 1, 0, "C", fill=True)
+        pdf.cell(20, 7, "Moy", 1, 1, "C", fill=True)
+        pdf.set_font("Arial", size=9)
+        for d in bul.get("details_notes", []):
+            pdf.cell(60, 6, str(d.get("matiere", "")), 1, 0, "L")
+            pdf.cell(30, 6, str(d.get("devoir1", 0)), 1, 0, "C")
+            pdf.cell(30, 6, str(d.get("devoir2", 0)), 1, 0, "C")
+            pdf.cell(30, 6, str(d.get("composition", 0)), 1, 0, "C")
+            pdf.cell(20, 6, str(d.get("coefficient", 1)), 1, 0, "C")
+            pdf.cell(20, 6, str(d.get("moyenne", 0)), 1, 1, "C")
+
     pdf.ln(6)
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(200, 6, txt=f"Moyenne Generale : {bul.get('moyenne_generale', 0)} / 20", ln=1, align="L")
@@ -639,6 +685,30 @@ def generer_pdf_edt(classe, edt_g):
             val = str(edt_g.loc[jour, h] if h in edt_g.columns else "")[:10]
             pdf.cell(32, 6, val, 1, 0, "C")
         pdf.cell(32, 6, "", 0, 1, "C")
+    ajouter_signature_pdf(pdf)
+    return pdf.output(dest='S').encode('latin1')
+
+def generer_pdf_cahier_texte(classe_filtre):
+    pdf = FPDF()
+    pdf.add_page()
+    ajouter_en_tete_officiel_pdf(pdf, f"CAHIER DE TEXTE OFFICIEL - {classe_filtre}")
+    pdf.set_font("Arial", 'B', 8)
+    pdf.set_fill_color(224, 242, 254)
+    pdf.cell(20, 6, "Date", 1, 0, "C", fill=True)
+    pdf.cell(35, 6, "Professeur", 1, 0, "C", fill=True)
+    pdf.cell(30, 6, "Matière", 1, 0, "C", fill=True)
+    pdf.cell(55, 6, "Contenu du Cours", 1, 0, "C", fill=True)
+    pdf.cell(50, 6, "Travail à faire", 1, 1, "C", fill=True)
+    pdf.set_font("Arial", size=8)
+    df_ct = st.session_state.cahier_textes
+    if classe_filtre != "Toutes":
+        df_ct = df_ct[df_ct["Classe"] == classe_filtre]
+    for _, r in df_ct.iterrows():
+        pdf.cell(20, 6, str(r.get("Date", ""))[:10], 1, 0, "C")
+        pdf.cell(35, 6, str(r.get("Professeur", ""))[:20], 1, 0, "L")
+        pdf.cell(30, 6, str(r.get("Matière", ""))[:18], 1, 0, "L")
+        pdf.cell(55, 6, str(r.get("Contenu", ""))[:35], 1, 0, "L")
+        pdf.cell(50, 6, str(r.get("Travail à faire", ""))[:30], 1, 1, "L")
     ajouter_signature_pdf(pdf)
     return pdf.output(dest='S').encode('latin1')
 
@@ -736,13 +806,13 @@ if st.session_state.espace_actif == "🏠 Accueil":
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1.05rem; color: #475569;">Notes, feuille d’appel interactive par tableau, cahier de texte numérique et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1.05rem; color: #475569;">Notes adaptées par cycle (Élémentaire / Collège), feuille d’appel interactive, cahier de texte et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
         if st.button("🚀 Accéder à l'Espace Professeurs", key="btn_p"):
             st.session_state.espace_actif = "👨‍🏫 Espace Professeurs / Maîtres"
             st.rerun()
 
     with c2:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Rapports XXL</h2><p style="font-size: 1.05rem; color: #475569;">Pilotage stratégique complet, CRUD bases de données, registres officiels et rapports PDF dotés de sceaux et signatures.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Rapports XXL</h2><p style="font-size: 1.05rem; color: #475569;">Pilotage stratégique, configuration des matières, barèmes, coefficients, messagerie admin/profs, registres officiels et rapports PDF.</p></div>', unsafe_allow_html=True)
         if st.button("⚡ Accéder à l'Administration XXL", key="btn_ad"):
             st.session_state.espace_actif = "🔒 Espace Administration & Rapports (Sécurisé)"
             st.rerun()
@@ -800,25 +870,33 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         prof_connecte = st.session_state.prof_nom_connecte
         classe_autorisee = st.session_state.prof_classe_autorisee
         matiere_principale = st.session_state.prof_matiere_principale
+        cycle_classe = obtenir_cycle_classe(classe_autorisee)
+        elementaire = est_cycle_elementaire(cycle_classe)
 
-        st.markdown(f"#### Enseignant : {prof_connecte} | Classe : {classe_autorisee} | Matière : {matiere_principale}")
+        st.markdown(f"#### Enseignant : {prof_connecte} | Classe : {classe_autorisee} ({cycle_classe}) | Matière : {matiere_principale}")
         if st.button("Se déconnecter"):
             st.session_state.prof_logged = False
             st.rerun()
 
         st.markdown("---")
 
-        # Section "Travail à faire" supprimée et remplacée par la fiche d'appel sous forme de tableau interactif global
-        t_notes, t_appel, t_cond, t_cahier, t_edt_prof = st.tabs([
+        t_notes, t_appel, t_cond, t_cahier, t_edt_prof, t_msg = st.tabs([
             "📝 Saisie des Notes",
             "📋 Feuille d'Appel (Tableau)",
             "⚠️ Conduite & Vie Scolaire",
             "📑 Cahier de Texte",
             "📅 Emploi du Temps",
+            "💬 Messages & Notifications"
         ])
 
         with t_notes:
-            st.markdown("### Saisie & Édition des Notes")
+            st.markdown(f"### Saisie & Édition des Notes ({cycle_classe})")
+            coeff_matiere, bareme_matiere = obtenir_parametres_matiere(cycle_classe, matiere_principale)
+            if elementaire:
+                st.info(f"Cycle Élémentaire : Une seule note de composition (Barème sur **{bareme_matiere}**).")
+            else:
+                st.info(f"Cycle Collège : Saisie Devoir 1, Devoir 2 et Composition (Coefficient : **{coeff_matiere}** | Barème : **{bareme_matiere}**).")
+
             periodes_possibles = obtenir_periodes_pour_classe(classe_autorisee)
             periode_sel = st.selectbox("Période active", periodes_possibles)
             
@@ -831,9 +909,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
                 notes_saisies = []
                 for i, el in enumerate(noms_eleves):
-                    col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
-                    with col1: st.text(el)
-                    
                     existing_row = st.session_state.notes_db[
                         (st.session_state.notes_db["Classe"] == classe_autorisee) & 
                         (st.session_state.notes_db["Matière"] == matiere_principale) & 
@@ -844,24 +919,33 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     d2_val = float(existing_row.iloc[0]["Devoir2"]) if not existing_row.empty and pd.notna(existing_row.iloc[0].get("Devoir2")) else 0.0
                     comp_val = float(existing_row.iloc[0]["Composition"]) if not existing_row.empty and pd.notna(existing_row.iloc[0].get("Composition")) else 0.0
 
-                    with col2: d1 = st.number_input(f"Devoir 1 ({el})", 0.0, 20.0, d1_val, key=f"d1_{el}_{i}")
-                    with col3: d2 = st.number_input(f"Devoir 2 ({el})", 0.0, 20.0, d2_val, key=f"d2_{el}_{i}")
-                    with col4: comp = st.number_input(f"Composition ({el})", 0.0, 20.0, comp_val, key=f"comp_{el}_{i}")
+                    if elementaire:
+                        col1, col2 = st.columns([4, 3])
+                        with col1: st.text(el)
+                        with col2: comp = st.number_input(f"Composition ({el}) / {bareme_matiere}", 0.0, float(bareme_matiere), comp_val, key=f"comp_elem_{el}_{i}")
+                        d1, d2 = 0.0, 0.0
+                    else:
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
+                        with col1: st.text(el)
+                        with col2: d1 = st.number_input(f"Devoir 1 ({el})", 0.0, float(bareme_matiere), d1_val, key=f"d1_{el}_{i}")
+                        with col3: d2 = st.number_input(f"Devoir 2 ({el})", 0.0, float(bareme_matiere), d2_val, key=f"d2_{el}_{i}")
+                        with col4: comp = st.number_input(f"Composition ({el})", 0.0, float(bareme_matiere), comp_val, key=f"comp_{el}_{i}")
 
                     notes_saisies.append({
                         "Classe": classe_autorisee, "Matière": matiere_principale,
                         "Periode": periode_sel, "Période": periode_sel, "Eleve": el,
-                        "Devoir1": d1, "Devoir2": d2, "Composition": comp, "BaremeNote": 20.0
+                        "Devoir1": d1, "Devoir2": d2, "Composition": comp, "BaremeNote": bareme_matiere
                     })
 
                 if st.button("Enregistrer les Notes"):
                     df_new_notes = pd.DataFrame(notes_saisies)
+                    # Mise à jour locale et dans la BDD
                     st.session_state.notes_db = pd.concat([
                         st.session_state.notes_db[~((st.session_state.notes_db["Classe"] == classe_autorisee) & (st.session_state.notes_db["Matière"] == matiere_principale) & ((st.session_state.notes_db["Periode"] == periode_sel) | (st.session_state.notes_db["Période"] == periode_sel)))],
                         df_new_notes
                     ], ignore_index=True)
                     save_df_to_db(df_new_notes[["Classe", "Matière", "Periode", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"]], "notes")
-                    st.success("Notes enregistrées et synchronisées avec succès !")
+                    st.success("Notes enregistrées et synchronisées avec succès pour les bulletins !")
 
         with t_appel:
             st.markdown("### 📋 Feuille d'Appel Interactive (Tous les Élèves)")
@@ -956,7 +1040,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     }])
                     st.session_state.cahier_textes = pd.concat([st.session_state.cahier_textes, new_ct], ignore_index=True)
                     save_df_to_db(new_ct, "cahier_textes")
-                    st.success("Cahier de textes mis à jour et authentifié pour l'administration !")
+                    st.success("Cahier de textes mis à jour et synchronisé pour l'administration !")
 
         with t_edt_prof:
             st.markdown("### Emploi du Temps de la Classe (Synchronisé avec l'Administration)")
@@ -971,6 +1055,28 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 save_df_to_db(df_to_save_edt, "edt_grid")
                 st.success("Créneau mis à jour et synchronisé instantanément !")
             st.dataframe(edt_grid_df, use_container_width=True)
+
+        with t_msg:
+            st.markdown("### 💬 Messages & Notifications avec l'Administration")
+            with st.form("form_msg_prof"):
+                sujet_msg = st.text_input("Sujet")
+                corps_msg = st.text_area("Message destiné à l'administration")
+                if st.form_submit_button("Envoyer à l'Administration"):
+                    new_m = pd.DataFrame([{
+                        "Expéditeur": prof_connecte, "Destinataire": "Administration",
+                        "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                        "Sujet": sujet_msg, "Message": corps_msg
+                    }])
+                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_m], ignore_index=True)
+                    save_df_to_db(new_m, "admin_prof_messages")
+                    st.success("Message envoyé à l'administration avec succès !")
+            
+            st.markdown("#### Historique des messages reçus / envoyés")
+            df_msgs = st.session_state.admin_prof_messages
+            if not df_msgs.empty:
+                st.dataframe(df_msgs, use_container_width=True)
+            else:
+                st.info("Aucun message.")
 
 # ==========================================
 # 7. ESPACE ADMINISTRATION & RAPPORTS XXL
@@ -995,14 +1101,15 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             st.rerun()
 
         st.markdown("---")
-        adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5, adm_tab6, adm_tab7 = st.tabs([
+        adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5, adm_tab6, adm_tab7, adm_tab8 = st.tabs([
             "👥 Élèves",
             "👨‍🏫 Professeurs",
             "🏫 Classes",
+            "📚 Matières & Barèmes",
             "📅 Emploi du Temps Global",
             "📋 Registre Absences & Cahiers",
-            "📊 Journaux d'Audit",
-            "📥 Téléchargements XXL (Design Officiel & Sceaux)"
+            "💬 Messages Professeurs",
+            "📥 Téléchargements XXL & Rapports"
         ])
 
         with adm_tab1:
@@ -1024,7 +1131,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.success("Professeurs synchronisés avec succès !")
 
         with adm_tab3:
-            st.markdown("### Gestion des Classes")
+            st.markdown("### Gestion des Classes (Cycle Élémentaire / Collège)")
             edited_classes = st.data_editor(st.session_state.classes_db, num_rows="dynamic", key="editor_classes_crud")
             if st.button("Enregistrer les modifications (Classes)"):
                 st.session_state.classes_db = edited_classes
@@ -1033,6 +1140,25 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.success("Classes synchronisées avec succès !")
 
         with adm_tab4:
+            st.markdown("### 📚 Configuration des Matières, Barèmes et Coefficients par Cycle")
+            st.info("Pour le cycle **Élémentaire**, le coefficient n'est pas pris en compte (fixé à 1), seul le **Barème** (ex: 50) est défini. Pour le cycle **Collège**, le coefficient et le barème standard (20) s'appliquent.")
+            edited_matieres = st.data_editor(
+                st.session_state.matieres_def,
+                num_rows="dynamic",
+                column_config={
+                    "Cycle": st.column_config.SelectboxColumn("Cycle", options=["Élémentaire", "Collège"], required=True),
+                    "Coefficient": st.column_config.NumberColumn("Coefficient (Collège)", min_value=1.0, max_value=10.0, step=1.0),
+                    "Barème": st.column_config.NumberColumn("Barème", min_value=10.0, max_value=100.0, step=5.0)
+                },
+                key="editor_matieres_crud"
+            )
+            if st.button("Enregistrer les Matières et Barèmes"):
+                st.session_state.matieres_def = edited_matieres
+                save_df_to_db(edited_matieres, "matieres")
+                enregistrer_log_action("Admin", "CRUD_MATIERES", "Mise à jour des matières et barèmes")
+                st.success("Configuration des matières enregistrée et synchronisée !")
+
+        with adm_tab5:
             st.markdown("### Emploi du Temps Global (Admin - Synchronisé)")
             cls_edt_sel = st.selectbox("Sélectionner la classe à configurer", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A"])
             edt_grid_admin = get_or_create_edt(cls_edt_sel)
@@ -1049,7 +1175,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 enregistrer_log_action("Admin", "EDT_UPDATE", f"Mise à jour EDT pour {cls_edt_sel}")
                 st.success("Emploi du temps synchronisé avec succès pour tous les professeurs !")
 
-        with adm_tab5:
+        with adm_tab6:
             st.markdown("### Registre Centralisé des Absences & Cahiers de Texte")
             st.markdown("#### Registre des Absences")
             edited_abs = st.data_editor(st.session_state.absences_db, num_rows="dynamic", key="editor_abs_admin")
@@ -1058,20 +1184,35 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 save_df_to_db(edited_abs, "absences")
                 st.success("Registre des absences mis à jour.")
 
-            st.markdown("#### Cahiers de Texte Authentifiés")
+            st.markdown("#### Cahiers de Texte (Saisis par les Professeurs)")
             if not st.session_state.cahier_textes.empty:
                 st.dataframe(st.session_state.cahier_textes, use_container_width=True)
             else:
                 st.info("Aucun cahier de texte saisi.")
 
-        with adm_tab6:
-            st.markdown("### Journaux d'Audit & Sécurité")
-            if not st.session_state.audit_logs_db.empty:
-                st.dataframe(st.session_state.audit_logs_db, use_container_width=True)
-            else:
-                st.info("Aucun journal d'audit enregistré.")
-
         with adm_tab7:
+            st.markdown("### 💬 Messagerie & Notifications Professeurs / Administration")
+            df_msgs_adm = st.session_state.admin_prof_messages
+            if not df_msgs_adm.empty:
+                st.dataframe(df_msgs_adm, use_container_width=True)
+            else:
+                st.info("Aucun message reçu.")
+
+            with st.form("form_admin_reponse"):
+                dest_prof = st.text_input("Destinataire (Professeur ou Tous)")
+                sujet_r = st.text_input("Sujet de la notification")
+                corps_r = st.text_area("Message de l'administration")
+                if st.form_submit_button("Envoyer la Notification"):
+                    new_msg_ad = pd.DataFrame([{
+                        "Expéditeur": "Administration", "Destinataire": dest_prof,
+                        "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                        "Sujet": sujet_r, "Message": corps_r
+                    }])
+                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_msg_ad], ignore_index=True)
+                    save_df_to_db(new_msg_ad, "admin_prof_messages")
+                    st.success("Notification envoyée et synchronisée !")
+
+        with adm_tab8:
             st.markdown("### 📥 Centre de Téléchargement XXL (Design Officiel, Sceaux & Signatures)")
             st.markdown("Générez et téléchargez instantanément tous les rapports officiels de l'établissement dotés du sceau, du logo et de la signature officielle.")
 
@@ -1112,13 +1253,26 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     st.markdown('</div>', unsafe_allow_html=True)
 
             with col_dl2:
-                st.markdown("#### 📋 Listes Officielles & Registres")
-                cls_liste = st.selectbox("Sélectionner la classe pour listes", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A"], key="cls_liste_dl")
+                st.markdown("#### 📋 Listes Officielles, Emplois du Temps & Cahiers de Texte")
+                cls_liste = st.selectbox("Sélectionner la classe", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A"], key="cls_liste_dl")
                 
                 st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
                 st.write("👥 **Registre Officiel des Élèves**")
                 pdf_l = generer_pdf_liste_eleves_classe(cls_liste)
                 st.download_button("📥 Télécharger la Liste des Élèves (PDF)", data=pdf_l, file_name=f"Liste_Eleves_{cls_liste}.pdf", mime="application/pdf", key="dl_liste_el")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
+                st.write("📅 **Emploi du Temps Officiel**")
+                edt_to_print = get_or_create_edt(cls_liste)
+                pdf_edt = generer_pdf_edt(cls_liste, edt_to_print)
+                st.download_button("📥 Télécharger l'Emploi du Temps (PDF)", data=pdf_edt, file_name=f"EDT_{cls_liste}.pdf", mime="application/pdf", key="dl_edt_pdf")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
+                st.write("📑 **Cahier de Texte Numérique**")
+                pdf_ct = generer_pdf_cahier_texte(cls_liste)
+                st.download_button("📥 Télécharger le Cahier de Texte (PDF)", data=pdf_ct, file_name=f"Cahier_Texte_{cls_liste}.pdf", mime="application/pdf", key="dl_ct_pdf")
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
