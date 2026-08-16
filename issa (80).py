@@ -769,7 +769,14 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.rerun()
 
     with c2:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Liste Blanche</h2><p style="font-size: 1rem; color: #475569;">Accès hautement protégé réservé à l'administration. Gestion de la liste blanche, habilitations, assignation des travaux et rapports administratifs.</p></div>', unsafe_allow_html=True)
+        st.markdown(
+    '<div class="animated-card-xxl">'
+    '<h1 style="font-size: 4rem; margin: 0;">🔒</h1>'
+    '<h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Liste Blanche</h2>'
+    '<p style="font-size: 1rem; color: #475569;">Accès hautement protégé réservé à l\'administration. Gestion de la liste blanche, habilitations, assignation des travaux et rapports administratifs.</p>'
+    '</div>',
+    unsafe_allow_html=True
+)
         if st.button("⚡ Accéder à l'Administration", key="btn_ad"):
             st.session_state.espace_actif = "🔒 Espace Administration & Rapports (Sécurisé)"
             st.rerun()
