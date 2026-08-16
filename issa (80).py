@@ -28,10 +28,11 @@ def get_db_connection():
                 database=st.secrets["postgres"]["database"],
                 user=st.secrets["postgres"]["user"],
                 password=st.secrets["postgres"]["password"],
-                port=st.secrets["postgres"]["port"]
+                port=st.secrets["postgres"]["port"],
+                connect_timeout=5
             )
         else:
-            conn = psycopg2.connect(DATABASE_URL)
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
         return conn
     except Exception as e:
         return None
@@ -210,9 +211,9 @@ def init_db():
 
 init_db()
 
-@st.cache_data(ttl=30, show_spinner=False)
+@st.cache_data(ttl=5, show_spinner=False)
 def load_table_from_db(query, columns):
-    """Charge une table avec mise en cache optimisée (< 0.2s)."""
+    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
     conn = get_db_connection()
     if conn is None:
         return pd.DataFrame(columns=columns)
@@ -228,7 +229,7 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde et synchronise le DataFrame dans la BDD PostgreSQL/Supabase et invalide le cache."""
+    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée."""
     conn = get_db_connection()
     if conn is None:
         return False
@@ -239,23 +240,28 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                 if table_name == "eleves":
                     cur.execute("DELETE FROM eleves;")
                     query = "INSERT INTO eleves (nom_complet, prenom, nom, date_de_naissance, classe, photo) VALUES (%s, %s, %s, %s, %s, %s)"
-                    cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
+                    data = [(r.get("Nom Complet"), r.get("Prénom"), r.get("Nom"), r.get("Date de Naissance"), r.get("Classe"), r.get("Photo")) for _, r in df_cleaned.iterrows()]
+                    cur.executemany(query, data)
                 elif table_name == "classes":
                     cur.execute("DELETE FROM classes;")
                     query = "INSERT INTO classes (classe, cycle, professeur_responsable) VALUES (%s, %s, %s)"
-                    cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
+                    data = [(r.get("Classe"), r.get("Cycle"), r.get("Professeur Responsable")) for _, r in df_cleaned.iterrows()]
+                    cur.executemany(query, data)
                 elif table_name == "prof_white_list":
                     cur.execute("DELETE FROM prof_white_list;")
                     query = "INSERT INTO prof_white_list (nom, prenom, email, matiere_principale, classe_attribuee, password) VALUES (%s, %s, %s, %s, %s, %s)"
-                    cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
+                    data = [(r.get("Nom"), r.get("Prénom"), r.get("Email"), r.get("Matière Principale"), r.get("Classe Attribuée"), r.get("Mot de passe")) for _, r in df_cleaned.iterrows()]
+                    cur.executemany(query, data)
                 elif table_name == "admin_white_list":
                     cur.execute("DELETE FROM admin_white_list;")
                     query = "INSERT INTO admin_white_list (email, nom, prenom, password, niveau_acces) VALUES (%s, %s, %s, %s, %s)"
-                    cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
+                    data = [(r.get("Email"), r.get("Nom"), r.get("Prénom"), r.get("Mot de passe"), r.get("Niveau d'accès")) for _, r in df_cleaned.iterrows()]
+                    cur.executemany(query, data)
                 elif table_name == "matieres":
                     cur.execute("DELETE FROM matieres;")
                     query = "INSERT INTO matieres (matiere, cycle, coefficient, bareme) VALUES (%s, %s, %s, %s)"
-                    cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
+                    data = [(r.get("Matière"), r.get("Cycle"), r.get("Coefficient"), r.get("Barème")) for _, r in df_cleaned.iterrows()]
+                    cur.executemany(query, data)
                 elif table_name == "edt_grid":
                     for _, r in df_cleaned.iterrows():
                         cur.execute("DELETE FROM edt_grid WHERE classe = %s AND jour = %s AND heure = %s;", (r.get("classe"), r.get("jour"), r.get("heure")))
@@ -290,7 +296,7 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     cols = list(df_cleaned.columns)
                     cols_str = ",".join([f'"{col}"' for col in cols])
                     placeholders = ",".join(["%s"] * len(cols))
-                    query = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders}) ON CONFLICT DO NOTHING;"
+                    query = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders});"
                     cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
         conn.commit()
         st.cache_data.clear()
@@ -417,7 +423,7 @@ st.markdown("""
 st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>", unsafe_allow_html=True)
 
 # ==========================================
-# 2. INITIALISATION DES ÉTATS & CACHE OPTIMISÉ (< 3s)
+# 2. INITIALISATION DES ÉTATS & RECHARGEMENT DYNAMIQUE
 # ==========================================
 if "espace_actif" not in st.session_state:
     st.session_state.espace_actif = "🏠 Accueil"
@@ -427,7 +433,8 @@ if "authenticated_admin" not in st.session_state:
 if "current_admin_email" not in st.session_state:
     st.session_state.current_admin_email = ""
 
-if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
+# Fonction utilitaire de rechargement universel lors des reconnexions
+def recharger_toutes_les_donnees():
     df_eleves_db = load_table_from_db(
         'SELECT nom_complet AS "Nom Complet", prenom AS "Prénom", nom AS "Nom", date_de_naissance AS "Date de Naissance", classe AS "Classe", photo AS "Photo" FROM eleves',
         ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]
@@ -444,14 +451,12 @@ if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
     else:
         st.session_state.eleves_db = df_eleves_db
 
-if "classes_db" not in st.session_state or st.session_state.classes_db.empty:
     df_classes = load_table_from_db('SELECT classe AS "Classe", cycle AS "Cycle", professeur_responsable AS "Professeur Responsable" FROM classes', ["Classe", "Cycle", "Professeur Responsable"])
     if df_classes.empty:
         st.session_state.classes_db = pd.DataFrame(columns=["Classe", "Cycle", "Professeur Responsable"], data=[["6ème A", "Collège", "Prof. Maths"], ["CP", "Élémentaire", "Prof. Élémentaire"]])
     else:
         st.session_state.classes_db = df_classes
 
-if "prof_white_list" not in st.session_state or st.session_state.prof_white_list.empty:
     df_prof = load_table_from_db('SELECT nom AS "Nom", prenom AS "Prénom", email AS "Email", matiere_principale AS "Matière Principale", classe_attribuee AS "Classe Attribuée", password AS "Mot de passe" FROM prof_white_list', ["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée", "Mot de passe"])
     if df_prof.empty:
         st.session_state.prof_white_list = pd.DataFrame([{
@@ -461,7 +466,6 @@ if "prof_white_list" not in st.session_state or st.session_state.prof_white_list
     else:
         st.session_state.prof_white_list = df_prof
 
-if "admin_white_list" not in st.session_state or st.session_state.admin_white_list.empty:
     df_admin_wl = load_table_from_db('SELECT email AS "Email", nom AS "Nom", prenom AS "Prénom", password AS "Mot de passe", niveau_acces AS "Niveau d\'accès" FROM admin_white_list', ["Email", "Nom", "Prénom", "Mot de passe", "Niveau d'accès"])
     if df_admin_wl.empty:
         st.session_state.admin_white_list = pd.DataFrame([{
@@ -471,7 +475,6 @@ if "admin_white_list" not in st.session_state or st.session_state.admin_white_li
     else:
         st.session_state.admin_white_list = df_admin_wl
 
-if "matieres_def" not in st.session_state or st.session_state.matieres_def.empty:
     df_mat = load_table_from_db('SELECT matiere AS "Matière", cycle AS "Cycle", coefficient AS "Coefficient", bareme AS "Barème" FROM matieres', ["Matière", "Cycle", "Coefficient", "Barème"])
     if df_mat.empty:
         st.session_state.matieres_def = pd.DataFrame([
@@ -486,23 +489,17 @@ if "matieres_def" not in st.session_state or st.session_state.matieres_def.empty
     else:
         st.session_state.matieres_def = df_mat
 
-if "notes_db" not in st.session_state:
     st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
-
-if "viescolaire_db" not in st.session_state:
     st.session_state.viescolaire_db = load_table_from_db('SELECT classe AS "Classe", periode AS "Periode", periode AS "Période", eleve AS "Eleve", absences_justifiees AS "AbsencesJustifiees", absences_non_justifiees AS "AbsencesNonJustifiees", retards AS "Retards", heures_perdues AS "HeuresPerdues", observations AS "Observations", decision_conseil AS "DecisionConseil" FROM vie_scolaire', ["Classe", "Periode", "Période", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil"])
-
-if "audit_logs_db" not in st.session_state:
     st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
-
-if "admin_prof_messages" not in st.session_state:
     st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe"])
-
-if "admin_assignations_travail" not in st.session_state:
     st.session_state.admin_assignations_travail = load_table_from_db('SELECT titre AS "Titre", classe AS "Classe", professeur AS "Professeur", date AS "Date", description AS "Description", piece_jointe AS "Pièce jointe" FROM admin_assignations_travail', ["Titre", "Classe", "Professeur", "Date", "Description", "Pièce jointe"])
-
-if "fiches_progression_classe" not in st.session_state:
     st.session_state.fiches_progression_classe = load_table_from_db('SELECT professeur AS "Professeur", classe AS "Classe", date AS "Date", progression_niveau AS "Progression Niveau", avis_classe AS "Avis Classe", regression_notes AS "Régression Notes", piece_jointe AS "Pièce jointe" FROM fiches_progression_classe', ["Professeur", "Classe", "Date", "Progression Niveau", "Avis Classe", "Régression Notes", "Pièce jointe"])
+    st.session_state.cahier_textes = load_table_from_db('SELECT professeur AS "Professeur", date AS "Date", classe AS "Classe", matiere AS "Matière", contenu AS "Contenu", travail_a_faire AS "Travail à faire" FROM cahier_textes', ["Professeur", "Date", "Classe", "Matière", "Contenu", "Travail à faire"])
+    st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
+
+if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
+    recharger_toutes_les_donnees()
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h"]
@@ -531,12 +528,6 @@ def get_or_create_edt(classe):
             df_def["11h00-11h30"] = "Récréation"
         st.session_state.edt_grid_db[classe] = df_def
     return st.session_state.edt_grid_db[classe]
-
-if "cahier_textes" not in st.session_state:
-    st.session_state.cahier_textes = load_table_from_db('SELECT professeur AS "Professeur", date AS "Date", classe AS "Classe", matiere AS "Matière", contenu AS "Contenu", travail_a_faire AS "Travail à faire" FROM cahier_textes', ["Professeur", "Date", "Classe", "Matière", "Contenu", "Travail à faire"])
-
-if "absences_db" not in st.session_state:
-    st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
 
 # ==========================================
 # 3. FONCTIONS MÉTIER & DESIGN PDF OFFICIEL
@@ -839,6 +830,16 @@ header_html += """
 </div>
 """
 st.markdown(header_html, unsafe_allow_html=True)
+
+# BOUTON DE FORÇAGE RECONNEXION / SYNCHRONISATION EN HAUT DE PAGE
+col_top1, col_top2 = st.columns([3, 1])
+with col_top2:
+    if st.button("🔄 Reconnecter & Recharger Supabase"):
+        recharger_toutes_les_donnees()
+        synchroniser_edt_global()
+        st.success("Bases rechargées avec succès !")
+        st.rerun()
+
 st.markdown("<br>", unsafe_allow_html=True)
 
 if st.session_state.espace_actif != "🏠 Accueil":
@@ -848,7 +849,7 @@ if st.session_state.espace_actif != "🏠 Accueil":
     st.markdown("---")
 
 # ==========================================
-# 5. ACCUEIL PRINCIPAL (DEUX PORTAILS UNIQUES ET DÉSIGN ACTIVANT)
+# 5. ACCUEIL PRINCIPAL
 # ==========================================
 if st.session_state.espace_actif == "🏠 Accueil":
     st.markdown(
@@ -1013,8 +1014,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         st.session_state.notes_db[~((st.session_state.notes_db["Classe"] == classe_autorisee) & (st.session_state.notes_db["Matière"] == matiere_selectionnee) & ((st.session_state.notes_db["Periode"] == periode_sel) | (st.session_state.notes_db["Période"] == periode_sel)))],
                         df_new_notes
                     ], ignore_index=True)
-                    save_df_to_db(df_new_notes[["Classe", "Matière", "Periode", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"]], "notes")
-                    st.success("Notes enregistrées, sauvegardées et synchronisées sans aucune perte en temps réel !")
+                    if save_df_to_db(df_new_notes[["Classe", "Matière", "Periode", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"]], "notes"):
+                        st.success("Notes enregistrées, sauvegardées et synchronisées sans aucune perte en temps réel !")
+                    else:
+                        st.error("Erreur de connexion à Supabase. Réessayez.")
 
         with t_appel:
             st.markdown("### 📋 Feuille d'Appel Interactive")
@@ -1064,17 +1067,14 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.markdown("### 📚 Bibliothèque Pédagogique — Plus de 100 Documents Consultables avec Pages Réelles (Pages 1, 2, 3, 4, 5, 6, 7...)")
             st.info("Bibliothèque ministérielle certifiée contenant plus de 100 documents entièrement consultables avec des pages de travail assigné et de lecture palpables comme de vrais livres.")
             
-            # Génération dynamique et structurée de plus de 100 documents consultables avec pages 1 à 7+
             categories_biblio = ["Français & Lecture", "Mathématiques & Calcul", "Sciences & Éveil", "Histoire & Géographie", "Éducation Civique & Morale"]
             
-            # Sélecteur de catégorie et de recherche pour naviguer parmi les 100+ documents
             col_b1, col_b2 = st.columns([2, 1])
             with col_b1:
                 recherche_doc = st.text_input("🔍 Rechercher un livre ou document dans la bibliothèque (100+ disponibles)")
             with col_b2:
                 cat_doc_sel = st.selectbox("Filtrer par catégorie", ["Toutes les catégories"] + categories_biblio)
 
-            # Construction programmatique d'une liste riche de plus de 100 documents avec pages détaillées 1, 2, 3, 4, 5, 6, 7
             bibliotheque_complete = []
             for i in range(1, 105):
                 cat = categories_biblio[(i - 1) % len(categories_biblio)]
@@ -1096,7 +1096,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     }
                 })
 
-            # Filtrage
             docs_filtres = bibliotheque_complete
             if recherche_doc:
                 docs_filtres = [d for d in docs_filtres if recherche_doc.lower() in d["titre"].lower() or recherche_doc.lower() in d["ref"].lower()]
@@ -1105,11 +1104,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
             st.markdown(f"**Affichage de {len(docs_filtres)} documents consultables** (sur plus de 100 disponibles)")
 
-            for item in docs_filtres[:30]: # Pagination / affichage fluide
+            for item in docs_filtres[:30]: 
                 with st.expander(f"📖 [{item['ref']}] {item['titre']} ({item['categorie']})"):
                     st.markdown(f"**Catégorie :** {item['categorie']} | **Référence :** {item['ref']}")
                     
-                    # Onglets de pages interactives comme un vrai livre
                     p_tabs = st.tabs(["Page 1", "Page 2", "Page 3", "Page 4", "Page 5", "Page 6", "Page 7"])
                     for p_num, p_tab in enumerate(p_tabs, 1):
                         with p_tab:
@@ -1118,7 +1116,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             st.markdown("---")
                             st.write("*Ce contenu fait partie intégrante du manuel officiel certifié par le Ministère de l'Éducation Nationale pour l'École Président Nelson Mandela.*")
 
-                    # Bouton de téléchargement PDF du livre entier avec ses 7 pages
                     pdf_livre = FPDF()
                     pdf_livre.add_page()
                     ajouter_en_tete_officiel_pdf(pdf_livre, item['titre'])
@@ -1275,20 +1272,17 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900; margin-bottom: 20px;">🔒 Administration Sécurisée — Liste Blanche & Pilotage Global</div>', unsafe_allow_html=True)
 
     if not st.session_state.authenticated_admin:
-        st.info(f"🔒 **Sécurité Maximale** : Cet espace est strictement protégé. L'administrateur principal avec devoir total est **{ADMIN_EMAIL_MAITRE}**.")
+        st.info(f"🔒 **Sécurité Maximale** : Cet espace est strictly protégé. L'administrateur principal avec devoir total est **{ADMIN_EMAIL_MAITRE}**.")
         with st.form("form_admin_login"):
             email_ad = st.text_input("Email administrateur", value=ADMIN_EMAIL_MAITRE)
             pass_ad = st.text_input("Mot de passe sécurisé", type="password")
             if st.form_submit_button("Connexion Administration Sécurisée"):
-                # Vérification dans la liste blanche admin ou le maître absolu
                 match_admin = False
                 email_clean = email_ad.strip().lower()
                 
-                # Vérification maître
                 if email_clean == ADMIN_EMAIL_MAITRE.lower() and (pass_ad == "cpnjcpn2026" or pass_ad == "cpnm2026"):
                     match_admin = True
                 else:
-                    # Vérification table admin_white_list
                     df_awl = st.session_state.admin_white_list
                     if not df_awl.empty:
                         for _, row in df_awl.iterrows():
