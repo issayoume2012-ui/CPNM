@@ -361,7 +361,7 @@ def trier_eleves_par_nom(df):
 # 0. TER. DESIGN XXL & CONFIGURATION PAGE (REFONTE MODERNE ACTIVE & SÉCURISÉE)
 # ==========================================
 st.set_page_config(
-    page_title="Sénégal - Portail Éducatif National École Président Nelson Mandela",
+    page_title="Sénégal - Portail Éducatif de l'École Président Nelson Mandela",
     page_icon="🇸🇳",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -442,18 +442,14 @@ def recharger_toutes_les_donnees():
     if df_eleves_db.empty:
         st.session_state.eleves_db = pd.DataFrame(
             columns=["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"],
-            data=[
-                ["Mamadou Diallo", "Mamadou", "Diallo", "12/05/2014", "6ème A", ""],
-                ["Aissatou Ba", "Aissatou", "Ba", "23/09/2014", "6ème A", ""],
-                ["Cheikh Fall", "Cheikh", "Fall", "04/01/2018", "CP", ""]
-            ]
+            data=[]
         )
     else:
         st.session_state.eleves_db = df_eleves_db
 
     df_classes = load_table_from_db('SELECT classe AS "Classe", cycle AS "Cycle", professeur_responsable AS "Professeur Responsable" FROM classes', ["Classe", "Cycle", "Professeur Responsable"])
     if df_classes.empty:
-        st.session_state.classes_db = pd.DataFrame(columns=["Classe", "Cycle", "Professeur Responsable"], data=[["6ème A", "Collège", "Prof. Maths"], ["CP", "Élémentaire", "Prof. Élémentaire"]])
+        st.session_state.classes_db = pd.DataFrame(columns=["Classe", "Cycle", "Professeur Responsable"], data=[])
     else:
         st.session_state.classes_db = df_classes
 
@@ -470,7 +466,7 @@ def recharger_toutes_les_donnees():
     if df_admin_wl.empty:
         st.session_state.admin_white_list = pd.DataFrame([{
             "Email": ADMIN_EMAIL_MAITRE, "Nom": "Nelson", "Prénom": "Admin Principal",
-            "Mot de passe": hacher_mot_de_passe("cpnjcpn2026"), "Niveau d'accès": "Total (Super Admin)"
+            "Mot de passe": hacher_mot_de_passe("cpnmn2026"), "Niveau d'accès": "Total (Super Admin)"
         }])
     else:
         st.session_state.admin_white_list = df_admin_wl
@@ -502,7 +498,7 @@ if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
     recharger_toutes_les_donnees()
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
-HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h"]
+HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h","17h-18h","18h-19h"]
 
 if "edt_grid_db" not in st.session_state:
     st.session_state.edt_grid_db = {}
@@ -560,24 +556,14 @@ def obtenir_periodes_pour_classe(classe_nom):
 def obtenir_matieres_pour_classe(classe_nom):
     cycle = obtenir_cycle_classe(classe_nom)
     if est_cycle_elementaire(cycle):
-        return [
-            "Lecture",
-            "Écriture / Copie",
-            "Calcul / Arithmétique",
-            "Éveil / Sciences",
-            "Éducation Artistique & Morale",
-            "Poésie / Récitation",
-            "Dictée / Orthographe",
-            "Connaissance du Milieu",
-            "Éducation Physique et Sportive (EPS)"
-        ]
+        return []
     else:
         if "matieres_def" in st.session_state and not st.session_state.matieres_def.empty:
             m_df = st.session_state.matieres_def
             res = m_df[m_df["Cycle"].str.lower() == cycle.lower()]
             if not res.empty:
                 return res["Matière"].tolist()
-        return ["Mathématiques", "Français", "Histoire-Géo", "SVT", "AnglaisPC"]
+        return []
 
 def obtenir_parametres_matiere(cycle, matiere_nom):
     if est_cycle_elementaire(cycle):
@@ -946,7 +932,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         t_notes, t_appel, t_biblio, t_echange, t_travaux_admin, t_progression, t_cahier, t_edt_prof, t_msg = st.tabs([
             "📝 Saisie des Notes (Toutes Matières & Anti-Perte)",
             "📋 Feuille d'Appel",
-            "📚 Bibliothèque Pédagogique (100+ Documents avec Pages 1, 2, 3...)",
             "📂 Échange & Fichiers à Transmettre",
             "📥 Travaux Assignés par l'Administration",
             "📈 Progression & Fiche Classe (Objectifs par Mois)",
@@ -1063,79 +1048,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     save_df_to_db(df_new_abs, "absences")
                     st.success("Appel sauvegardé et synchronisé !")
 
-        with t_biblio:
-            st.markdown("### 📚 Bibliothèque Pédagogique — Plus de 100 Documents Consultables avec Pages Réelles (Pages 1, 2, 3, 4, 5, 6, 7...)")
-            st.info("Bibliothèque ministérielle certifiée contenant plus de 100 documents entièrement consultables avec des pages de travail assigné et de lecture palpables comme de vrais livres.")
-            
-            categories_biblio = ["Français & Lecture", "Mathématiques & Calcul", "Sciences & Éveil", "Histoire & Géographie", "Éducation Civique & Morale"]
-            
-            col_b1, col_b2 = st.columns([2, 1])
-            with col_b1:
-                recherche_doc = st.text_input("🔍 Rechercher un livre ou document dans la bibliothèque (100+ disponibles)")
-            with col_b2:
-                cat_doc_sel = st.selectbox("Filtrer par catégorie", ["Toutes les catégories"] + categories_biblio)
-
-            bibliotheque_complete = []
-            for i in range(1, 105):
-                cat = categories_biblio[(i - 1) % len(categories_biblio)]
-                titre_L = f"Livre & Manuel Officiel N°{i:03d} : Fondamentaux de {cat} - Niveau {classe_autorisee}"
-                ref_L = f"MEN-LIB-{i:03d}"
-                bibliotheque_complete.append({
-                    "id": i,
-                    "titre": titre_L,
-                    "ref": ref_L,
-                    "categorie": cat,
-                    "pages": {
-                        1: f"Page 1 : Introduction générale, objectifs pédagogiques du mois et table des matières de l'ouvrage {ref_L}.",
-                        2: f"Page 2 : Leçon fondamentale 1 - Notions théoriques de base, définitions et repères essentiels.",
-                        3: f"Page 3 : Exemples d'application guidée, cas pratiques résolus et schémas explicatifs.",
-                        4: f"Page 4 : Travail assigné aux élèves, exercices d'entraînement progressif et questions de compréhension.",
-                        5: f"Page 5 : Exercices d'approfondissement, défis de réflexion et problèmes complexes.",
-                        6: f"Page 6 : Corrigés types, conseils méthodologiques pour l'enseignant et auto-évaluation.",
-                        7: f"Page 7 : Évaluation sommative, conclusion du chapitre et annexes documentaires officielles."
-                    }
-                })
-
-            docs_filtres = bibliotheque_complete
-            if recherche_doc:
-                docs_filtres = [d for d in docs_filtres if recherche_doc.lower() in d["titre"].lower() or recherche_doc.lower() in d["ref"].lower()]
-            if cat_doc_sel != "Toutes les catégories":
-                docs_filtres = [d for d in docs_filtres if d["categorie"] == cat_doc_sel]
-
-            st.markdown(f"**Affichage de {len(docs_filtres)} documents consultables** (sur plus de 100 disponibles)")
-
-            for item in docs_filtres[:30]: 
-                with st.expander(f"📖 [{item['ref']}] {item['titre']} ({item['categorie']})"):
-                    st.markdown(f"**Catégorie :** {item['categorie']} | **Référence :** {item['ref']}")
-                    
-                    p_tabs = st.tabs(["Page 1", "Page 2", "Page 3", "Page 4", "Page 5", "Page 6", "Page 7"])
-                    for p_num, p_tab in enumerate(p_tabs, 1):
-                        with p_tab:
-                            st.markdown(f"#### 📄 {item['titre']} — Page {p_num}")
-                            st.info(item["pages"][p_num])
-                            st.markdown("---")
-                            st.write("*Ce contenu fait partie intégrante du manuel officiel certifié par le Ministère de l'Éducation Nationale pour l'École Président Nelson Mandela.*")
-
-                    pdf_livre = FPDF()
-                    pdf_livre.add_page()
-                    ajouter_en_tete_officiel_pdf(pdf_livre, item['titre'])
-                    pdf_livre.set_font("Arial", size=9)
-                    pdf_livre.multi_cell(0, 5, f"Référence : {item['ref']}\nCatégorie : {item['categorie']}\n\n")
-                    for p_num in range(1, 8):
-                        pdf_livre.set_font("Arial", 'B', 10)
-                        pdf_livre.cell(0, 6, f"--- PAGE {p_num} ---", ln=1)
-                        pdf_livre.set_font("Arial", size=8.5)
-                        pdf_livre.multi_cell(0, 5, item["pages"][p_num])
-                        pdf_livre.ln(3)
-                    ajouter_signature_pdf(pdf_livre)
-
-                    st.download_button(
-                        f"📥 Télécharger le Livre Intégral ({item['ref']} - 7 Pages)",
-                        data=pdf_livre.output(dest='S').encode('latin1'),
-                        file_name=f"{item['ref']}_Livre_7_Pages.pdf",
-                        mime="application/pdf",
-                        key=f"dl_livre_{item['id']}"
-                    )
 
         with t_echange:
             st.markdown("### 📂 Échange de Documents & Fichiers à Transmettre (Administration & Parents)")
@@ -1437,7 +1349,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             with st.form("form_admin_assigner_travail"):
                 titre_travail = st.text_input("Titre du travail ou de la consigne")
                 classe_concernee = st.selectbox("Classe concernée", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A", "CP"])
-                prof_destinataire = st.selectbox("Professeur destinataire", st.session_state.prof_white_list["Nom"].tolist() if not st.session_state.prof_white_list.empty else ["Prof. Élémentaire"])
+                prof_destinataire = st.selectbox("Professeur destinataire", st.session_state.prof_white_list["Nom","Prenom"].tolist() if not st.session_state.prof_white_list.empty else ["Prof. Élémentaire"])
                 description_travail = st.text_area("Description détaillée et consignes du travail à faire")
                 
                 pj_travail = st.file_uploader("Joindre un fichier de support (Optionnel)", type=["pdf", "docx", "xlsx"], accept_multiple_files=False)
