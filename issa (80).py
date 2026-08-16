@@ -1679,4 +1679,3 @@ elif st.session_state.espace_actif == "👨‍👩‍👧‍👦 Espace Parents"
             st.markdown(f"### Emploi du Temps de la Classe ({p_classe_eleve})")
             edt_parent_grid = get_or_create_edt(p_classe_eleve)
             st.dataframe(edt_parent_grid, use_container_width=True)
-```[cite: 1]
