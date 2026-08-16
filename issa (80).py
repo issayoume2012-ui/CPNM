@@ -260,13 +260,9 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     cur.executemany(query, data_tuples)
                     
                 elif table_name == "edt_grid":
-                    query = """
-                        INSERT INTO edt_grid (classe, jour, heure, valeur)
-                        VALUES (%s, %s, %s, %s)
-                        ON CONFLICT DO NOTHING;
-                    """
-                    data_tuples = [tuple(x) for x in df_cleaned.to_numpy()]
-                    cur.executemany(query, data_tuples)
+                    for _, r in df_cleaned.iterrows():
+                        cur.execute("DELETE FROM edt_grid WHERE classe = %s AND jour = %s AND heure = %s;", (r.get("classe"), r.get("jour"), r.get("heure")))
+                        cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s);", (r.get("classe"), r.get("jour"), r.get("heure"), r.get("valeur")))
                     
                 elif table_name == "cahier_textes":
                     query = """
@@ -671,11 +667,9 @@ def obtenir_bareme_matiere(classe, matiere):
     return 50.0 if est_cycle_elementaire(classe) else 20.0
 
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
-    # Récupération des notes réelles de l'élève pour la classe et la période
     notes_df = st.session_state.notes_db
     notes_eleve = []
     if not notes_df.empty:
-        # Filtrer par classe, période et élève
         match_notes = notes_df[
             (notes_df["Classe"] == classe) & 
             ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) & 
@@ -689,7 +683,6 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             d2 = float(row["Devoir2"]) if pd.notna(row["Devoir2"]) else 0.0
             comp = float(row["Composition"]) if pd.notna(row["Composition"]) else 0.0
             
-            # Calcul moyenne de la matière (Ex: (Devoir1 + Devoir2)/2 + Composition*2 / 3 ou similaire, prenons moyenne simple ou pondérée standard)
             moy_mat = (d1 + d2 + (comp * 2)) / 4.0 if (d1 or d2 or comp) else 0.0
             coeff = obtenir_coefficient_matiere(classe, mat)
             
@@ -735,7 +728,6 @@ def generer_pdf_bulletin(bul):
     pdf.cell(200, 8, txt=f"Eleve : {bul.get('eleve', '')} | Classe : {bul.get('classe', '')} | Periode : {bul.get('periode', '')}", ln=1, align="C")
     pdf.ln(10)
     
-    # Tableau des notes
     pdf.set_font("Arial", 'B', 10)
     pdf.cell(60, 8, "Matiere", 1, 0, "C")
     pdf.cell(30, 8, "Devoir 1", 1, 0, "C")
@@ -773,7 +765,6 @@ def generer_pdf_edt(classe, edt_g):
     pdf.ln(10)
     pdf.set_font("Arial", size=9)
     
-    # En-têtes tableau EDT
     pdf.cell(25, 8, "Jour", 1, 0, "C")
     pdf.cell(35, 8, "08h-10h", 1, 0, "C")
     pdf.cell(35, 8, "10h-12h", 1, 0, "C")
@@ -1184,7 +1175,6 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                 st.write(f"**Rang dans la classe :** {bul['rang']}")
                 st.write(f"**Décision du Conseil :** {bul['decision']}")
                 
-                # Affichage des notes détaillées
                 if bul.get("details_notes"):
                     df_notes_aff = pd.DataFrame(bul["details_notes"])
                     st.dataframe(df_notes_aff, use_container_width=True)
@@ -1230,7 +1220,7 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                         new_msg_id = f"MSG_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                         new_msg_df = pd.DataFrame([{
                             "ID": new_msg_id,
-                            "Emetteur": f"Parent de {elev_c}",
+                            "Emetteur": f"Parent de {eleve_c}",
                             "RoleEmetteur": "Parent",
                             "DateEnvoi": datetime.now().strftime("%Y-%m-%d %H:%M"),
                             "Classe": classe_c,
