@@ -802,9 +802,38 @@ if "classes_db" not in st.session_state:
   else:
       st.session_state.classes_db = df_classes
 
-# Chargement Élèves
+# --- Chargement et Gestion des Élèves ---
+
+# 1. Charger les données initiales dans le session_state si ce n'est pas déjà fait
 if "eleves_db" not in st.session_state:
-  df_el_save = edited_eleves.rename(
+    # Remplacez load_eleves_from_db() par votre fonction réelle de chargement si nécessaire
+    # ou initialisez un DataFrame vide avec les bonnes colonnes
+    if "load_eleves_from_db" in globals():
+        st.session_state.eleves_db = load_eleves_from_db()
+    else:
+        st.session_state.eleves_db = pd.DataFrame(columns=[
+            "Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"
+        ])
+
+# 2. Vérifier et ajouter les colonnes requises si elles manquent
+colonnes_requises = ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]
+for col_req in colonnes_requises:
+    if col_req not in st.session_state.eleves_db.columns:
+        st.session_state.eleves_db[col_req] = ""
+
+# 3. Trier les élèves par nom si la fonction existe et que le DF n'est pas vide
+if not st.session_state.eleves_db.empty and "trier_eleves_par_nom" in globals():
+    st.session_state.eleves_db = trier_eleves_par_nom(st.session_state.eleves_db)
+
+# 4. Afficher l'éditeur de données Streamlit
+edited_eleves = st.data_editor(
+    st.session_state.eleves_db,
+    num_rows="dynamic",
+    key="editor_eleves_table"
+)
+
+# 5. Préparer le DataFrame nettoyé/renommé pour la sauvegarde en BDD
+df_el_save = edited_eleves.rename(
     columns={
         "Nom Complet": "nom_complet",
         "Prénom": "prenom",
@@ -813,31 +842,14 @@ if "eleves_db" not in st.session_state:
         "Classe": "classe",
         "Photo": "photo",
     }
-    )[
-    [
-        "nom_complet",
-        "prenom",
-        "nom",
-        "date_de_naissance",
-        "classe",
-        "photo",
-    ]
-    ]    
-  st.session_state.eleves_db = df_eleves
-
-for col_req in [
-    "Nom Complet",
-    "Prénom",
-    "Nom",
-    "Date de Naissance",
-    "Classe",
-    "Photo",
-]:
-  if col_req not in st.session_state.eleves_db.columns:
-    st.session_state.eleves_db[col_req] = ""
-
-if not st.session_state.eleves_db.empty:
-  st.session_state.eleves_db = trier_eleves_par_nom(st.session_state.eleves_db)
+)[[
+    "nom_complet",
+    "prenom",
+    "nom",
+    "date_de_naissance",
+    "classe",
+    "photo",
+]]
 
 # Chargement Matières
 if "matieres_def" not in st.session_state:
