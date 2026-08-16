@@ -255,7 +255,7 @@ def load_table_from_db(query, columns):
         conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase de manière dynamique."""
+    """Sauvegarde ou met à jour le DataFrame dans la BDD PostgreSQL/Supabase avec correspondance exacte des colonnes."""
     conn = get_db_connection()
     if conn is None:
         st.error("Connexion à la base de données impossible.")
@@ -264,29 +264,105 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     try:
         with conn.cursor() as cur:
             if not df.empty:
-                cols = list(df.columns)
-                cols_str = ",".join([f'"{col}"' for col in cols])
+                df_cleaned = df.where(pd.notnull(df), None)
                 
                 if table_name == "eleves":
                     query = """
                         INSERT INTO eleves (nom_complet, prenom, nom, date_de_naissance, classe, photo)
                         VALUES (%s, %s, %s, %s, %s, %s)
                     """
-                    df_cleaned = df.where(pd.notnull(df), None)
                     data_tuples = [tuple(x) for x in df_cleaned.to_numpy()]
-                    cur.execute("DELETE FROM eleves;") # Rafraîchissement global synchronisé
+                    cur.execute("DELETE FROM eleves;")
                     cur.executemany(query, data_tuples)
+                    
                 elif table_name == "edt_grid":
                     query = """
                         INSERT INTO edt_grid (classe, jour, heure, valeur)
                         VALUES (%s, %s, %s, %s)
                         ON CONFLICT DO NOTHING;
                     """
-                    df_cleaned = df.where(pd.notnull(df), None)
                     data_tuples = [tuple(x) for x in df_cleaned.to_numpy()]
                     cur.executemany(query, data_tuples)
+                    
+                elif table_name == "cahier_textes":
+                    query = """
+                        INSERT INTO cahier_textes (professeur, date, classe, matiere, contenu, travail_a_faire)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING;
+                    """
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        data_tuples.append((
+                            r.get("Professeur"),
+                            str(r.get("Date", "")),
+                            r.get("Classe"),
+                            r.get("Matière"),
+                            r.get("Contenu"),
+                            r.get("Travail à faire")
+                        ))
+                    cur.executemany(query, data_tuples)
+                    
+                elif table_name == "travail_a_faire":
+                    query = """
+                        INSERT INTO travail_a_faire (id, professeur, date_publication, date_rendu, classe, matiere, titre, consignes, lien_url, lien_video, fichier_nom, fichier_b64, fichier_type)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING;
+                    """
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        data_tuples.append((
+                            r.get("ID"), r.get("Professeur"), r.get("DatePublication"), r.get("DateRendu"),
+                            r.get("Classe"), r.get("Matière"), r.get("Titre"), r.get("Consignes"),
+                            r.get("LienUrl"), r.get("LienVideo"), r.get("FichierNom"), r.get("FichierB64"), r.get("FichierType")
+                        ))
+                    cur.executemany(query, data_tuples)
+                    
+                elif table_name == "messages_parents":
+                    query = """
+                        INSERT INTO messages_parents (id, emetteur, role_emetteur, date_envoi, classe, objet, message, urgent)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (id) DO NOTHING;
+                    """
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        data_tuples.append((
+                            r.get("ID"), r.get("Emetteur"), r.get("RoleEmetteur"), r.get("DateEnvoi"),
+                            r.get("Classe"), r.get("Objet"), r.get("Message"), r.get("Urgent")
+                        ))
+                    cur.executemany(query, data_tuples)
+                    
+                elif table_name == "notes":
+                    query = """
+                        INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING;
+                    """
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        data_tuples.append((
+                            r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")),
+                            r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")
+                        ))
+                    cur.executemany(query, data_tuples)
+                    
+                elif table_name == "vie_scolaire":
+                    query = """
+                        INSERT INTO vie_scolaire (classe, periode, eleve, absences_justifiees, absences_non_justifiees, retards, heures_perdues, observations, decision_conseil)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT DO NOTHING;
+                    """
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        data_tuples.append((
+                            r.get("Classe"), r.get("Periode", r.get("Période")), r.get("Eleve"),
+                            r.get("AbsencesJustifiees", 0), r.get("AbsencesNonJustifiees", 0),
+                            r.get("Retards", 0), r.get("HeuresPerdues", 0),
+                            r.get("Observations", ""), r.get("DecisionConseil", "")
+                        ))
+                    cur.executemany(query, data_tuples)
                 else:
-                    df_cleaned = df.where(pd.notnull(df), None)
+                    cols = list(df_cleaned.columns)
+                    cols_str = ",".join([f'"{col}"' for col in cols])
                     data_tuples = [tuple(x) for x in df_cleaned.to_numpy()]
                     placeholders_gen = ",".join(["%s"] * len(cols))
                     query = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders_gen}) ON CONFLICT DO NOTHING;"
@@ -333,10 +409,6 @@ def verifier_mot_de_passe(arg1, arg2, arg3=None, table_name="prof_white_list"):
 def normaliser_texte(texte):
     if not texte: return ""
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
-
-def nettoyer_texte_pdf(texte):
-    if not texte: return ""
-    return str(texte).encode('latin-1', 'replace').decode('latin-1')
 
 ADMIN_EMAIL = "cpnm@gmail.com"
 
@@ -605,7 +677,6 @@ def obtenir_bareme_matiere(classe, matiere):
     return 50.0 if est_cycle_elementaire(classe) else 20.0
 
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
-    # Simulation simplifiée ou calcul complet des notes
     return {
         "moyenne_generale": 14.5,
         "total_bareme": 20,
@@ -694,7 +765,6 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.rerun()
 
     with c3:
-        # Corrigé pour éviter l'erreur de guillemets simple (SyntaxError)
         st.markdown("""
             <div class="animated-card">
                 <h1 style="font-size: 4rem; margin: 0;">🔒</h1>
@@ -801,7 +871,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 st.markdown(f"#### Saisie pour la matière : {matiere_principale}")
                 notes_saisies = []
                 
-                # Correction StreamlitDuplicateElementKey : Utilisation de enumerate(..., i) pour générer des clés uniques
                 for i, el in enumerate(noms_eleves):
                     col1, col2, col3, col4 = st.columns([3, 2, 2, 2])
                     with col1:
