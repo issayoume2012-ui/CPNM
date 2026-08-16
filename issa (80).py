@@ -319,6 +319,7 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     finally:
         if conn:
             conn.close()
+
 # ==========================================
 # 0. BIS. SÉCURITÉ & AUTHENTIFICATION
 # ==========================================
@@ -525,6 +526,14 @@ if "cahier_textes" not in st.session_state:
 
 if "absences_db" not in st.session_state:
     st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
+
+def rafraichir_donnees_parent():
+    """Actualise dynamiquement toutes les données depuis la base Supabase pour l'espace parent."""
+    st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
+    st.session_state.travail_a_faire_db = load_table_from_db('SELECT id AS "ID", professeur AS "Professeur", date_publication AS "DatePublication", date_rendu AS "DateRendu", classe AS "Classe", matiere AS "Matière", titre AS "Titre", consignes AS "Consignes", lien_url AS "LienUrl", lien_video AS "LienVideo", fichier_nom AS "FichierNom", fichier_b64 AS "FichierB64", fichier_type AS "FichierType" FROM travail_a_faire', ["ID", "Professeur", "DatePublication", "DateRendu", "Classe", "Matière", "Titre", "Consignes", "LienUrl", "LienVideo", "FichierNom", "FichierB64", "FichierType"])
+    st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
+    st.session_state.viescolaire_db = load_table_from_db('SELECT classe AS "Classe", periode AS "Periode", periode AS "Période", eleve AS "Eleve", absences_justifiees AS "AbsencesJustifiees", absences_non_justifiees AS "AbsencesNonJustifiees", retards AS "Retards", heures_perdues AS "HeuresPerdues", observations AS "Observations", decision_conseil AS "DecisionConseil" FROM vie_scolaire', ["Classe", "Periode", "Période", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil"])
+    synchroniser_edt_global()
 
 # ==========================================
 # 3. FONCTIONS MÉTIER & PDF
@@ -1002,16 +1011,17 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                     st.session_state.parent_logged = True
                     st.session_state.parent_eleve_connecte = eleve_trouve
                     st.session_state.parent_classe_connecte = classe_trouvee
+                    rafraichir_donnees_parent()
                     st.success(f"Bienvenue dans l'espace de suivi de {eleve_trouve} ({classe_trouvee}) !")
                     st.rerun()
                 else:
                     st.error("Identifiants non reconnus.")
     else:
+        # Synchronisation automatique de toutes les tables pour garantir que les notes, devoirs, EDT sont à jour
+        rafraichir_donnees_parent()
+
         eleve_c = st.session_state.parent_eleve_connecte
         classe_c = st.session_state.parent_classe_connecte
-        
-        # Synchronisation rafraîchie de l'emploi du temps pour l'espace parent
-        synchroniser_edt_global()
 
         st.markdown(f"### Suivi Pédagogique de : {eleve_c} (Classe : {classe_c})")
         if st.button("Se déconnecter"):
@@ -1039,14 +1049,19 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             df_taf = st.session_state.travail_a_faire_db
             if not df_taf.empty and "Classe" in df_taf.columns:
                 df_taf_cls = df_taf[df_taf["Classe"] == classe_c]
-                for _, row in df_taf_cls.iterrows():
-                    st.markdown(f"""
-                    <div class="work-card">
-                        <h4>📚 {row.get('Matière', '')} - {row.get('Titre', '')}</h4>
-                        <p><b>Professeur :</b> {row.get('Professeur', '')} | <b>À rendre le :</b> {row.get('DateRendu', '')}</p>
-                        <p>{row.get('Consignes', '')}</p>
-                    </div>
-                    """, unsafe_allow_html=True)
+                if not df_taf_cls.empty:
+                    for _, row in df_taf_cls.iterrows():
+                        st.markdown(f"""
+                        <div class="work-card">
+                            <h4>📚 {row.get('Matière', '')} - {row.get('Titre', '')}</h4>
+                            <p><b>Professeur :</b> {row.get('Professeur', '')} | <b>À rendre le :</b> {row.get('DateRendu', '')}</p>
+                            <p>{row.get('Consignes', '')}</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("Aucun travail à faire pour le moment dans cette classe.")
+            else:
+                st.info("Aucun travail à faire pour le moment.")
 
         with t_edt_p:
             st.markdown("#### Emploi du Temps Synchronisé")
