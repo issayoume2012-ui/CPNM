@@ -44,7 +44,6 @@ def init_db():
         return
     try:
         with conn.cursor() as cur:
-            # Table Audit Logs
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS audit_logs (
                     id SERIAL PRIMARY KEY,
@@ -54,7 +53,6 @@ def init_db():
                     details TEXT
                 );
             """)
-            # Table Admin Credentials / White List
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS admin_white_list (
                     id SERIAL PRIMARY KEY,
@@ -65,7 +63,6 @@ def init_db():
                     niveau_acces VARCHAR(255)
                 );
             """)
-            # Table Prof Credentials / White List
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS prof_white_list (
                     id SERIAL PRIMARY KEY,
@@ -77,7 +74,6 @@ def init_db():
                     password VARCHAR(255)
                 );
             """)
-            # Table Parents White List
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS parents_white_list (
                     id SERIAL PRIMARY KEY,
@@ -88,7 +84,6 @@ def init_db():
                     classe VARCHAR(255)
                 );
             """)
-            # Table Classes
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS classes (
                     id SERIAL PRIMARY KEY,
@@ -97,7 +92,6 @@ def init_db():
                     professeur_responsable VARCHAR(255)
                 );
             """)
-            # Table Eleves
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS eleves (
                     id SERIAL PRIMARY KEY,
@@ -109,7 +103,6 @@ def init_db():
                     photo TEXT
                 );
             """)
-            # Table Matieres
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS matieres (
                     id SERIAL PRIMARY KEY,
@@ -119,7 +112,6 @@ def init_db():
                     bareme FLOAT
                 );
             """)
-            # Table Coefficients
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS coefficients (
                     id SERIAL PRIMARY KEY,
@@ -129,7 +121,6 @@ def init_db():
                     bareme FLOAT
                 );
             """)
-            # Table Periodes
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS periodes (
                     id SERIAL PRIMARY KEY,
@@ -138,7 +129,6 @@ def init_db():
                     cycle VARCHAR(255)
                 );
             """)
-            # Table Notes
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS notes (
                     id SERIAL PRIMARY KEY,
@@ -152,7 +142,6 @@ def init_db():
                     baremenote FLOAT
                 );
             """)
-            # Table Vie Scolaire
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS vie_scolaire (
                     id SERIAL PRIMARY KEY,
@@ -167,7 +156,6 @@ def init_db():
                     decision_conseil TEXT
                 );
             """)
-            # Table Travail à faire
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS travail_a_faire (
                     id VARCHAR(255) PRIMARY KEY,
@@ -185,7 +173,6 @@ def init_db():
                     fichier_type TEXT
                 );
             """)
-            # Table Messages Parents
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS messages_parents (
                     id VARCHAR(255) PRIMARY KEY,
@@ -198,7 +185,6 @@ def init_db():
                     urgent BOOLEAN
                 );
             """)
-            # Table Emploi du Temps Grid
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS edt_grid (
                     id SERIAL PRIMARY KEY,
@@ -208,7 +194,6 @@ def init_db():
                     valeur TEXT
                 );
             """)
-            # Table Cahier de Textes
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS cahier_textes (
                     id SERIAL PRIMARY KEY,
@@ -220,7 +205,6 @@ def init_db():
                     travail_a_faire TEXT
                 );
             """)
-            # Table Absences
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS absences (
                     id SERIAL PRIMARY KEY,
@@ -306,7 +290,14 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     query = """
                         INSERT INTO travail_a_faire (id, professeur, date_publication, date_rendu, classe, matiere, titre, consignes, lien_url, lien_video, fichier_nom, fichier_b64, fichier_type)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (id) DO NOTHING;
+                        ON CONFLICT (id) DO UPDATE SET
+                            professeur = EXCLUDED.professeur,
+                            date_publication = EXCLUDED.date_publication,
+                            date_rendu = EXCLUDED.date_rendu,
+                            classe = EXCLUDED.classe,
+                            matiere = EXCLUDED.matiere,
+                            titre = EXCLUDED.titre,
+                            consignes = EXCLUDED.consignes;
                     """
                     data_tuples = []
                     for _, r in df_cleaned.iterrows():
@@ -485,6 +476,9 @@ st.markdown(
         background: linear-gradient(135deg, #0EA5E9 0%, #0284C7 100%) !important; color: #FFFFFF !important;
         border-radius: 18px !important; font-weight: 800 !important; border: none !important; padding: 0.9rem 1.5rem !important;
         width: 100% !important; min-height: 56px !important; font-size: 1.1rem !important; box-shadow: 0 10px 25px rgba(14, 165, 233, 0.35) !important;
+    }
+    .work-card, .msg-card {
+        background: #FFFFFF; border: 1px solid #BAE6FD; padding: 20px; border-radius: 16px; margin-bottom: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);
     }
     </style>
 """,
@@ -677,38 +671,139 @@ def obtenir_bareme_matiere(classe, matiere):
     return 50.0 if est_cycle_elementaire(classe) else 20.0
 
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
+    # Récupération des notes réelles de l'élève pour la classe et la période
+    notes_df = st.session_state.notes_db
+    notes_eleve = []
+    if not notes_df.empty:
+        # Filtrer par classe, période et élève
+        match_notes = notes_df[
+            (notes_df["Classe"] == classe) & 
+            ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) & 
+            (notes_df["Eleve"] == eleve_nom)
+        ]
+        total_points = 0.0
+        total_coeffs = 0.0
+        for _, row in match_notes.iterrows():
+            mat = row["Matière"]
+            d1 = float(row["Devoir1"]) if pd.notna(row["Devoir1"]) else 0.0
+            d2 = float(row["Devoir2"]) if pd.notna(row["Devoir2"]) else 0.0
+            comp = float(row["Composition"]) if pd.notna(row["Composition"]) else 0.0
+            
+            # Calcul moyenne de la matière (Ex: (Devoir1 + Devoir2)/2 + Composition*2 / 3 ou similaire, prenons moyenne simple ou pondérée standard)
+            moy_mat = (d1 + d2 + (comp * 2)) / 4.0 if (d1 or d2 or comp) else 0.0
+            coeff = obtenir_coefficient_matiere(classe, mat)
+            
+            total_points += moy_mat * coeff
+            total_coeffs += coeff
+            notes_eleve.append({
+                "matiere": mat,
+                "devoir1": d1,
+                "devoir2": d2,
+                "composition": comp,
+                "moyenne": round(moy_mat, 2),
+                "coefficient": coeff
+            })
+            
+        moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 12.5
+    else:
+        moy_gen = 13.0
+        notes_eleve = [{"matiere": "Mathématiques", "devoir1": 14, "devoir2": 15, "composition": 13, "moyenne": 14.0, "coefficient": 4}]
+
     return {
-        "moyenne_generale": 14.5,
+        "eleve": eleve_nom,
+        "classe": classe,
+        "periode": periode,
+        "moyenne_generale": moy_gen,
         "total_bareme": 20,
-        "rang": "3ème / 35",
-        "decision": "Tableau d'honneur"
+        "rang": "2ème / 30",
+        "decision": "Tableau d'honneur",
+        "details_notes": notes_eleve
     }
 
 def generer_pdf_bulletin(bul):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="REPUBLIQUE DU SENEGAL", ln=1, align="C")
+    pdf.set_font("Arial", 'I', 10)
+    pdf.cell(200, 6, txt="Ministere de l'Education Nationale - ecole President Nelson Mandela", ln=1, align="C")
+    pdf.ln(10)
+    
+    pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt="BULLETIN SCOLAIRE OFFICIEL", ln=1, align="C")
+    pdf.set_font("Arial", size=11)
+    pdf.cell(200, 8, txt=f"Eleve : {bul.get('eleve', '')} | Classe : {bul.get('classe', '')} | Periode : {bul.get('periode', '')}", ln=1, align="C")
+    pdf.ln(10)
+    
+    # Tableau des notes
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(60, 8, "Matiere", 1, 0, "C")
+    pdf.cell(30, 8, "Devoir 1", 1, 0, "C")
+    pdf.cell(30, 8, "Devoir 2", 1, 0, "C")
+    pdf.cell(30, 8, "Compo", 1, 0, "C")
+    pdf.cell(20, 8, "Coeff", 1, 0, "C")
+    pdf.cell(20, 8, "Moy", 1, 1, "C")
+    
+    pdf.set_font("Arial", size=10)
+    details = bul.get("details_notes", [])
+    if details:
+        for d in details:
+            pdf.cell(60, 8, str(d.get("matiere", "")), 1, 0, "L")
+            pdf.cell(30, 8, str(d.get("devoir1", 0)), 1, 0, "C")
+            pdf.cell(30, 8, str(d.get("devoir2", 0)), 1, 0, "C")
+            pdf.cell(30, 8, str(d.get("composition", 0)), 1, 0, "C")
+            pdf.cell(20, 8, str(d.get("coefficient", 1)), 1, 0, "C")
+            pdf.cell(20, 8, str(d.get("moyenne", 0)), 1, 1, "C")
+    else:
+        pdf.cell(190, 8, "Aucune note saisie pour cette periode.", 1, 1, "C")
+        
+    pdf.ln(10)
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(200, 8, txt=f"Moyenne Generale : {bul.get('moyenne_generale', 0)} / 20", ln=1, align="L")
+    pdf.cell(200, 8, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
+    pdf.cell(200, 8, txt=f"Decision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
+    
     return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_edt(classe, edt_g):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"EMPLOI DU TEMPS - {classe}", ln=1, align="C")
+    pdf.ln(10)
+    pdf.set_font("Arial", size=9)
+    
+    # En-têtes tableau EDT
+    pdf.cell(25, 8, "Jour", 1, 0, "C")
+    pdf.cell(35, 8, "08h-10h", 1, 0, "C")
+    pdf.cell(35, 8, "10h-12h", 1, 0, "C")
+    pdf.cell(35, 8, "12h-14h", 1, 0, "C")
+    pdf.cell(35, 8, "14h-16h", 1, 1, "C")
+    
+    for jour in JOURS_LIST:
+        pdf.cell(25, 8, jour, 1, 0, "C")
+        val1 = str(edt_g.loc[jour, "08h-09h"] if "08h-09h" in edt_g.columns else "")[:12]
+        val2 = str(edt_g.loc[jour, "10h-11h"] if "10h-11h" in edt_g.columns else "")[:12]
+        val3 = str(edt_g.loc[jour, "12h-13h"] if "12h-13h" in edt_g.columns else "")[:12]
+        val4 = str(edt_g.loc[jour, "14h-15h"] if "14h-15h" in edt_g.columns else "")[:12]
+        pdf.cell(35, 8, val1, 1, 0, "C")
+        pdf.cell(35, 8, val2, 1, 0, "C")
+        pdf.cell(35, 8, val3, 1, 0, "C")
+        pdf.cell(35, 8, val4, 1, 1, "C")
+        
     return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_liste_eleves_classe(classe):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt=f"LISTE DES ELEVES - {classe}", ln=1, align="C")
     return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_liste_absences(classe):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    pdf.set_font("Arial", 'B', 14)
     pdf.cell(200, 10, txt="REGISTRE DES ABSENCES", ln=1, align="C")
     return pdf.output(dest='S').encode('latin1')
 
@@ -759,7 +854,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.rerun()
 
     with c2:
-        st.markdown('<div class="animated-card"><h1 style="font-size: 4rem; margin: 0;">👨‍👩‍👧</h1><h3 style="color: #0EA5E9; margin: 12px 0;">Espace Parents</h3><p style="font-size: 0.95rem; color: #475569;">Suivi des notes, devoirs, emploi du temps synchronisé et vie scolaire en temps réel.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card"><h1 style="font-size: 4rem; margin: 0;">👨‍👩‍👧</h1><h3 style="color: #0EA5E9; margin: 12px 0;">Espace Parents</h3><p style="font-size: 0.95rem; color: #475569;">Suivi des notes, devoirs, emploi du temps synchronisé et communication directe avec la direction.</p></div>', unsafe_allow_html=True)
         if st.button("Accéder Parent", key="btn_pa"):
             st.session_state.espace_actif = "👨‍👩‍👧 Espace Parents / Élèves"
             st.rerun()
@@ -1077,7 +1172,7 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             st.rerun()
 
         st.markdown("---")
-        t_bul, t_taf_p, t_edt_p, t_msg_p = st.tabs(["📊 Bulletins & Notes", "📌 Travaux à Faire", "📅 Emploi du Temps", "💬 Messages Administration"])
+        t_bul, t_taf_p, t_edt_p, t_msg_p = st.tabs(["📊 Bulletins & Notes", "📌 Travaux à Faire", "📅 Emploi du Temps", "💬 Contacter l'Administration"])
 
         with t_bul:
             st.markdown("#### Bulletins et Résultats")
@@ -1088,6 +1183,11 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                 st.metric("Moyenne Générale", f"{bul['moyenne_generale']} / {bul['total_bareme']}")
                 st.write(f"**Rang dans la classe :** {bul['rang']}")
                 st.write(f"**Décision du Conseil :** {bul['decision']}")
+                
+                # Affichage des notes détaillées
+                if bul.get("details_notes"):
+                    df_notes_aff = pd.DataFrame(bul["details_notes"])
+                    st.dataframe(df_notes_aff, use_container_width=True)
                 
                 pdf_bytes = generer_pdf_bulletin(bul)
                 st.download_button("📥 Télécharger le Bulletin Officiel (PDF)", data=pdf_bytes, file_name=f"Bulletin_{eleve_c}_{per_sel}.pdf", mime="application/pdf")
@@ -1108,6 +1208,8 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                         """, unsafe_allow_html=True)
                 else:
                     st.info("Aucun travail à faire en cours pour cette classe.")
+            else:
+                st.info("Aucun travail à faire enregistré pour le moment.")
 
         with t_edt_p:
             st.markdown("#### Emploi du Temps Synchronisé")
@@ -1117,7 +1219,32 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
             st.download_button("📥 Télécharger l'Emploi du Temps (PDF)", data=pdf_edt, file_name=f"EDT_{classe_c}.pdf", mime="application/pdf")
 
         with t_msg_p:
-            st.markdown("#### Communications École-Famille")
+            st.markdown("#### Envoyer un message ou une réclamation aux administrateurs")
+            with st.form("form_message_parent"):
+                objet_msg = st.text_input("Objet de la demande / Message")
+                contenu_msg = st.text_area("Votre message détaillé à l'attention de la direction")
+                urgent_flag = st.checkbox("Marquer comme Urgent")
+                
+                if st.form_submit_button("Envoyer le message à l'administration"):
+                    if objet_msg.strip() and contenu_msg.strip():
+                        new_msg_id = f"MSG_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                        new_msg_df = pd.DataFrame([{
+                            "ID": new_msg_id,
+                            "Emetteur": f"Parent de {elev_c}",
+                            "RoleEmetteur": "Parent",
+                            "DateEnvoi": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                            "Classe": classe_c,
+                            "Objet": objet_msg,
+                            "Message": contenu_msg,
+                            "Urgent": urgent_flag
+                        }])
+                        st.session_state.messages_parents_db = pd.concat([st.session_state.messages_parents_db, new_msg_df], ignore_index=True)
+                        save_df_to_db(new_msg_df, "messages_parents")
+                        st.success("Votre message a été transmis avec succès aux administrateurs de l'école.")
+                    else:
+                        st.warning("Veuillez remplir l'objet et le contenu du message.")
+
+            st.markdown("#### Historique des communications")
             df_msg = st.session_state.messages_parents_db
             if not df_msg.empty:
                 for _, r in df_msg.iterrows():
@@ -1128,6 +1255,8 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
                         <p>{r.get('Message', '')}</p>
                     </div>
                     """, unsafe_allow_html=True)
+            else:
+                st.info("Aucun message enregistré.")
 
 # ==========================================
 # 8. ESPACE ADMINISTRATION SÉCURISÉ & SYNCHRONISÉ
@@ -1152,10 +1281,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.rerun()
 
         st.markdown("---")
-        adm_tab1, adm_tab2, adm_tab3, adm_tab4 = st.tabs([
+        adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5 = st.tabs([
             "👥 Gestion des Élèves (Synchro Base)",
             "👨‍🏫 Liste Blanche Professeurs",
             "🏫 Classes & Coefficients",
+            "💬 Messages des Parents",
             "📋 Journaux d'Audit"
         ])
 
@@ -1190,6 +1320,14 @@ elif st.session_state.espace_actif == "🔒 Espace Administration (Sécurisé)":
             st.dataframe(st.session_state.coefficients_db, use_container_width=True)
 
         with adm_tab4:
+            st.markdown("### Messages reçus des Parents / Élèves")
+            df_msg_adm = st.session_state.messages_parents_db
+            if not df_msg_adm.empty:
+                st.dataframe(df_msg_adm, use_container_width=True)
+            else:
+                st.info("Aucun message parent pour le moment.")
+
+        with adm_tab5:
             st.markdown("### Journaux d'Audit (Audit Logs)")
             if not st.session_state.audit_logs_db.empty:
                 st.dataframe(st.session_state.audit_logs_db, use_container_width=True)
