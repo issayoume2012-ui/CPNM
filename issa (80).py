@@ -466,10 +466,16 @@ if "travail_a_faire_db" not in st.session_state:
 if "messages_parents_db" not in st.session_state:
     st.session_state.messages_parents_db = load_table_from_db('SELECT id AS "ID", emetteur AS "Emetteur", role_emetteur AS "RoleEmetteur", date_envoi AS "DateEnvoi", classe AS "Classe", objet AS "Objet", message AS "Message", urgent AS "Urgent" FROM messages_parents', ["ID", "Emetteur", "RoleEmetteur", "DateEnvoi", "Classe", "Objet", "Message", "Urgent"])
 
+if "audit_logs_db" not in st.session_state:
+    st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
+
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h"]
 
 if "edt_grid_db" not in st.session_state:
+    st.session_state.edt_grid_db = {}
+
+def synchroniser_edt_global():
     st.session_state.edt_grid_db = {}
     df_edt_all = load_table_from_db("SELECT classe, jour, heure, valeur FROM edt_grid", ["classe", "jour", "heure", "valeur"])
     if not df_edt_all.empty:
@@ -480,6 +486,8 @@ if "edt_grid_db" not in st.session_state:
                 if r["jour"] in grid.index and r["heure"] in grid.columns:
                     grid.loc[r["jour"], r["heure"]] = r["valeur"]
             st.session_state.edt_grid_db[cls] = grid
+
+synchroniser_edt_global()
 
 def get_or_create_edt(classe):
     if classe not in st.session_state.edt_grid_db:
@@ -978,6 +986,10 @@ elif st.session_state.espace_actif == "👨‍👩‍👧 Espace Parents / Élè
     else:
         eleve_c = st.session_state.parent_eleve_connecte
         classe_c = st.session_state.parent_classe_connecte
+        
+        # Synchronisation rafraîchie de l'emploi du temps pour l'espace parent
+        synchroniser_edt_global()
+
         st.markdown(f"### Suivi Pédagogique de : {eleve_c} (Classe : {classe_c})")
         if st.button("Se déconnecter"):
             st.session_state.parent_logged = False
