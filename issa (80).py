@@ -279,6 +279,30 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     query = "INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING;"
                     data_tuples = [(r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")) for _, r in df_cleaned.iterrows()]
                     cur.executemany(query, data_tuples)
+                elif table_name == "travail_a_faire":
+                    query = """
+                        INSERT INTO travail_a_faire (id, professeur, date_publication, date_rendu, classe, matiere, titre, consignes, lien_url, lien_video, fichier_nom, fichier_b64, fichier_type) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+                        ON CONFLICT (id) DO UPDATE SET 
+                            professeur = EXCLUDED.professeur, 
+                            date_publication = EXCLUDED.date_publication, 
+                            date_rendu = EXCLUDED.date_rendu, 
+                            classe = EXCLUDED.classe, 
+                            matiere = EXCLUDED.matiere, 
+                            titre = EXCLUDED.titre, 
+                            consignes = EXCLUDED.consignes, 
+                            lien_url = EXCLUDED.lien_url, 
+                            lien_video = EXCLUDED.lien_video, 
+                            fichier_nom = EXCLUDED.fichier_nom, 
+                            fichier_b64 = EXCLUDED.fichier_b64, 
+                            fichier_type = EXCLUDED.fichier_type;
+                    """
+                    data_tuples = [(
+                        r.get("ID"), r.get("Professeur"), r.get("DatePublication"), r.get("DateRendu"),
+                        r.get("Classe"), r.get("Matière"), r.get("Titre"), r.get("Consignes"),
+                        r.get("LienUrl"), r.get("LienVideo"), r.get("FichierNom"), r.get("FichierB64"), r.get("FichierType")
+                    ) for _, r in df_cleaned.iterrows()]
+                    cur.executemany(query, data_tuples)
                 else:
                     cols = list(df_cleaned.columns)
                     cols_str = ",".join([f'"{col}"' for col in cols])
@@ -295,7 +319,6 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     finally:
         if conn:
             conn.close()
-
 # ==========================================
 # 0. BIS. SÉCURITÉ & AUTHENTIFICATION
 # ==========================================
