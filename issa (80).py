@@ -724,10 +724,13 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.rerun()
 
     with c3:
-        st.markdown('<div class="animated-card"><h1 style="font-size: 4rem; margin: 0;">🔒</h1><h3 style="color: #0EA5E9; margin: 12px 0;">Administration</h3><p style="font-size: 0.95rem; color: #475569;">Pilotage stratégique, listes d'élèves synchronisées et gestion des habilitations.</p></div>', unsafe_allow_html=True)
-        if st.button("Accéder Admin", key="btn_ad"):
-            st.session_state.espace_actif = "🔒 Espace Administration (Sécurisé)"
-            st.rerun()
+        st.markdown("""
+    <div class="animated-card">
+        <h1 style="font-size: 4rem; margin: 0;">🔒</h1>
+        <h3 style="color: #0EA5E9; margin: 12px 0;">Administration</h3>
+        <p style="font-size: 0.95rem; color: #475569;">Pilotage stratégique, listes d'élèves synchronisées et gestion des habilitations.</p>
+    </div>
+""", unsafe_allow_html=True)
 
     with c4:
         st.markdown('<div class="animated-card"><h1 style="font-size: 4rem; margin: 0;">🏫</h1><h3 style="color: #0EA5E9; margin: 12px 0;">Rapports Globaux</h3><p style="font-size: 0.95rem; color: #475569;">Génération des bulletins officiels et registres PDF complets de l\'établissement.</p></div>', unsafe_allow_html=True)
