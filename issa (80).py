@@ -719,7 +719,10 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.rerun()
 
     with c4:
-        st.markdown('<div class="animated-card"><h1 style="font-size: 4rem; margin: 0;">🏫</h1><h3 style="color: #0EA5E9; margin: 12px 0;">Rapports & Stats</h3><p style="font-size: 0.95rem; color: #475569;">Bulletins individuels/classes, listes d'élèves et statistiques globales.</p></div>', unsafe_allow_html=True)
+        st.markdown(
+    """<div class="animated-card"><h1 style="font-size: 4rem; margin: 0;">🏫</h1><h3 style="color: #0EA5E9; margin: 12px 0;">Rapports & Stats</h3><p style="font-size: 0.95rem; color: #475569;">Bulletins individuels/classes, listes d'élèves et statistiques globales.</p></div>""",
+    unsafe_allow_html=True,
+)
         if st.button("Accéder Rapports", key="btn_rp"):
             st.session_state.espace_actif = "🏫 Administration XXL & Rapports"
             st.rerun()
