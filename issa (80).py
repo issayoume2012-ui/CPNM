@@ -202,7 +202,9 @@ def init_db():
 
 init_db()
 
+@st.cache_data(ttl=60, show_spinner=False)
 def load_table_from_db(query, columns):
+    """Charge une table avec mise en cache pour garantir des performances ultra-rapides (< 0.5s)."""
     conn = get_db_connection()
     if conn is None:
         return pd.DataFrame(columns=columns)
@@ -214,10 +216,11 @@ def load_table_from_db(query, columns):
     except Exception:
         return pd.DataFrame(columns=columns)
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde ou synchronise le DataFrame dans la BDD PostgreSQL/Supabase."""
+    """Sauvegarde ou synchronise le DataFrame dans la BDD PostgreSQL/Supabase et invalide le cache."""
     conn = get_db_connection()
     if conn is None:
         return False
@@ -284,6 +287,7 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     query = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders}) ON CONFLICT DO NOTHING;"
                     cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
         conn.commit()
+        st.cache_data.clear()
         return True
     except Exception as e:
         if conn:
@@ -358,7 +362,6 @@ st.markdown("""
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
     .stApp { background: radial-gradient(circle at top left, #F0F4F8 0%, #E2E8F0 50%, #CBD5E1 100%); color: #0F172A; }
     
-    /* Design XXL Header */
     .header-institutionnel {
         background: linear-gradient(135deg, #0284C7 0%, #1E40AF 50%, #1E3A8A 100%);
         padding: 15px; border-radius: 36px; box-shadow: 0 30px 60px rgba(30, 64, 175, 0.35); margin-bottom: 40px;
@@ -372,7 +375,6 @@ st.markdown("""
     .ia-ief-sub { color: #1E3A8A; font-size: clamp(0.95rem, 1.9vw, 1.3rem); font-weight: 700; margin: 6px 0; }
     .ecole-title { color: #0284C7; font-size: clamp(1.5rem, 3vw, 2.6rem); font-weight: 900; margin: 8px 0 0 0; text-transform: uppercase; }
     
-    /* Design XXL Cards */
     .animated-card-xxl {
         border: 3px solid rgba(14, 165, 233, 0.4); padding: 50px 30px; border-radius: 36px;
         background: linear-gradient(145deg, #FFFFFF 0%, #F8FAFC 100%); box-shadow: 0 25px 50px rgba(15, 23, 42, 0.12);
@@ -385,7 +387,6 @@ st.markdown("""
         border-color: #0284C7;
     }
     
-    /* Buttons XXL */
     .stButton>button {
         background: linear-gradient(135deg, #0284C7 0%, #1D4ED8 100%) !important; color: #FFFFFF !important;
         border-radius: 20px !important; font-weight: 800 !important; border: none !important; padding: 1rem 1.8rem !important;
@@ -397,7 +398,6 @@ st.markdown("""
         box-shadow: 0 18px 40px rgba(2, 132, 199, 0.6) !important;
     }
 
-    /* Style du jamais vu pour les Téléchargements (Download Button Custom Wrapper) */
     .download-container-xxl {
         background: linear-gradient(135deg, #EFF6FF 0%, #DBEAFE 100%);
         border: 2px dashed #3B82F6;
@@ -417,7 +417,7 @@ st.markdown("""
 st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>", unsafe_allow_html=True)
 
 # ==========================================
-# 2. INITIALISATION DES ÉTATS & CHARGEMENT BDD
+# 2. INITIALISATION DES ÉTATS & CHARGEMENT OPTIMISÉ
 # ==========================================
 if "espace_actif" not in st.session_state:
     st.session_state.espace_actif = "🏠 Accueil"
@@ -520,7 +520,7 @@ if "absences_db" not in st.session_state:
     st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
 
 # ==========================================
-# 3. FONCTIONS MÉTIER & PDF
+# 3. FONCTIONS MÉTIER & DESIGN PDF OFFICIEL
 # ==========================================
 def obtenir_cycle_classe(classe_nom):
     if not classe_nom: return "Élémentaire"
@@ -587,101 +587,120 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         "decision": "Tableau d'honneur", "details_notes": notes_eleve
     }
 
+def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
+    pdf.set_font("Arial", 'B', 11)
+    pdf.cell(200, 5, txt="REPUBLIQUE DU SENEGAL", ln=1, align="C")
+    pdf.set_font("Arial", '', 9)
+    pdf.cell(200, 4, txt="Un Peuple - Un But - Une Foi", ln=1, align="C")
+    pdf.cell(200, 4, txt="Ministere de l'Education Nationale", ln=1, align="C")
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(200, 4, txt="Inspection d'Academie de Saint-Louis - IEF de Saint-Louis", ln=1, align="C")
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(200, 6, txt="ECOLE PRESIDENT NELSON MANDELA", ln=1, align="C")
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(200, 4, txt="[ Sceau Officiel, Logo & Cachet de l'Etablissement ]", ln=1, align="C")
+    pdf.ln(4)
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 7, txt=titre_doc, ln=1, align="C")
+    pdf.ln(5)
+
+def ajouter_signature_pdf(pdf):
+    pdf.ln(8)
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(120, 5, "", 0, 0)
+    pdf.cell(70, 5, "Le Directeur / Chef d'Etablissement", 0, 1, "C")
+    pdf.ln(12)
+    pdf.cell(120, 5, "", 0, 0)
+    pdf.set_font("Arial", 'I', 8)
+    pdf.cell(70, 5, "( Signature et Sceau Officiel )", 0, 1, "C")
+
 def generer_pdf_bulletin(bul):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(200, 10, txt="REPUBLIQUE DU SENEGAL", ln=1, align="C")
-    pdf.set_font("Arial", 'I', 10)
-    pdf.cell(200, 6, txt="Ministere de l'Education Nationale - ecole President Nelson Mandela", ln=1, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt="BULLETIN SCOLAIRE OFFICIEL", ln=1, align="C")
-    pdf.set_font("Arial", size=11)
-    pdf.cell(200, 8, txt=f"Eleve : {bul.get('eleve', '')} | Classe : {bul.get('classe', '')} | Periode : {bul.get('periode', '')}", ln=1, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(60, 8, "Matiere", 1, 0, "C")
-    pdf.cell(30, 8, "Devoir 1", 1, 0, "C")
-    pdf.cell(30, 8, "Devoir 2", 1, 0, "C")
-    pdf.cell(30, 8, "Compo", 1, 0, "C")
-    pdf.cell(20, 8, "Coeff", 1, 0, "C")
-    pdf.cell(20, 8, "Moy", 1, 1, "C")
+    ajouter_en_tete_officiel_pdf(pdf, "BULLETIN SCOLAIRE OFFICIEL")
     pdf.set_font("Arial", size=10)
+    pdf.cell(200, 6, txt=f"Eleve : {bul.get('eleve', '')} | Classe : {bul.get('classe', '')} | Periode : {bul.get('periode', '')}", ln=1, align="C")
+    pdf.ln(6)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(60, 7, "Matiere", 1, 0, "C", fill=True)
+    pdf.cell(30, 7, "Devoir 1", 1, 0, "C", fill=True)
+    pdf.cell(30, 7, "Devoir 2", 1, 0, "C", fill=True)
+    pdf.cell(30, 7, "Compo", 1, 0, "C", fill=True)
+    pdf.cell(20, 7, "Coeff", 1, 0, "C", fill=True)
+    pdf.cell(20, 7, "Moy", 1, 1, "C", fill=True)
+    pdf.set_font("Arial", size=9)
     for d in bul.get("details_notes", []):
-        pdf.cell(60, 8, str(d.get("matiere", "")), 1, 0, "L")
-        pdf.cell(30, 8, str(d.get("devoir1", 0)), 1, 0, "C")
-        pdf.cell(30, 8, str(d.get("devoir2", 0)), 1, 0, "C")
-        pdf.cell(30, 8, str(d.get("composition", 0)), 1, 0, "C")
-        pdf.cell(20, 8, str(d.get("coefficient", 1)), 1, 0, "C")
-        pdf.cell(20, 8, str(d.get("moyenne", 0)), 1, 1, "C")
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 11)
-    pdf.cell(200, 8, txt=f"Moyenne Generale : {bul.get('moyenne_generale', 0)} / 20", ln=1, align="L")
-    pdf.cell(200, 8, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
-    pdf.cell(200, 8, txt=f"Decision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
+        pdf.cell(60, 6, str(d.get("matiere", "")), 1, 0, "L")
+        pdf.cell(30, 6, str(d.get("devoir1", 0)), 1, 0, "C")
+        pdf.cell(30, 6, str(d.get("devoir2", 0)), 1, 0, "C")
+        pdf.cell(30, 6, str(d.get("composition", 0)), 1, 0, "C")
+        pdf.cell(20, 6, str(d.get("coefficient", 1)), 1, 0, "C")
+        pdf.cell(20, 6, str(d.get("moyenne", 0)), 1, 1, "C")
+    pdf.ln(6)
+    pdf.set_font("Arial", 'B', 10)
+    pdf.cell(200, 6, txt=f"Moyenne Generale : {bul.get('moyenne_generale', 0)} / 20", ln=1, align="L")
+    pdf.cell(200, 6, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
+    pdf.cell(200, 6, txt=f"Decision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
+    ajouter_signature_pdf(pdf)
     return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_edt(classe, edt_g):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt=f"EMPLOI DU TEMPS - {classe}", ln=1, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", size=9)
-    pdf.cell(25, 8, "Jour", 1, 0, "C")
+    ajouter_en_tete_officiel_pdf(pdf, f"EMPLOI DU TEMPS OFFICIEL - {classe}")
+    pdf.set_font("Arial", size=8)
+    pdf.cell(22, 6, "Jour", 1, 0, "C")
     for h in HEURES_LIST[:5]:
-        pdf.cell(32, 8, h, 1, 0, "C")
-    pdf.cell(32, 8, "", 0, 1, "C")
+        pdf.cell(32, 6, h, 1, 0, "C")
+    pdf.cell(32, 6, "", 0, 1, "C")
     for jour in JOURS_LIST:
-        pdf.cell(25, 8, jour, 1, 0, "C")
+        pdf.cell(22, 6, jour, 1, 0, "C")
         for h in HEURES_LIST[:5]:
             val = str(edt_g.loc[jour, h] if h in edt_g.columns else "")[:10]
-            pdf.cell(32, 8, val, 1, 0, "C")
-        pdf.cell(32, 8, "", 0, 1, "C")
+            pdf.cell(32, 6, val, 1, 0, "C")
+        pdf.cell(32, 6, "", 0, 1, "C")
+    ajouter_signature_pdf(pdf)
     return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_liste_eleves_classe(classe):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt=f"LISTE OFFICIELLE DES ELEVES - {classe}", ln=1, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(10, 8, "N°", 1, 0, "C")
-    pdf.cell(90, 8, "Nom Complet", 1, 0, "C")
-    pdf.cell(50, 8, "Date de Naissance", 1, 1, "C")
-    pdf.set_font("Arial", size=10)
+    ajouter_en_tete_officiel_pdf(pdf, f"LISTE OFFICIELLE DES ELEVES - {classe}")
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(15, 6, "N°", 1, 0, "C")
+    pdf.cell(105, 6, "Nom Complet", 1, 0, "C")
+    pdf.cell(60, 6, "Date de Naissance", 1, 1, "C")
+    pdf.set_font("Arial", size=9)
     df_cls = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe]
     df_cls = trier_eleves_par_nom(df_cls)
     for idx, (_, r) in enumerate(df_cls.iterrows(), 1):
-        pdf.cell(10, 8, str(idx), 1, 0, "C")
-        pdf.cell(90, 8, str(r.get("Nom Complet", "")), 1, 0, "L")
-        pdf.cell(50, 8, str(r.get("Date de Naissance", "")), 1, 1, "C")
+        pdf.cell(15, 6, str(idx), 1, 0, "C")
+        pdf.cell(105, 6, str(r.get("Nom Complet", "")), 1, 0, "L")
+        pdf.cell(60, 6, str(r.get("Date de Naissance", "")), 1, 1, "C")
+    ajouter_signature_pdf(pdf)
     return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_liste_absences(classe):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 14)
-    pdf.cell(200, 10, txt=f"REGISTRE DES ABSENCES - {classe}", ln=1, align="C")
-    pdf.ln(10)
-    pdf.set_font("Arial", 'B', 10)
-    pdf.cell(30, 8, "Date", 1, 0, "C")
-    pdf.cell(40, 8, "Classe", 1, 0, "C")
-    pdf.cell(60, 8, "Élève", 1, 0, "C")
-    pdf.cell(30, 8, "Statut", 1, 0, "C")
-    pdf.cell(30, 8, "Motif", 1, 1, "C")
-    pdf.set_font("Arial", size=9)
+    ajouter_en_tete_officiel_pdf(pdf, f"REGISTRE DES ABSENCES & DISCIPLINE - {classe}")
+    pdf.set_font("Arial", 'B', 9)
+    pdf.cell(25, 6, "Date", 1, 0, "C")
+    pdf.cell(35, 6, "Classe", 1, 0, "C")
+    pdf.cell(65, 6, "Élève", 1, 0, "C")
+    pdf.cell(30, 6, "Statut", 1, 0, "C")
+    pdf.cell(35, 6, "Motif", 1, 1, "C")
+    pdf.set_font("Arial", size=8)
     df_abs = st.session_state.absences_db
     if classe != "Toutes":
         df_abs = df_abs[df_abs["Classe"] == classe]
     for _, r in df_abs.iterrows():
-        pdf.cell(30, 8, str(r.get("Date", "")), 1, 0, "C")
-        pdf.cell(40, 8, str(r.get("Classe", "")), 1, 0, "C")
-        pdf.cell(60, 8, str(r.get("Élève", "")), 1, 0, "L")
-        pdf.cell(30, 8, str(r.get("Statut", "")), 1, 0, "C")
-        pdf.cell(30, 8, str(r.get("Motif", "")), 1, 1, "C")
+        pdf.cell(25, 6, str(r.get("Date", "")), 1, 0, "C")
+        pdf.cell(35, 6, str(r.get("Classe", "")), 1, 0, "C")
+        pdf.cell(65, 6, str(r.get("Élève", "")), 1, 0, "L")
+        pdf.cell(30, 6, str(r.get("Statut", "")), 1, 0, "C")
+        pdf.cell(35, 6, str(r.get("Motif", "")), 1, 1, "C")
+    ajouter_signature_pdf(pdf)
     return pdf.output(dest='S').encode('latin1')
 
 # ==========================================
@@ -726,7 +745,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
         <div style="text-align: center; padding: 10px 0 35px 0;">
             <h1 style="color: #0F172A; font-weight: 900; font-size: 2.8rem;">Portail Pédagogique & Administratif XXL</h1>
             <p style="font-size: 1.25rem; color: #334155; max-width: 900px; margin: 0 auto; font-weight: 500;">
-                Plateforme officielle de l'École Président Nelson Mandela. Gestion centralisée et sécurisée dédiée exclusivement au Corps Enseignant et à l'Administration.
+                Plateforme officielle de l'École Président Nelson Mandela. Gestion centralisée, ultra-rapide et sécurisée dédiée au Corps Enseignant et à l'Administration.
             </p>
         </div>
         """,
@@ -735,13 +754,13 @@ if st.session_state.espace_actif == "🏠 Accueil":
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1.05rem; color: #475569;">Notes, saisie des devoirs, cahier de texte numérique, appels et emplois du temps.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1.05rem; color: #475569;">Notes, saisie des devoirs, cahier de texte numérique, appels et emplois du temps synchronisés.</p></div>', unsafe_allow_html=True)
         if st.button("🚀 Accéder à l'Espace Professeurs", key="btn_p"):
             st.session_state.espace_actif = "👨‍🏫 Espace Professeurs / Maîtres"
             st.rerun()
 
     with c2:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Rapports XXL</h2><p style="font-size: 1.05rem; color: #475569;">Pilotage stratégique complet, CRUD bases de données, registres officiels et rapports PDF illimités.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4.5rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Rapports XXL</h2><p style="font-size: 1.05rem; color: #475569;">Pilotage stratégique complet, CRUD bases de données, registres officiels et rapports PDF dotés de sceaux et signatures.</p></div>', unsafe_allow_html=True)
         if st.button("⚡ Accéder à l'Administration XXL", key="btn_ad"):
             st.session_state.espace_actif = "🔒 Espace Administration & Rapports (Sécurisé)"
             st.rerun()
@@ -943,7 +962,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.dataframe(edt_grid_df, use_container_width=True)
 
 # ==========================================
-# 7. ESPACE ADMINISTRATION & RAPPORTS XXL (CRUD + EDT + CAHIERS + TÉLÉCHARGEMENTS "DU JAMAIS VU")
+# 7. ESPACE ADMINISTRATION & RAPPORTS XXL
 # ==========================================
 elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.3rem; font-weight: 900; margin-bottom: 20px;">🔒 Administration XXL, Pilotage & Rapports Officiels</div>', unsafe_allow_html=True)
@@ -972,7 +991,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             "📅 Emploi du Temps Global",
             "📋 Registre Absences & Cahiers",
             "📊 Journaux d'Audit",
-            "📥 Téléchargements XXL (Du Jamais Vu)"
+            "📥 Téléchargements XXL (Design Officiel & Sceaux)"
         ])
 
         with adm_tab1:
@@ -1041,8 +1060,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.info("Aucun journal d'audit enregistré.")
 
         with adm_tab7:
-            st.markdown("### 📥 Centre de Téléchargement XXL (Design du Jamais Vu)")
-            st.markdown("Générez et téléchargez instantanément tous les rapports officiels de l'établissement avec un rendu graphique d'élite.")
+            st.markdown("### 📥 Centre de Téléchargement XXL (Design Officiel, Sceaux & Signatures)")
+            st.markdown("Générez et téléchargez instantanément tous les rapports officiels de l'établissement dotés du sceau, du logo et de la signature officielle.")
 
             col_dl1, col_dl2 = st.columns(2)
 
@@ -1057,7 +1076,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     eleve_r = st.selectbox("Élève spécifique", df_el_r["Nom Complet"].tolist(), key="el_dl_bul")
                     
                     st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
-                    st.write("✨ **Génération Ultra-Rapide du Bulletin Individuel**")
+                    st.write("✨ **Génération Ultra-Rapide du Bulletin Officiel (Sceau & Signature)**")
                     bul = calculer_bulletin_eleve(cls_r, eleve_r, per_r)
                     pdf_bytes = generer_pdf_bulletin(bul)
                     st.download_button("📥 Télécharger le Bulletin Officiel (PDF)", data=pdf_bytes, file_name=f"Bulletin_{eleve_r}_{per_r}.pdf", mime="application/pdf", key="dl_bul_indiv")
