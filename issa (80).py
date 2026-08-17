@@ -1460,56 +1460,55 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 df_edt_save = pd.DataFrame(rows_to_save)
                 save_df_to_db(df_edt_save, "edt_grid")
                 st.success("Emploi du temps enregistré avec succès dans Supabase !")
-
         with adm_tab9:
             st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
-                
-                classe_bul_sel = st.selectbox(
-                    "Sélectionner la classe pour les rapports et bulletins", 
-                    st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], 
-                    key="cls_bul_admin"
-                )
-                periodes_bul = obtenir_periodes_pour_classe(classe_bul_sel)
-                periode_bul_sel = st.selectbox("Sélectionner la période", periodes_bul, key="per_bul_admin")
-                
-                df_el_bul = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_bul_sel]
-                
-                if df_el_bul.empty:
-                    st.warning("Aucun élève dans cette classe.")
-                else:
-                    df_el_bul = trier_eleves_par_nom(df_el_bul)
-                    eleve_sel_bul = st.selectbox(
-                        "Sélectionner l'élève", 
-                        df_el_bul["Nom Complet"].tolist(), 
-                        key="el_bul_admin"
-                    )
-                    
-                    # 1. Optionnel : Pré-calcul ou vérification des données avant génération
-                    if st.button("Vérifier / Préparer les données du bulletin"):
-                        st.session_state.bul_data_cache = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
-                        st.success("Données prêtes pour le téléchargement !")
+    
+            classe_bul_sel = st.selectbox(
+                "Sélectionner la classe pour les rapports et bulletins", 
+                st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], 
+                key="cls_bul_admin"
+            )
+            periodes_bul = obtenir_periodes_pour_classe(classe_bul_sel)
+            periode_bul_sel = st.selectbox("Sélectionner la période", periodes_bul, key="per_bul_admin")
             
-                    # 2. Utilisation d'une fonction de rappel ou génération directe pour le st.download_button
-                    try:
-                        # On calcule les données du bulletin
-                        bul_data = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
+            df_el_bul = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_bul_sel]
+            
+            if df_el_bul.empty:
+                st.warning("Aucun élève dans cette classe.")
+            else:
+                df_el_bul = trier_eleves_par_nom(df_el_bul)
+                eleve_sel_bul = st.selectbox(
+                    "Sélectionner l'élève", 
+                    df_el_bul["Nom Complet"].tolist(), 
+                    key="el_bul_admin"
+                )
+                
+                # 1. Optionnel : Pré-calcul ou vérification des données avant génération
+                if st.button("Vérifier / Préparer les données du bulletin"):
+                    st.session_state.bul_data_cache = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
+                    st.success("Données prêtes pour le téléchargement !")
+        
+                # 2. Utilisation d'une fonction de rappel ou génération directe pour le st.download_button
+                try:
+                    # On calcule les données du bulletin
+                    bul_data = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
+            
+                    # On génère les octets PDF (assurez-vous que generer_pdf_bulletin retourne bien des bytes ou un BytesIO)
+                    pdf_bytes = generer_pdf_bulletin(bul_data)
+                    
+                    if pdf_bytes:
+                        st.download_button(
+                            label="📥 Télécharger le Bulletin Officiel (PDF)",
+                            data=pdf_bytes,
+                            file_name=f"Bulletin_{eleve_sel_bul.replace(' ', '_')}_{periode_bul_sel}.pdf",
+                            mime="application/pdf",
+                            key="dl_bulletin_official_btn"
+                        )
+                    else:
+                        st.error("Erreur : Le contenu du PDF généré est vide.")
                         
-                        # On génère les octets PDF (assurez-vous que generer_pdf_bulletin retourne bien des bytes ou un BytesIO)
-                        pdf_bytes = generer_pdf_bulletin(bul_data)
-                        
-                        if pdf_bytes:
-                            st.download_button(
-                                label="📥 Télécharger le Bulletin Officiel (PDF)",
-                                data=pdf_bytes,
-                                file_name=f"Bulletin_{eleve_sel_bul.replace(' ', '_')}_{periode_bul_sel}.pdf",
-                                mime="application/pdf",
-                                key="dl_bulletin_official_btn"
-                            )
-                        else:
-                            st.error("Erreur : Le contenu du PDF généré est vide.")
-                            
-                    except Exception as e:
-                        st.error(f"Erreur lors de la préparation du bulletin : {e}")
+                except Exception as e:
+                    st.error(f"Erreur lors de la préparation du bulletin : {e}")
                 
 
             st.markdown("---")
