@@ -1,4 +1,4 @@
-# --- BIBLIOTHÈQUES STANDARDS (Python) ---
+# --- BIBLIOTHÈQUES STANDARDS (Python) ---[cite: 5]
 import base64
 from datetime import datetime
 import io
@@ -20,7 +20,7 @@ from psycopg2.extras import RealDictCursor
 DATABASE_URL = "postgresql://postgres.dzxotavktglasrcpyrwx:xTS1vLLFnlGWJXrr@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
 
 def get_db_connection():
-    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
+    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""[cite: 5]
     try:
         if "postgres" in st.secrets:
             conn = psycopg2.connect(
@@ -38,7 +38,7 @@ def get_db_connection():
         return None
 
 def init_db():
-    """Initialise toutes les tables dans Supabase / PostgreSQL."""
+    """Initialise toutes les tables dans Supabase / PostgreSQL."""[cite: 5]
     conn = get_db_connection()
     if conn is None:
         return
@@ -93,6 +93,9 @@ def init_db():
                     photo TEXT
                 );
             """)
+            # Sécurité additionnelle pour s'assurer que la colonne accepte les formats textuels/dates sans erreur de type
+            cur.execute("ALTER TABLE eleves ALTER COLUMN date_de_naissance TYPE VARCHAR(50);")
+            
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS matieres (
                     id SERIAL PRIMARY KEY,
@@ -211,9 +214,25 @@ def init_db():
 
 init_db()
 
+def nettoyer_date(val):
+    """Convertit et nettoie tout format de date (DD-MM-YYYY, YYYY-MM-DD, etc.) et élimine 'nan' / 'None'."""
+    if val is None or pd.isna(val) or str(val).lower() in ["nan", "nat", "none", ""]:
+        return None
+    val_str = str(val).strip()
+    if val_str == "" or val_str.lower() in ["nan", "nat", "none"]:
+        return None
+    # Essayer de normaliser les formats courants vers YYYY-MM-DD ou conserver proprement
+    for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%Y/%m/%d", "%d-%m-%y", "%d/%m/%y"):
+        try:
+            dt = datetime.strptime(val_str[:10], fmt)
+            return dt.strftime("%Y-%m-%d")
+        except ValueError:
+            continue
+    return val_str
+
 @st.cache_data(ttl=5, show_spinner=False)
 def load_table_from_db(query, columns):
-    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
+    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""[cite: 5]
     conn = get_db_connection()
     if conn is None:
         return pd.DataFrame(columns=columns)
@@ -229,7 +248,7 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée avec débogage d'erreurs."""
+    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée avec débogage d'erreurs."""[cite: 5]
     conn = get_db_connection()
     if conn is None:
         st.error("Impossible d'établir la connexion à la base de données Supabase.")
@@ -244,14 +263,27 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     data = []
                     for _, r in df_cleaned.iterrows():
                         nom_complet = r.get("Nom Complet")
+                        if nom_complet is not None and str(nom_complet).lower() in ["nan", "none"]:
+                            nom_complet = None
+                            
                         prenom = r.get("Prénom")
+                        if prenom is not None and str(prenom).lower() in ["nan", "none"]:
+                            prenom = None
+                            
                         nom = r.get("Nom")
-                        date_naiss = r.get("Date de Naissance")
-                        if date_naiss is not None:
-                            date_naiss = str(date_naiss)
+                        if nom is not None and str(nom).lower() in ["nan", "none"]:
+                            nom = None
+                            
+                        date_naiss = nettoyer_date(r.get("Date de Naissance"))
+                        
                         classe = r.get("Classe")
+                        if classe is not None and str(classe).lower() in ["nan", "none"]:
+                            classe = None
+                            
                         photo = r.get("Photo")
-                        if photo is not None:
+                        if photo is None or pd.isna(photo) or str(photo).lower() in ["nan", "nat", "none", ""]:
+                            photo = None
+                        else:
                             photo = str(photo)
                         
                         # Ignorer les lignes totalement vides créées par le tableau
