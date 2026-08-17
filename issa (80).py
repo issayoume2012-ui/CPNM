@@ -1,3 +1,58 @@
+issa (80) (55)(1).py
+Python
+j'ai un souci Et avec ce code tous les téléchargements marchent à savoir emploi du Fichier des élèves Fiche par classe Régis d'absence registre de cahier de texte sauf le téléchargement des bulletins par classe et par par élève Il me met les messages comme : sites non disponibles ou bien Quand je télécharge un zip =on me met fichier vide. Corriger ça de manière ferme et motive c'est dû à quoi
+
+Oui. J’ai vérifié le fichier ligne par ligne, et le problème vient bien de la partie génération/téléchargement des bulletins, pas du fonctionnement général de Supabase.
+
+🔴 Les causes précises
+Conversion PDF fragile/incompatible avec FPDF2
+Ton code termine la génération par :
+pdf.output(dest='S').encode('latin1').
+Or avec FPDF2, output(dest="S") peut retourner un bytearray, qui ne possède pas .encode(). C’est une vraie source d’erreur au moment du téléchargement. Cette même conversion est présente dans les générateurs PDF du fichier.
+Le ZIP des bulletins n'est en réalité pas généré dans le fichier fourni.
+Tu importes bien zipfile, mais il n'y a aucun zipfile.ZipFile(...) dans le code. Donc l'import est présent mais la création réelle d'un ZIP contenant les bulletins manque.
+Le téléchargement individuel des bulletins est trop fragile.
+Le code recalcule le bulletin puis appelle directement generer_pdf_bulletin(), sans véritable contrôle de la sortie binaire.
+Il n'existe pas actuellement de vraie fonction "bulletins de toute la classe".
+La partie actuelle permet seulement de sélectionner un élève, puis de télécharger son bulletin.
+✅ Ce que j'ai corrigé
+
+J'ai préparé une version corrigée qui :
+
+convertit correctement bytes, bytearray ou str provenant de FPDF ;
+sécurise les noms de fichiers ;
+permet le téléchargement du bulletin individuel ;
+crée réellement un ZIP contenant un PDF par élève ;
+vérifie qu'un ZIP n'est jamais présenté comme valide s'il est vide ;
+donne une erreur technique précise au lieu d'un comportement qui ressemble à « site indisponible » ;
+conserve les autres fonctionnalités du programme.
+
+J'ai également vérifié que le fichier corrigé passe la compilation Python sans erreur et que la génération PDF → ZIP produit bien des fichiers non vides.
+
+📥 Version corrigée
+
+Télécharger le fichier Python corrigé
+
+⚠️ Point très important
+
+Dans ton fichier original, le bulletin est construit à partir de calculer_bulletin_eleve(), puis transmis à generer_pdf_bulletin().
+
+Donc ce n'est pas normal de chercher la cause principale du problème du côté de Supabase. Les données peuvent venir de Supabase, mais la fabrication du PDF se fait ensuite localement. Le problème est surtout dans la chaîne :
+
+données élève → calcul bulletin → génération FPDF → conversion en bytes → téléchargement Streamlit → ZIP
+
+J'ai renforcé précisément cette chaîne.
+
+Autre point : ton fichier contient directement des identifiants de connexion à la base de données. Il faut impérativement les retirer du code et les mettre dans st.secrets, puis changer le mot de passe de la base s'il s'agit d'un vrai identifiant actif.
+
+Si tu remplaces ton ancien fichier par celui que je viens de corriger, les boutons seront structurés pour bulletin individuel + tous les bulletins de la classe en ZIP, au lieu de laisser un ZIP vide.
+
+issa_corrige_bulletins.py
+Code
+
+Bibliothèque
+/
+issa_corrige_bulletins.py
 # --- BIBLIOTHÈQUES STANDARDS (Python) ---
 import base64
 from datetime import datetime
@@ -749,6 +804,18 @@ def ajouter_signature_pdf(pdf):
     pdf.set_font("Arial", 'I', 7)
     pdf.cell(75, 4, "( Signature, Cachet & Sceau Officiel )", 0, 1, "C")
 
+def convertir_pdf_en_bytes(pdf):
+    """Convertit la sortie FPDF en vrais octets, compatible fpdf/FPDF2."""
+    data = pdf.output(dest="S")
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, bytearray):
+        return bytes(data)
+    if isinstance(data, str):
+        return data.encode("latin1")
+    return bytes(data)
+
+
 def generer_pdf_bulletin(bul):
     pdf = FPDF()
     pdf.add_page()
@@ -795,7 +862,7 @@ def generer_pdf_bulletin(bul):
     pdf.cell(200, 5, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Décision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return convertir_pdf_en_bytes(pdf)
 
 def generer_pdf_edt(classe, edt_g):
     pdf = FPDF()
@@ -814,7 +881,7 @@ def generer_pdf_edt(classe, edt_g):
             pdf.cell(32, 5.5, val, 1, 0, "C")
         pdf.cell(32, 5.5, "", 0, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return convertir_pdf_en_bytes(pdf)
 
 def generer_pdf_cahier_texte(classe_filtre):
     pdf = FPDF()
@@ -838,7 +905,7 @@ def generer_pdf_cahier_texte(classe_filtre):
         pdf.cell(55, 5.5, str(r.get("Contenu", ""))[:35], 1, 0, "L")
         pdf.cell(50, 5.5, str(r.get("Travail à faire", ""))[:30], 1, 1, "L")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return convertir_pdf_en_bytes(pdf)
 
 def generer_pdf_liste_eleves_classe(classe):
     pdf = FPDF()
@@ -857,7 +924,7 @@ def generer_pdf_liste_eleves_classe(classe):
         pdf.cell(110, 5.5, str(r.get("Nom Complet", "")), 1, 0, "L")
         pdf.cell(65, 5.5, str(r.get("Date de Naissance", "")), 1, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return convertir_pdf_en_bytes(pdf)
 
 def generer_pdf_registre_absences(classe):
     pdf = FPDF()
@@ -881,7 +948,49 @@ def generer_pdf_registre_absences(classe):
     else:
         pdf.cell(190, 6, "Aucune absence enregistrée pour cette classe.", 1, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return convertir_pdf_en_bytes(pdf)
+
+def nettoyer_nom_fichier(texte):
+    """Produit un nom de fichier sûr pour Windows/Linux/macOS."""
+    texte = unicodedata.normalize("NFKD", str(texte))
+    texte = "".join(c for c in texte if not unicodedata.combining(c))
+    texte = "".join(c if (c.isalnum() or c in " ._-()") else "_" for c in texte)
+    return "_".join(texte.split()).strip("._") or "bulletin"
+
+
+def generer_zip_bulletins_classe(classe, periode):
+    """Génère un ZIP non vide contenant un PDF par élève de la classe."""
+    df_cls = st.session_state.eleves_db[
+        st.session_state.eleves_db["Classe"] == classe
+    ].copy()
+    df_cls = trier_eleves_par_nom(df_cls)
+
+    if df_cls.empty:
+        return b""
+
+    zip_buffer = io.BytesIO()
+    fichiers_ajoutes = 0
+
+    with zipfile.ZipFile(zip_buffer, mode="w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for index, (_, row) in enumerate(df_cls.iterrows(), start=1):
+            eleve = str(row.get("Nom Complet", "")).strip()
+            if not eleve:
+                continue
+
+            bulletin = calculer_bulletin_eleve(classe, eleve, periode)
+            pdf_bytes = generer_pdf_bulletin(bulletin)
+            if not pdf_bytes:
+                continue
+
+            nom_pdf = f"{index:02d}_{nettoyer_nom_fichier(eleve)}_{nettoyer_nom_fichier(periode)}.pdf"
+            zf.writestr(nom_pdf, pdf_bytes)
+            fichiers_ajoutes += 1
+
+    if fichiers_ajoutes == 0:
+        return b""
+
+    return zip_buffer.getvalue()
+
 
 # ==========================================
 # 4. EN-TÊTE XXL & DESIGN D'ACCUEIL
@@ -1483,33 +1592,56 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     key="el_bul_admin"
                 )
                 
-                # 1. Optionnel : Pré-calcul ou vérification des données avant génération
-                if st.button("Vérifier / Préparer les données du bulletin"):
-                    st.session_state.bul_data_cache = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
-                    st.success("Données prêtes pour le téléchargement !")
-        
-                # 2. Utilisation d'une fonction de rappel ou génération directe pour le st.download_button
+                # Bulletin individuel : génération directe et données binaires sûres.
                 try:
-                    # On calcule les données du bulletin
-                    bul_data = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
-            
-                    # On génère les octets PDF (assurez-vous que generer_pdf_bulletin retourne bien des bytes ou un BytesIO)
+                    bul_data = calculer_bulletin_eleve(
+                        classe_bul_sel, eleve_sel_bul, periode_bul_sel
+                    )
                     pdf_bytes = generer_pdf_bulletin(bul_data)
-                    
-                    if pdf_bytes:
+
+                    if not pdf_bytes:
+                        st.error("Le bulletin a été généré sans contenu : téléchargement bloqué.")
+                    else:
                         st.download_button(
                             label="📥 Télécharger le Bulletin Officiel (PDF)",
                             data=pdf_bytes,
-                            file_name=f"Bulletin_{eleve_sel_bul.replace(' ', '_')}_{periode_bul_sel}.pdf",
+                            file_name=(
+                                f"Bulletin_{nettoyer_nom_fichier(eleve_sel_bul)}_"
+                                f"{nettoyer_nom_fichier(periode_bul_sel)}.pdf"
+                            ),
                             mime="application/pdf",
-                            key="dl_bulletin_official_btn"
+                            key=f"dl_bulletin_official_{nettoyer_nom_fichier(classe_bul_sel)}_"
+                                f"_{nettoyer_nom_fichier(eleve_sel_bul)}_{nettoyer_nom_fichier(periode_bul_sel)}",
+                        )
+                except Exception as e:
+                    st.error(f"Erreur réelle pendant la génération du bulletin : {e}")
+
+                st.markdown("### 📦 Bulletins de toute la classe")
+                try:
+                    zip_bulletins = generer_zip_bulletins_classe(
+                        classe_bul_sel, periode_bul_sel
+                    )
+                    if zip_bulletins:
+                        st.download_button(
+                            label="📦 Télécharger TOUS les bulletins de la classe (ZIP)",
+                            data=zip_bulletins,
+                            file_name=(
+                                f"Bulletins_{nettoyer_nom_fichier(classe_bul_sel)}_"
+                                f"{nettoyer_nom_fichier(periode_bul_sel)}.zip"
+                            ),
+                            mime="application/zip",
+                            key=f"dl_bulletins_classe_{nettoyer_nom_fichier(classe_bul_sel)}_"
+                                f"_{nettoyer_nom_fichier(periode_bul_sel)}",
+                        )
+                        st.success(
+                            "ZIP prêt : chaque élève possède maintenant son bulletin PDF séparé."
                         )
                     else:
-                        st.error("Erreur : Le contenu du PDF généré est vide.")
-                        
+                        st.error(
+                            "Le ZIP serait vide : aucun bulletin PDF n'a pu être généré pour cette classe."
+                        )
                 except Exception as e:
-                    st.error(f"Erreur lors de la préparation du bulletin : {e}")
-                
+                    st.error(f"Erreur réelle pendant la création du ZIP : {e}")
 
             st.markdown("---")
             st.markdown("#### Génération des Documents Officiels de la Classe")
