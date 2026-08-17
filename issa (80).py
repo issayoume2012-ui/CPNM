@@ -700,6 +700,28 @@ def obtenir_parametres_matiere(cycle, matiere_nom):
 
     return (1.0, 50.0) if cycle_normalise == "elementaire" else (1.0, 20.0)
 
+def obtenir_appreciation_elementaire(moyenne_sur_10):
+    """Retourne une appréciation automatique uniquement pour la moyenne générale Élémentaire /10."""
+    try:
+        m = float(moyenne_sur_10)
+    except (TypeError, ValueError):
+        return ""
+    if m >= 9:
+        return "Excellent travail"
+    if m >= 8:
+        return "Très bon travail"
+    if m >= 7:
+        return "Bon travail"
+    if m >= 6:
+        return "Travail satisfaisant"
+    if m >= 5:
+        return "Travail assez satisfaisant"
+    if m >= 4:
+        return "Peut mieux faire"
+    if m >= 3:
+        return "Travail insuffisant, des efforts sont nécessaires"
+    return "Résultats très insuffisants, il faut redoubler d'efforts"
+
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
     cycle = obtenir_cycle_classe(classe)
     elementaire = est_cycle_elementaire(cycle)
@@ -722,6 +744,8 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             ]
         
         if elementaire:
+            # Élémentaire : on conserve la note/moyenne de chaque matière telle qu'elle existe.
+            # Seule la MOYENNE GÉNÉRALE est normalisée sur 10.
             comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 35.0
             moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 14.0
             notes_eleve.append({
@@ -743,11 +767,23 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             total_coeffs += coef
 
     moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
+    if elementaire:
+        # IMPORTANT : seule la moyenne générale Élémentaire est convertie sur 10.
+        # Les notes/moyennes par matière restent intactes.
+        moy_gen_affichage = round((moy_gen / 20.0) * 10.0, 2)
+        appreciation = obtenir_appreciation_elementaire(moy_gen_affichage)
+        total_bareme = 10
+    else:
+        # Collège : logique et échelle existantes conservées intactes.
+        moy_gen_affichage = moy_gen
+        appreciation = ""
+        total_bareme = 20
 
     return {
         "eleve": eleve_nom, "classe": classe, "periode": periode,
-        "moyenne_generale": moy_gen, "total_bareme": 20, "rang": "1er / 28",
-        "decision": "Tableau d'Honneur & Félicitations", "details_notes": notes_eleve, "is_elementaire": elementaire
+        "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme, "rang": "1er / 28",
+        "decision": "Tableau d'Honneur & Félicitations", "appreciation": appreciation,
+        "details_notes": notes_eleve, "is_elementaire": elementaire
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
@@ -859,7 +895,10 @@ def generer_pdf_bulletin(bul):
 
     pdf.ln(4)
     pdf.set_font("Arial", 'B', 9)
-    pdf.cell(200, 5, txt=f"Moyenne Générale : {bul.get('moyenne_generale', 0)} / 20", ln=1, align="L")
+    echelle_generale = 10 if bul.get("is_elementaire", False) else 20
+    pdf.cell(200, 5, txt=f"Moyenne Générale : {bul.get('moyenne_generale', 0)} / {echelle_generale}", ln=1, align="L")
+    if bul.get("is_elementaire", False):
+        pdf.cell(200, 5, txt=f"Appréciation : {bul.get('appreciation', '')}", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Décision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
     ajouter_signature_pdf(pdf)
@@ -1618,9 +1657,12 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     bulletin_sim = calculer_bulletin_eleve(classe_sim, eleve_sim, periode_sim)
                     st.markdown("#### 📋 Bulletin simulé")
                     c_moy, c_nb, c_per = st.columns(3)
-                    c_moy.metric("Moyenne générale", f"{bulletin_sim['moyenne_generale']}/20")
+                    echelle_sim = 10 if bulletin_sim.get("is_elementaire", False) else 20
+                    c_moy.metric("Moyenne générale", f"{bulletin_sim['moyenne_generale']}/{echelle_sim}")
                     c_nb.metric("Nombre de matières", len(bulletin_sim["details_notes"]))
                     c_per.metric("Période", periode_sim)
+                    if bulletin_sim.get("is_elementaire", False):
+                        st.info(f"📘 Appréciation automatique : **{bulletin_sim.get('appreciation', '')}**")
 
                     details_sim = []
                     notes_source = st.session_state.notes_db
