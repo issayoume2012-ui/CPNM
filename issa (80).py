@@ -656,9 +656,13 @@ def obtenir_parametres_matiere(cycle, matiere_nom):
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
     cycle = obtenir_cycle_classe(classe)
     elementaire = est_cycle_elementaire(cycle)
-    notes_df = st.session_state.notes_db
-    notes_eleve = []
     
+    # Correction robuste : Recharge dynamique de la table notes pour s'assurer d'avoir les données à jour
+    notes_df = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
+    if notes_df.empty:
+        notes_df = st.session_state.get("notes_db", pd.DataFrame())
+
+    notes_eleve = []
     matieres_concernees = obtenir_matieres_pour_classe(classe)
     total_points = 0.0
     total_coeffs = 0.0
@@ -668,15 +672,15 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         match_note = pd.DataFrame()
         if not notes_df.empty:
             match_note = notes_df[
-                (notes_df["Classe"] == classe) & 
-                (notes_df["Matière"] == mat) & 
-                ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) & 
-                (notes_df["Eleve"] == eleve_nom)
+                (notes_df["Classe"].astype(str).str.strip() == str(classe).strip()) & 
+                (notes_df["Matière"].astype(str).str.strip().str.lower() == str(mat).strip().str.lower()) & 
+                ((notes_df["Periode"].astype(str).str.strip() == str(periode).strip()) | (notes_df["Période"].astype(str).str.strip() == str(periode).strip())) & 
+                (notes_df["Eleve"].astype(str).str.strip() == str(eleve_nom).strip())
             ]
         
         if elementaire:
-            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 35.0
-            moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 14.0
+            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 0.0
+            moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 0.0
             notes_eleve.append({
                 "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp}/{bareme}",
                 "moyenne": round(moy_mat, 2), "coefficient": 1.0
@@ -684,9 +688,9 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             total_points += moy_mat * 1.0
             total_coeffs += 1.0
         else:
-            d1 = float(match_note.iloc[0]["Devoir1"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir1")) else 12.0
-            d2 = float(match_note.iloc[0]["Devoir2"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir2")) else 13.0
-            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 14.0
+            d1 = float(match_note.iloc[0]["Devoir1"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir1")) else 0.0
+            d2 = float(match_note.iloc[0]["Devoir2"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir2")) else 0.0
+            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 0.0
             moy_mat = (d1 + d2 + (comp * 2)) / 4.0
             notes_eleve.append({
                 "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
@@ -695,7 +699,7 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             total_points += moy_mat * coef
             total_coeffs += coef
 
-    moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
+    moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 0.0
 
     return {
         "eleve": eleve_nom, "classe": classe, "periode": periode,
@@ -804,7 +808,7 @@ def generer_pdf_bulletin(bul):
     pdf.cell(200, 5, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Décision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1', errors='replace')
+    return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_edt(classe, edt_g):
     pdf = FPDF()
@@ -823,7 +827,7 @@ def generer_pdf_edt(classe, edt_g):
             pdf.cell(32, 5.5, val, 1, 0, "C")
         pdf.cell(32, 5.5, "", 0, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1', errors='replace')
+    return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_cahier_texte(classe_filtre):
     pdf = FPDF()
@@ -847,7 +851,7 @@ def generer_pdf_cahier_texte(classe_filtre):
         pdf.cell(55, 5.5, str(r.get("Contenu", ""))[:35], 1, 0, "L")
         pdf.cell(50, 5.5, str(r.get("Travail à faire", ""))[:30], 1, 1, "L")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1', errors='replace')
+    return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_liste_eleves_classe(classe):
     pdf = FPDF()
@@ -866,7 +870,7 @@ def generer_pdf_liste_eleves_classe(classe):
         pdf.cell(110, 5.5, str(r.get("Nom Complet", "")), 1, 0, "L")
         pdf.cell(65, 5.5, str(r.get("Date de Naissance", "")), 1, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1', errors='replace')
+    return pdf.output(dest='S').encode('latin1')
 
 def generer_pdf_registre_absences(classe):
     pdf = FPDF()
@@ -890,7 +894,7 @@ def generer_pdf_registre_absences(classe):
     else:
         pdf.cell(190, 6, "Aucune absence enregistrée pour cette classe.", 1, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1', errors='replace')
+    return pdf.output(dest='S').encode('latin1')
 
 # ==========================================
 # 4. EN-TÊTE XXL & DESIGN D'ACCUEIL
@@ -1522,34 +1526,61 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                         st.warning("Aucun élève trouvé dans cette classe.")
 
                 with col_dl_b:
-                    st.markdown("#### 📚 2. Bulletins complets de toute la Classe (Archive ZIP)")
-                    st.info("💡 Génère instantanément une archive ZIP contenant les bulletins PDF de tous les élèves de la classe.")
-                    
-                    if st.button("Générer l'Archive ZIP de Toute la Classe"):
-                        df_eleves_classe = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
-                        df_eleves_classe = trier_eleves_par_nom(df_eleves_classe)
-                        
-                        if not df_eleves_classe.empty:
+                    st.markdown("#### 📚 2. Bulletins complets par Classe & Envoi Espace Prof")
+                    if st.button("📦 Générer TOUS les bulletins de la classe (Archive ZIP) & Renvoyer vers l'Espace Prof"):
+                        df_cls_eleves = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
+                        if not df_cls_eleves.empty:
                             zip_buffer = io.BytesIO()
                             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                                for _, r_el in df_eleves_classe.iterrows():
-                                    nom_complet_el = r_el["Nom Complet"]
-                                    if nom_complet_el:
-                                        bul_cls_data = calculer_bulletin_eleve(cls_dl_sel, nom_complet_el, per_dl_sel)
-                                        pdf_b = generer_pdf_bulletin(bul_cls_data)
-                                        nom_fichier_pdf = f"Bulletin_{cls_dl_sel}_{nom_complet_el.replace(' ', '_')}.pdf"
-                                        zip_file.writestr(nom_fichier_pdf, pdf_b)
-                            
+                                for _, row_el in df_cls_eleves.iterrows():
+                                    nom_complet_el = row_el["Nom Complet"]
+                                    if pd.notna(nom_complet_el) and str(nom_complet_el).strip() != "":
+                                        bul_data = calculer_bulletin_eleve(cls_dl_sel, nom_complet_el, per_dl_sel)
+                                        pdf_b = generer_pdf_bulletin(bul_data)
+                                        zip_file.writestr(f"Bulletin_{cls_dl_sel}_{str(nom_complet_el).replace(' ', '_')}.pdf", pdf_b)
                             zip_buffer.seek(0)
-                            st.success(f"Archive ZIP générée avec succès pour la classe {cls_dl_sel} ({len(df_eleves_classe)} bulletins) !")
+                            
+                            new_msg_zip = pd.DataFrame([{
+                                "Expéditeur": "Administration",
+                                "Destinataire": f"Professeurs - {cls_dl_sel}",
+                                "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                                "Sujet": f"[BULLETINS OFFICIELS] {cls_dl_sel} - {per_dl_sel}",
+                                "Message": f"L'administration a généré et mis à disposition l'archive complète des bulletins pour la classe {cls_dl_sel} ({per_dl_sel}).",
+                                "Pièce jointe": f"Bulletins_{cls_dl_sel}_{per_dl_sel}.zip"
+                            }])
+                            st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_msg_zip], ignore_index=True)
+                            save_df_to_db(new_msg_zip, "admin_prof_messages")
+                            
+                            st.success("Bulletins de classe générés, archivés et renvoyés avec succès dans l'espace des professeurs !")
                             st.download_button(
-                                label=f"📥 Télécharger l'archive ZIP complète ({cls_dl_sel})",
+                                label="📥 Télécharger l'Archive ZIP des Bulletins de Classe",
                                 data=zip_buffer,
-                                file_name=f"Bulletins_{cls_dl_sel}_{per_dl_sel.replace(' ', '_')}.zip",
+                                file_name=f"Bulletins_{cls_dl_sel}_{per_dl_sel}.zip",
                                 mime="application/zip",
-                                key="btn_download_zip_classe_complete"
+                                key="btn_dl_zip_class"
                             )
                         else:
-                            st.warning("Aucun élève trouvé dans cette classe pour générer les bulletins.")
+                            st.warning("Aucun élève dans cette classe pour générer les bulletins.")
+
+                st.markdown("---")
+                st.markdown("#### 📋 3. Registres Officiels & Emplois du Temps")
+                col_reg1, col_reg2, col_reg3, col_reg4 = st.columns(4)
+                
+                with col_reg1:
+                    if st.button("📥 Registre Absences & Présences (PDF)"):
+                        pdf_abs_bytes = generer_pdf_registre_absences(cls_dl_sel)
+                        st.download_button("Télécharger le Registre", pdf_abs_bytes, file_name=f"Registre_Absences_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_abs_reg")
+                with col_reg2:
+                    if st.button("📥 Registre Cahier de Texte (PDF)"):
+                        pdf_ct_bytes = generer_pdf_cahier_texte(cls_dl_sel)
+                        st.download_button("Télécharger le Cahier", pdf_ct_bytes, file_name=f"Cahier_Texte_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_ct_reg")
+                with col_reg3:
+                    if st.button("📥 Emploi du Temps (PDF)"):
+                        pdf_edt_bytes = generer_pdf_edt(cls_dl_sel, get_or_create_edt(cls_dl_sel))
+                        st.download_button("Télécharger l'EDT", pdf_edt_bytes, file_name=f"EDT_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_edt_reg")
+                with col_reg4:
+                    if st.button("📥 Liste Officielle Élèves (PDF)"):
+                        pdf_lst_bytes = generer_pdf_liste_eleves_classe(cls_dl_sel)
+                        st.download_button("Télécharger la Liste", pdf_lst_bytes, file_name=f"Liste_Eleves_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_lst_reg")
             else:
-                st.warning("Aucune classe enregistrée dans le système.")
+                st.warning("Veuillez configurer des classes dans l'onglet Classes.")
