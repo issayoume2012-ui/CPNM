@@ -240,58 +240,96 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                 if table_name == "eleves":
                     cur.execute("DELETE FROM eleves;")
                     query = "INSERT INTO eleves (nom_complet, prenom, nom, date_de_naissance, classe, photo) VALUES (%s, %s, %s, %s, %s, %s)"
-                    data = [(r.get("Nom Complet"), r.get("Prénom"), r.get("Nom"), r.get("Date de Naissance"), r.get("Classe"), r.get("Photo")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data)
+                    data = []
+                    for _, r in df_cleaned.iterrows():
+                        nom_complet = r.get("Nom Complet")
+                        prenom = r.get("Prénom")
+                        nom = r.get("Nom")
+                        date_naiss = r.get("Date de Naissance")
+                        classe = r.get("Classe")
+                        photo = r.get("Photo")
+                        
+                        # Ignorer les lignes totalement vides créées par le tableau
+                        if not nom_complet and not prenom and not nom and not classe:
+                            continue
+                            
+                        # Auto-complétion si un champ est manquant
+                        if nom_complet and (not prenom or pd.isna(prenom)) and (not nom or pd.isna(nom)):
+                            parts = str(nom_complet).strip().split()
+                            if len(parts) >= 2:
+                                prenom = parts[0]
+                                nom = " ".join(parts[1:])
+                            elif len(parts) == 1:
+                                nom = parts[0]
+                                prenom = ""
+                        elif not nom_complet and (prenom or nom):
+                            nom_complet = f"{str(prenom or '')} {str(nom or '')}".strip()
+                            
+                        data.append((nom_complet, prenom, nom, date_naiss, classe, photo))
+                    
+                    if data:
+                        cur.executemany(query, data)
                 elif table_name == "classes":
                     cur.execute("DELETE FROM classes;")
                     query = "INSERT INTO classes (classe, cycle, professeur_responsable) VALUES (%s, %s, %s)"
-                    data = [(r.get("Classe"), r.get("Cycle"), r.get("Professeur Responsable")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data)
+                    data = [(r.get("Classe"), r.get("Cycle"), r.get("Professeur Responsable")) for _, r in df_cleaned.iterrows() if r.get("Classe")]
+                    if data:
+                        cur.executemany(query, data)
                 elif table_name == "prof_white_list":
                     cur.execute("DELETE FROM prof_white_list;")
                     query = "INSERT INTO prof_white_list (nom, prenom, email, matiere_principale, classe_attribuee, password) VALUES (%s, %s, %s, %s, %s, %s)"
-                    data = [(r.get("Nom"), r.get("Prénom"), r.get("Email"), r.get("Matière Principale"), r.get("Classe Attribuée"), r.get("Mot de passe")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data)
+                    data = [(r.get("Nom"), r.get("Prénom"), r.get("Email"), r.get("Matière Principale"), r.get("Classe Attribuée"), r.get("Mot de passe")) for _, r in df_cleaned.iterrows() if r.get("Email")]
+                    if data:
+                        cur.executemany(query, data)
                 elif table_name == "admin_white_list":
                     cur.execute("DELETE FROM admin_white_list;")
                     query = "INSERT INTO admin_white_list (email, nom, prenom, password, niveau_acces) VALUES (%s, %s, %s, %s, %s)"
-                    data = [(r.get("Email"), r.get("Nom"), r.get("Prénom"), r.get("Mot de passe"), r.get("Niveau d'accès")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data)
+                    data = [(r.get("Email"), r.get("Nom"), r.get("Prénom"), r.get("Mot de passe"), r.get("Niveau d'accès")) for _, r in df_cleaned.iterrows() if r.get("Email")]
+                    if data:
+                        cur.executemany(query, data)
                 elif table_name == "matieres":
                     cur.execute("DELETE FROM matieres;")
                     query = "INSERT INTO matieres (matiere, cycle, coefficient, bareme) VALUES (%s, %s, %s, %s)"
-                    data = [(r.get("Matière"), r.get("Cycle"), r.get("Coefficient"), r.get("Barème")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data)
+                    data = [(r.get("Matière"), r.get("Cycle"), r.get("Coefficient"), r.get("Barème")) for _, r in df_cleaned.iterrows() if r.get("Matière")]
+                    if data:
+                        cur.executemany(query, data)
                 elif table_name == "edt_grid":
                     for _, r in df_cleaned.iterrows():
-                        cur.execute("DELETE FROM edt_grid WHERE classe = %s AND jour = %s AND heure = %s;", (r.get("classe"), r.get("jour"), r.get("heure")))
-                        cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s);", (r.get("classe"), r.get("jour"), r.get("heure"), r.get("valeur")))
+                        if r.get("classe"):
+                            cur.execute("DELETE FROM edt_grid WHERE classe = %s AND jour = %s AND heure = %s;", (r.get("classe"), r.get("jour"), r.get("heure")))
+                            cur.execute("INSERT INTO edt_grid (classe, jour, heure, valeur) VALUES (%s, %s, %s, %s);", (r.get("classe"), r.get("jour"), r.get("heure"), r.get("valeur")))
                 elif table_name == "cahier_textes":
                     query = "INSERT INTO cahier_textes (professeur, date, classe, matiere, contenu, travail_a_faire) VALUES (%s, %s, %s, %s, %s, %s);"
                     data_tuples = [(r.get("Professeur"), str(r.get("Date", "")), r.get("Classe"), r.get("Matière"), r.get("Contenu"), r.get("Travail à faire")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data_tuples)
+                    if data_tuples:
+                        cur.executemany(query, data_tuples)
                 elif table_name == "absences":
                     query = "INSERT INTO absences (date, classe, eleve, statut, motif) VALUES (%s, %s, %s, %s, %s);"
                     data_tuples = [(str(r.get("Date", "")), r.get("Classe"), r.get("Élève"), r.get("Statut"), r.get("Motif")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data_tuples)
+                    if data_tuples:
+                        cur.executemany(query, data_tuples)
                 elif table_name == "notes":
                     for _, r in df_cleaned.iterrows():
-                        cur.execute("DELETE FROM notes WHERE classe = %s AND matiere = %s AND (periode = %s) AND eleve = %s;", 
-                                    (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve")))
-                        cur.execute("INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
-                                    (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")))
+                        if r.get("Classe") and r.get("Eleve"):
+                            cur.execute("DELETE FROM notes WHERE classe = %s AND matiere = %s AND (periode = %s) AND eleve = %s;", 
+                                        (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve")))
+                            cur.execute("INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
+                                        (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")))
                 elif table_name == "admin_prof_messages":
                     query = "INSERT INTO admin_prof_messages (expediteur, destinataire, date, sujet, message, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s);"
                     data_tuples = [(r.get("Expéditeur"), r.get("Destinataire"), str(r.get("Date", "")), r.get("Sujet"), r.get("Message"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data_tuples)
+                    if data_tuples:
+                        cur.executemany(query, data_tuples)
                 elif table_name == "admin_assignations_travail":
                     query = "INSERT INTO admin_assignations_travail (titre, classe, professeur, date, description, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s);"
                     data_tuples = [(r.get("Titre"), r.get("Classe"), r.get("Professeur"), str(r.get("Date", "")), r.get("Description"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data_tuples)
+                    if data_tuples:
+                        cur.executemany(query, data_tuples)
                 elif table_name == "fiches_progression_classe":
                     query = "INSERT INTO fiches_progression_classe (professeur, classe, date, progression_niveau, avis_classe, regression_notes, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s, %s);"
                     data_tuples = [(r.get("Professeur"), r.get("Classe"), str(r.get("Date", "")), r.get("Progression Niveau"), r.get("Avis Classe"), r.get("Régression Notes"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
-                    cur.executemany(query, data_tuples)
+                    if data_tuples:
+                        cur.executemany(query, data_tuples)
                 else:
                     cols = list(df_cleaned.columns)
                     cols_str = ",".join([f'"{col}"' for col in cols])
@@ -329,7 +367,7 @@ def normaliser_texte(texte):
     if not texte: return ""
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
-ADMIN_EMAIL_MAITRE = "cpnm@gmail.com"
+ADMIN_EMAIL_MAITRE = "cpnjcpn@gmail.com"
 
 def enregistrer_log_action(acteur: str, action: str, details: str):
     horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -863,7 +901,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             st.rerun()
 
 # ==========================================
-# 6. ESPACE PROFESSEURS (SANS ONGLET BIBLIO)
+# 6. ESPACE PROFESSEURS
 # ==========================================
 elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900; margin-bottom: 20px;">👨‍🏫 Espace Enseignants & Outils Pédagogiques</div>', unsafe_allow_html=True)
@@ -902,7 +940,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             db_nom = normaliser_texte(row.get("Nom", row.get("nom", "")))
                             db_prenom = normaliser_texte(row.get("Prénom", row.get("prénom", row.get("prenom", ""))))
                             
-                            # Correspondance par nom/prénom ou email
                             correspond_nom_prenom = (nom_norm and nom_norm in db_nom) and (not prenom_norm or prenom_norm in db_prenom)
                             correspond_email = email_norm and email_norm == db_email
 
@@ -941,7 +978,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         st.markdown("---")
 
-        # ONGLET BIBLIO SUPPRIMÉ ICI CI-DESSOUS
         t_notes, t_appel, t_echange, t_travaux_admin, t_progression, t_cahier, t_edt_prof, t_msg = st.tabs([
             "📝 Saisie des Notes (Toutes Matières & Anti-Perte)",
             "📋 Feuille d'Appel",
@@ -1058,8 +1094,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         st.session_state.absences_db[~((st.session_state.absences_db["Date"] == str(date_appel)) & (st.session_state.absences_db["Classe"] == classe_autorisee))],
                         df_new_abs
                     ], ignore_index=True)
-                    save_df_to_db(df_new_abs, "absences")
-                    st.success("Appel sauvegardé et synchronisé !")
+                    if save_df_to_db(df_new_abs, "absences"):
+                        st.success("Appel sauvegardé et synchronisé !")
+                    else:
+                        st.error("Erreur de sauvegarde de l'appel dans Supabase.")
 
         with t_echange:
             st.markdown("### 📂 Échange de Documents & Fichiers à Transmettre (Administration & Parents)")
@@ -1269,36 +1307,45 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             
             if st.button("Enregistrer la Liste Blanche des Administrateurs"):
                 st.session_state.admin_white_list = edited_admin_wl
-                save_df_to_db(edited_admin_wl, "admin_white_list")
-                enregistrer_log_action(admin_actuel, "UPDATE_ADMIN_WHITELIST", "Mise à jour de la liste blanche des administrateurs")
-                st.success("Liste blanche des administrateurs enregistrée, sécurisée et synchronisée dans Supabase !")
+                if save_df_to_db(edited_admin_wl, "admin_white_list"):
+                    enregistrer_log_action(admin_actuel, "UPDATE_ADMIN_WHITELIST", "Mise à jour de la liste blanche des administrateurs")
+                    st.success("Liste blanche des administrateurs enregistrée, sécurisée et synchronisée dans Supabase !")
+                else:
+                    st.error("Erreur lors de la sauvegarde de la liste blanche des administrateurs.")
 
         with adm_tab1:
             st.markdown("### Gestion Complète des Élèves (CRUD)")
+            st.info("💡 Saisissez les informations des élèves. Les modifications sont synchronisées directement dans Supabase.")
             edited_eleves = st.data_editor(st.session_state.eleves_db, num_rows="dynamic", key="editor_eleves_crud")
             if st.button("Enregistrer les modifications (Élèves)"):
                 st.session_state.eleves_db = edited_eleves
-                save_df_to_db(edited_eleves[["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]], "eleves")
-                enregistrer_log_action(admin_actuel, "CRUD_ELEVES", "Mise à jour de la table des élèves")
-                st.success("Élèves synchronisés avec succès dans Supabase !")
+                if save_df_to_db(edited_eleves[["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]], "eleves"):
+                    enregistrer_log_action(admin_actuel, "CRUD_ELEVES", "Mise à jour de la table des élèves")
+                    st.success("Élèves synchronisés avec succès dans Supabase !")
+                else:
+                    st.error("Erreur lors de la sauvegarde des élèves dans Supabase. Vérifiez la connexion ou les champs saisis.")
 
         with adm_tab2:
             st.markdown("### Gestion des Professeurs (Liste Blanche & Habilitations)")
             edited_profs = st.data_editor(st.session_state.prof_white_list, num_rows="dynamic", key="editor_profs_crud")
             if st.button("Enregistrer les modifications (Professeurs)"):
                 st.session_state.prof_white_list = edited_profs
-                save_df_to_db(edited_profs, "prof_white_list")
-                enregistrer_log_action(admin_actuel, "CRUD_PROFS", "Mise à jour des professeurs")
-                st.success("Professeurs synchronisés avec succès !")
+                if save_df_to_db(edited_profs, "prof_white_list"):
+                    enregistrer_log_action(admin_actuel, "CRUD_PROFS", "Mise à jour des professeurs")
+                    st.success("Professeurs synchronisés avec succès !")
+                else:
+                    st.error("Erreur lors de la sauvegarde des professeurs.")
 
         with adm_tab3:
             st.markdown("### Gestion des Classes (Cycle Élémentaire / Collège)")
             edited_classes = st.data_editor(st.session_state.classes_db, num_rows="dynamic", key="editor_classes_crud")
             if st.button("Enregistrer les modifications (Classes)"):
                 st.session_state.classes_db = edited_classes
-                save_df_to_db(edited_classes, "classes")
-                enregistrer_log_action(admin_actuel, "CRUD_CLASSES", "Mise à jour des classes")
-                st.success("Classes synchronisées avec succès !")
+                if save_df_to_db(edited_classes, "classes"):
+                    enregistrer_log_action(admin_actuel, "CRUD_CLASSES", "Mise à jour des classes")
+                    st.success("Classes synchronisées avec succès !")
+                else:
+                    st.error("Erreur lors de la sauvegarde des classes.")
 
         with adm_tab4:
             st.markdown("### 📚 Configuration des Matières, Barèmes et Coefficients")
@@ -1315,9 +1362,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             )
             if st.button("Enregistrer les Matières et Barèmes"):
                 st.session_state.matieres_def = edited_matieres
-                save_df_to_db(edited_matieres, "matieres")
-                enregistrer_log_action(admin_actuel, "CRUD_MATIERES", "Mise à jour des matières et barèmes")
-                st.success("Configuration enregistrée et synchronisée !")
+                if save_df_to_db(edited_matieres, "matieres"):
+                    enregistrer_log_action(admin_actuel, "CRUD_MATIERES", "Mise à jour des matières et barèmes")
+                    st.success("Configuration enregistrée et synchronisée !")
+                else:
+                    st.error("Erreur lors de la sauvegarde des matières.")
 
         with adm_tab5:
             st.markdown("### 📤 Partager des Documents aux Professeurs (Avec Fichiers Joints)")
