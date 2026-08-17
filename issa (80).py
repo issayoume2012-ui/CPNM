@@ -229,9 +229,10 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée."""
+    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée avec débogage d'erreurs."""
     conn = get_db_connection()
     if conn is None:
+        st.error("Impossible d'établir la connexion à la base de données Supabase.")
         return False
     try:
         with conn.cursor() as cur:
@@ -246,8 +247,12 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         prenom = r.get("Prénom")
                         nom = r.get("Nom")
                         date_naiss = r.get("Date de Naissance")
+                        if date_naiss is not None:
+                            date_naiss = str(date_naiss)
                         classe = r.get("Classe")
                         photo = r.get("Photo")
+                        if photo is not None:
+                            photo = str(photo)
                         
                         # Ignorer les lignes totalement vides créées par le tableau
                         if not nom_complet and not prenom and not nom and not classe:
@@ -342,6 +347,7 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     except Exception as e:
         if conn:
             conn.rollback()
+        st.error(f"Détail technique Supabase ({table_name}) : {str(e)}")
         return False
     finally:
         if conn:
