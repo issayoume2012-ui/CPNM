@@ -1526,5 +1526,3 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 if st.button("📋 Liste des Élèves (PDF)"):
                     pdf_liste = generer_pdf_liste_eleves_classe(classe_bul_sel)
                     st.download_button("Télécharger Liste", pdf_liste, f"ListeEleves_{classe_bul_sel}.pdf", "application/pdf")
-
-[cite: 4]
