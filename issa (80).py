@@ -1,7 +1,3 @@
-Bibliothèque
-/
-issa (80) (57)(3)_corrige_secrets_css_mobile.py
-
 
 import base64
 from datetime import datetime
