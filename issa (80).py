@@ -1460,6 +1460,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 df_edt_save = pd.DataFrame(rows_to_save)
                 save_df_to_db(df_edt_save, "edt_grid")
                 st.success("Emploi du temps enregistré avec succès dans Supabase !")
+
         with adm_tab9:
             st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
     
@@ -1483,17 +1484,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     key="el_bul_admin"
                 )
                 
-                # 1. Optionnel : Pré-calcul ou vérification des données avant génération
-                if st.button("Vérifier / Préparer les données du bulletin"):
-                    st.session_state.bul_data_cache = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
-                    st.success("Données prêtes pour le téléchargement !")
-        
-                # 2. Utilisation d'une fonction de rappel ou génération directe pour le st.download_button
+                # Génération et affichage direct du bouton de téléchargement (contournant tout blocage de formulaire)
                 try:
-                    # On calcule les données du bulletin
                     bul_data = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
-            
-                    # On génère les octets PDF (assurez-vous que generer_pdf_bulletin retourne bien des bytes ou un BytesIO)
                     pdf_bytes = generer_pdf_bulletin(bul_data)
                     
                     if pdf_bytes:
@@ -1506,10 +1499,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                         )
                     else:
                         st.error("Erreur : Le contenu du PDF généré est vide.")
-                        
                 except Exception as e:
                     st.error(f"Erreur lors de la préparation du bulletin : {e}")
-                
 
             st.markdown("---")
             st.markdown("#### Génération des Documents Officiels de la Classe")
