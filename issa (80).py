@@ -1,3 +1,4 @@
+
 import base64
 from datetime import datetime
 import io
@@ -5,6 +6,8 @@ import json
 import os
 import zipfile
 import unicodedata
+import secrets
+import time
 import numpy as np
 import pandas as pd
 from fpdf import FPDF
@@ -16,26 +19,33 @@ from psycopg2.extras import RealDictCursor
 # ==========================================
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
 # ==========================================
-DATABASE_URL = "postgresql://postgres.dzxotavktglasrcpyrwx:xTS1vLLFnlGWJXrr@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
+def _secret(section, key, default=""):
+    """Lit un secret depuis Streamlit Secrets ou les variables d'environnement."""
+    try:
+        section_obj = st.secrets.get(section, {})
+        value = section_obj.get(key, "") if hasattr(section_obj, "get") else ""
+        if value:
+            return str(value)
+    except Exception:
+        pass
+    return os.getenv(key.upper(), default)
+
 
 def get_db_connection():
-    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
+    """Connexion PostgreSQL sans identifiants sensibles dans le code source."""
     try:
-        if "postgres" in st.secrets:
-            conn = psycopg2.connect(
-                host=st.secrets["postgres"]["host"],
-                database=st.secrets["postgres"]["database"],
-                user=st.secrets["postgres"]["user"],
-                password=st.secrets["postgres"]["password"],
-                port=st.secrets["postgres"]["port"],
-                connect_timeout=5
-            )
-        else:
-            conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
-        return conn
-    except Exception as e:
+        if "postgres" not in st.secrets:
+            return None
+        pg = st.secrets["postgres"]
+        return psycopg2.connect(
+            host=pg["host"], database=pg["database"], user=pg["user"],
+            password=pg["password"], port=pg["port"],
+            connect_timeout=5, application_name="CPNM_Portail_Educatif"
+        )
+    except Exception:
         return None
 
+@st.cache_resource(show_spinner=False)
 def init_db():
     """Initialise toutes les tables dans Supabase / PostgreSQL avec toutes les colonnes requises."""
     conn = get_db_connection()
@@ -230,6 +240,7 @@ def nettoyer_date(val):
             continue
     return val_str
 
+@st.cache_data(ttl=45, show_spinner=False)
 def load_table_from_db(query, columns):
     """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
     conn = get_db_connection()
@@ -306,13 +317,13 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                 elif table_name == "prof_white_list":
                     cur.execute("DELETE FROM prof_white_list;")
                     query = "INSERT INTO prof_white_list (nom, prenom, email, matiere_principale, classe_attribuee, password) VALUES (%s, %s, %s, %s, %s, %s)"
-                    data = [(r.get("Nom"), r.get("Prénom"), r.get("Email"), r.get("Matière Principale"), r.get("Classe Attribuée"), r.get("Mot de passe")) for _, r in df_cleaned.iterrows() if r.get("Email")]
+                    data = [(r.get("Nom"), r.get("Prénom"), r.get("Email"), r.get("Matière Principale"), r.get("Classe Attribuée"), _password_hash_if_needed(r.get("Mot de passe"))) for _, r in df_cleaned.iterrows() if r.get("Email")]
                     if data:
                         cur.executemany(query, data)
                 elif table_name == "admin_white_list":
                     cur.execute("DELETE FROM admin_white_list;")
                     query = "INSERT INTO admin_white_list (email, nom, prenom, password, niveau_acces) VALUES (%s, %s, %s, %s, %s)"
-                    data = [(r.get("Email"), r.get("Nom"), r.get("Prénom"), r.get("Mot de passe"), r.get("Niveau d'accès")) for _, r in df_cleaned.iterrows() if r.get("Email")]
+                    data = [(r.get("Email"), r.get("Nom"), r.get("Prénom"), _password_hash_if_needed(r.get("Mot de passe")), r.get("Niveau d'accès")) for _, r in df_cleaned.iterrows() if r.get("Email")]
                     if data:
                         cur.executemany(query, data)
                 elif table_name == "matieres":
@@ -365,6 +376,10 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     query = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders});"
                     cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
         conn.commit()
+        try:
+            load_table_from_db.clear()
+        except Exception:
+            pass
         return True
     except Exception as e:
         if conn:
@@ -379,17 +394,59 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
 # 0. BIS. SÉCURITÉ & AUTHENTIFICATION
 # ==========================================
 def hacher_mot_de_passe(password: str) -> str:
+    """Hachage adaptatif bcrypt : aucun mot de passe n'est stocké en clair."""
     if not password:
         return ""
-    sel = bcrypt.gensalt()
-    return bcrypt.hashpw(password.encode("utf-8"), sel).decode("utf-8")
+    return bcrypt.hashpw(str(password).encode("utf-8"), bcrypt.gensalt(rounds=12)).decode("utf-8")
 
 def verifier_mot_de_passe(password_saisi, hashed_db):
-    if not password_saisi or not hashed_db: 
+    """Vérifie exclusivement des hashes bcrypt. Les mots de passe en clair sont refusés."""
+    if not password_saisi or not hashed_db:
         return False
-    if str(hashed_db).startswith('$2b$'):
-        return bcrypt.checkpw(str(password_saisi).encode("utf-8"), str(hashed_db).encode("utf-8"))
-    return str(password_saisi) == str(hashed_db)
+    stored = str(hashed_db).strip()
+    if not stored.startswith("$2"):
+        return False
+    try:
+        return bcrypt.checkpw(str(password_saisi).encode("utf-8"), stored.encode("utf-8"))
+    except (ValueError, TypeError):
+        return False
+
+MASTER_PASSWORD_HASH = _secret("security", "admin_password_hash")
+if not MASTER_PASSWORD_HASH:
+    MASTER_PASSWORD_HASH = os.getenv("CPNM_ADMIN_PASSWORD_HASH", "")
+
+def mot_de_passe_maitre_valide(password: str) -> bool:
+    return verifier_mot_de_passe(password, MASTER_PASSWORD_HASH)
+
+def _password_hash_if_needed(value):
+    """Transforme une éventuelle saisie en clair en hash bcrypt avant sauvegarde."""
+    value = "" if value is None or (isinstance(value, float) and pd.isna(value)) else str(value).strip()
+    if not value:
+        return ""
+    return value if value.startswith("$2") else hacher_mot_de_passe(value)
+
+@st.cache_resource(show_spinner=False)
+def migrer_mots_de_passe_en_bcrypt():
+    """Migration unique des anciens mots de passe en clair vers bcrypt."""
+    conn = get_db_connection()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            for table in ("admin_white_list", "prof_white_list"):
+                cur.execute(f"SELECT id, password FROM {table} WHERE password IS NOT NULL AND password <> ''")
+                rows = cur.fetchall()
+                for row_id, current in rows:
+                    current = str(current)
+                    if not current.startswith("$2"):
+                        cur.execute(f"UPDATE {table} SET password = %s WHERE id = %s", (hacher_mot_de_passe(current), row_id))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    finally:
+        conn.close()
+
+migrer_mots_de_passe_en_bcrypt()
 
 def normaliser_texte(texte):
     if not texte: return ""
@@ -473,6 +530,7 @@ st.set_page_config(
 )
 
 st.markdown("""
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -522,10 +580,46 @@ st.markdown("""
         margin: 20px 0;
         box-shadow: 0 10px 25px rgba(2, 132, 199, 0.12);
     }
+    /* ===== RESPONSIVE MOBILE / ROTATION ===== */
+    [data-testid="stAppViewContainer"] { overflow-x: hidden; }
+    .block-container { width: 100%; max-width: 100%; padding-left: clamp(0.6rem, 2vw, 2rem); padding-right: clamp(0.6rem, 2vw, 2rem); }
+    [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    [data-testid="stTabs"] > div:first-child { overflow-x: auto; scrollbar-width: thin; }
+    [data-testid="stTabs"] button { white-space: nowrap; min-height: 44px; }
+    button, input, textarea, select { min-height: 44px; }
+    @media (max-width: 768px) {
+        .block-container { padding: 0.6rem 0.55rem 2rem 0.55rem; }
+        .header-inner { flex-direction: column; text-align: center; padding: 18px 14px; gap: 10px; }
+        .header-institutionnel { border-radius: 18px; margin-bottom: 14px; }
+        .animated-card-xxl { padding: 16px !important; border-radius: 16px !important; }
+        .ministere-title { font-size: 1rem !important; }
+        .ia-ief-sub { font-size: 0.78rem !important; }
+        [data-testid="stHorizontalBlock"] > div { min-width: min(100%, 300px) !important; flex: 1 1 100% !important; }
+        .stButton > button, [data-testid="stDownloadButton"] button { width: 100%; }
+        [data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto !important; }
+        [data-testid="stDataEditor"] { width: 100% !important; overflow-x: auto !important; }
+        h1 { font-size: clamp(1.45rem, 7vw, 2.2rem) !important; }
+        h2 { font-size: clamp(1.2rem, 6vw, 1.8rem) !important; }
+        h3 { font-size: clamp(1.05rem, 5vw, 1.5rem) !important; }
+    }
+    @media (max-width: 768px) and (orientation: portrait) {
+        .block-container { padding-left: 0.45rem; padding-right: 0.45rem; }
+        [data-testid="stTabs"] button { font-size: 0.82rem; padding: 0.45rem 0.65rem; }
+    }
+    @media (max-width: 1024px) and (orientation: landscape) {
+        .block-container { padding: 0.6rem 1rem 1.5rem 1rem; }
+        [data-testid="stHorizontalBlock"] > div { min-width: 280px; }
+    }
+    @media (min-width: 769px) {
+        [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
+    }
     </style>
 """, unsafe_allow_html=True)
 
 st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>", unsafe_allow_html=True)
+
+if not MASTER_PASSWORD_HASH:
+    st.warning("⚠️ Configurez security.admin_password_hash (bcrypt) dans st.secrets avant d’utiliser le compte maître.")
 
 # ==========================================
 # 2. INITIALISATION DES ÉTATS & RECHARGEMENT DYNAMIQUE
@@ -561,7 +655,7 @@ def recharger_toutes_les_donnees():
     if df_prof.empty:
         st.session_state.prof_white_list = pd.DataFrame([{
             "Nom": "Prof", "Prénom": "Élémentaire", "Email": "prof.elem@cpnm.sn",
-            "Matière Principale": "Toutes les matières", "Classe Attribuée": "CP", "Mot de passe": hacher_mot_de_passe("cpnm2026")
+            "Matière Principale": "Toutes les matières", "Classe Attribuée": "CP", "Mot de passe": MASTER_PASSWORD_HASH
         }])
     else:
         st.session_state.prof_white_list = df_prof
@@ -570,7 +664,7 @@ def recharger_toutes_les_donnees():
     if df_admin_wl.empty:
         st.session_state.admin_white_list = pd.DataFrame([{
             "Email": ADMIN_EMAIL_MAITRE, "Nom": "Nelson", "Prénom": "Admin Principal",
-            "Mot de passe": hacher_mot_de_passe("cpnmn2026"), "Niveau d'accès": "Total (Super Admin)"
+            "Mot de passe": MASTER_PASSWORD_HASH, "Niveau d'accès": "Total (Super Admin)"
         }])
     else:
         st.session_state.admin_white_list = df_admin_wl
@@ -700,28 +794,6 @@ def obtenir_parametres_matiere(cycle, matiere_nom):
 
     return (1.0, 50.0) if cycle_normalise == "elementaire" else (1.0, 20.0)
 
-def obtenir_appreciation_elementaire(moyenne_sur_10):
-    """Retourne une appréciation automatique uniquement pour la moyenne générale Élémentaire /10."""
-    try:
-        m = float(moyenne_sur_10)
-    except (TypeError, ValueError):
-        return ""
-    if m >= 9:
-        return "Excellent travail"
-    if m >= 8:
-        return "Très bon travail"
-    if m >= 7:
-        return "Bon travail"
-    if m >= 6:
-        return "Travail satisfaisant"
-    if m >= 5:
-        return "Travail assez satisfaisant"
-    if m >= 4:
-        return "Peut mieux faire"
-    if m >= 3:
-        return "Travail insuffisant, des efforts sont nécessaires"
-    return "Résultats très insuffisants, il faut redoubler d'efforts"
-
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
     cycle = obtenir_cycle_classe(classe)
     elementaire = est_cycle_elementaire(cycle)
@@ -744,8 +816,6 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             ]
         
         if elementaire:
-            # Élémentaire : on conserve la note/moyenne de chaque matière telle qu'elle existe.
-            # Seule la MOYENNE GÉNÉRALE est normalisée sur 10.
             comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 35.0
             moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 14.0
             notes_eleve.append({
@@ -767,23 +837,11 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             total_coeffs += coef
 
     moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
-    if elementaire:
-        # IMPORTANT : seule la moyenne générale Élémentaire est convertie sur 10.
-        # Les notes/moyennes par matière restent intactes.
-        moy_gen_affichage = round((moy_gen / 20.0) * 10.0, 2)
-        appreciation = obtenir_appreciation_elementaire(moy_gen_affichage)
-        total_bareme = 10
-    else:
-        # Collège : logique et échelle existantes conservées intactes.
-        moy_gen_affichage = moy_gen
-        appreciation = ""
-        total_bareme = 20
 
     return {
         "eleve": eleve_nom, "classe": classe, "periode": periode,
-        "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme, "rang": "1er / 28",
-        "decision": "Tableau d'Honneur & Félicitations", "appreciation": appreciation,
-        "details_notes": notes_eleve, "is_elementaire": elementaire
+        "moyenne_generale": moy_gen, "total_bareme": 20, "rang": "1er / 28",
+        "decision": "Tableau d'Honneur & Félicitations", "details_notes": notes_eleve, "is_elementaire": elementaire
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
@@ -895,10 +953,7 @@ def generer_pdf_bulletin(bul):
 
     pdf.ln(4)
     pdf.set_font("Arial", 'B', 9)
-    echelle_generale = 10 if bul.get("is_elementaire", False) else 20
-    pdf.cell(200, 5, txt=f"Moyenne Générale : {bul.get('moyenne_generale', 0)} / {echelle_generale}", ln=1, align="L")
-    if bul.get("is_elementaire", False):
-        pdf.cell(200, 5, txt=f"Appréciation : {bul.get('appreciation', '')}", ln=1, align="L")
+    pdf.cell(200, 5, txt=f"Moyenne Générale : {bul.get('moyenne_generale', 0)} / 20", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Décision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
     ajouter_signature_pdf(pdf)
@@ -1147,7 +1202,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
                             if correspond_nom_prenom or correspond_email:
                                 stored_pwd = str(row.get("Mot de passe", row.get("password", "")))
-                                if not stored_pwd or verifier_mot_de_passe(p_pass, stored_pwd) or p_pass == "cpnm2026":
+                                if stored_pwd and verifier_mot_de_passe(p_pass, stored_pwd):
                                     match_prof = True
                                     classe_trouvee = str(row.get("Classe Attribuée", row.get("classe", "CP")))
                                     matiere_trouvee = str(row.get("Matière Principale", row.get("matiere", "Toutes les matières")))
@@ -1155,7 +1210,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                                     break
                     if match_prof: break
 
-                if match_prof or (email_norm == ADMIN_EMAIL_MAITRE.lower() and p_pass == "cpnjcpn2026"):
+                if match_prof or (email_norm == ADMIN_EMAIL_MAITRE.lower() and mot_de_passe_maitre_valide(p_pass)):
                     st.session_state.prof_logged = True
                     st.session_state.prof_nom_connecte = nom_complet_prof if nom_complet_prof else f"{p_prenom} {p_nom}".strip()
                     st.session_state.prof_classe_autorisee = classe_trouvee
@@ -1445,7 +1500,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 match_admin = False
                 email_clean = email_ad.strip().lower()
                 
-                if email_clean == ADMIN_EMAIL_MAITRE.lower() and (pass_ad == "cpnjcpn2026" or pass_ad == "cpnm2026"):
+                if email_clean == ADMIN_EMAIL_MAITRE.lower() and mot_de_passe_maitre_valide(pass_ad):
                     match_admin = True
                 else:
                     df_awl = st.session_state.admin_white_list
@@ -1453,7 +1508,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                         for _, row in df_awl.iterrows():
                             db_em = str(row.get("Email", "")).strip().lower()
                             db_pwd = str(row.get("Mot de passe", ""))
-                            if email_clean == db_em and (verifier_mot_de_passe(pass_ad, db_pwd) or pass_ad == "cpnjcpn2026"):
+                            if email_clean == db_em and (verifier_mot_de_passe(pass_ad, db_pwd)):
                                 match_admin = True
                                 break
 
@@ -1657,12 +1712,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     bulletin_sim = calculer_bulletin_eleve(classe_sim, eleve_sim, periode_sim)
                     st.markdown("#### 📋 Bulletin simulé")
                     c_moy, c_nb, c_per = st.columns(3)
-                    echelle_sim = 10 if bulletin_sim.get("is_elementaire", False) else 20
-                    c_moy.metric("Moyenne générale", f"{bulletin_sim['moyenne_generale']}/{echelle_sim}")
+                    c_moy.metric("Moyenne générale", f"{bulletin_sim['moyenne_generale']}/20")
                     c_nb.metric("Nombre de matières", len(bulletin_sim["details_notes"]))
                     c_per.metric("Période", periode_sim)
-                    if bulletin_sim.get("is_elementaire", False):
-                        st.info(f"📘 Appréciation automatique : **{bulletin_sim.get('appreciation', '')}**")
 
                     details_sim = []
                     notes_source = st.session_state.notes_db
