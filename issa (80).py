@@ -673,7 +673,8 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         if not notes_df.empty:
             match_note = notes_df[
                 (notes_df["Classe"].astype(str).str.strip() == str(classe).strip()) & 
-                (notes_df["Matière"].astype(str).str.strip().str.lower() == str(mat).strip().str.lower()) & 
+                # Correction : on convertit 'mat' en chaîne, on nettoie, et on compare correctement
+                (notes_df["Matière"].astype(str).str.strip().str.lower() == str(mat).strip().lower()) &
                 ((notes_df["Periode"].astype(str).str.strip() == str(periode).strip()) | (notes_df["Période"].astype(str).str.strip() == str(periode).strip())) & 
                 (notes_df["Eleve"].astype(str).str.strip() == str(eleve_nom).strip())
             ]
