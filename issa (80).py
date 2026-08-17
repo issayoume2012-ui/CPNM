@@ -1461,7 +1461,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 save_df_to_db(df_edt_save, "edt_grid")
                 st.success("Emploi du temps enregistré avec succès dans Supabase !")
 
-        with adm_tab9:*
+        with adm_tab9:
             st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
                 
                 classe_bul_sel = st.selectbox(
