@@ -1,3 +1,7 @@
+Bibliothèque
+/
+issa (80) (57)(3)_corrige_secrets_css_mobile.py
+
 
 import base64
 from datetime import datetime
@@ -31,16 +35,41 @@ def _secret(section, key, default=""):
     return os.getenv(key.upper(), default)
 
 
-def get_db_connection():
-    """Connexion PostgreSQL sans identifiants sensibles dans le code source."""
+def _get_database_config():
+    """Lit la configuration PostgreSQL depuis [database] ou [postgres].
+    [database] est prioritaire et accepte aussi dbname comme clé."""
     try:
-        if "postgres" not in st.secrets:
+        if "database" in st.secrets:
+            cfg = st.secrets["database"]
+        elif "postgres" in st.secrets:
+            cfg = st.secrets["postgres"]
+        else:
             return None
-        pg = st.secrets["postgres"]
+
+        host = str(cfg.get("host", "")).strip()
+        port = int(cfg.get("port", 5432))
+        dbname = str(cfg.get("dbname", cfg.get("database", "postgres"))).strip()
+        user = str(cfg.get("user", "postgres")).strip()
+        password = str(cfg.get("password", ""))
+
+        if not host or not user or not password:
+            return None
+        return {"host": host, "port": port, "dbname": dbname, "user": user, "password": password}
+    except Exception:
+        return None
+
+
+def get_db_connection():
+    """Connexion PostgreSQL sécurisée depuis Streamlit Secrets, sans secret dans le code."""
+    cfg = _get_database_config()
+    if not cfg:
+        return None
+    try:
         return psycopg2.connect(
-            host=pg["host"], database=pg["database"], user=pg["user"],
-            password=pg["password"], port=pg["port"],
-            connect_timeout=5, application_name="CPNM_Portail_Educatif"
+            host=cfg["host"], dbname=cfg["dbname"], user=cfg["user"],
+            password=cfg["password"], port=cfg["port"],
+            connect_timeout=5, application_name="CPNM_Portail_Educatif",
+            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3
         )
     except Exception:
         return None
@@ -529,9 +558,9 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-st.markdown("""
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-    <style>
+st.markdown('<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">', unsafe_allow_html=True)
+st.html("""
+<style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
     html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
     .stApp { background: linear-gradient(135deg, #F8FAFC 0%, #EFF6FF 50%, #E2E8F0 100%); color: #0F172A; }
@@ -613,13 +642,13 @@ st.markdown("""
     @media (min-width: 769px) {
         [data-testid="stHorizontalBlock"] { flex-wrap: nowrap; }
     }
-    </style>
-""", unsafe_allow_html=True)
+</style>
+""")
 
-st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>", unsafe_allow_html=True)
+st.html("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>")
 
-if not MASTER_PASSWORD_HASH:
-    st.warning("⚠️ Configurez security.admin_password_hash (bcrypt) dans st.secrets avant d’utiliser le compte maître.")
+# Le message de configuration du compte maître est affiché uniquement dans
+# l'espace Administration, afin de ne jamais polluer l'écran d'accueil.
 
 # ==========================================
 # 2. INITIALISATION DES ÉTATS & RECHARGEMENT DYNAMIQUE
@@ -1493,6 +1522,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
 
     if not st.session_state.authenticated_admin:
         st.info(f"🔒 **Sécurité Maximale** : Cet espace est strictement protégé. L'administrateur principal est **{ADMIN_EMAIL_MAITRE}**.")
+        if not MASTER_PASSWORD_HASH:
+            st.error("⚠️ Compte maître indisponible : configurez [security] → admin_password_hash (bcrypt) dans .streamlit/secrets.toml. Les comptes de la liste blanche restent utilisables si leurs mots de passe sont hachés.")
         with st.form("form_admin_login"):
             email_ad = st.text_input("Email administrateur", value=ADMIN_EMAIL_MAITRE)
             pass_ad = st.text_input("Mot de passe sécurisé", type="password")
