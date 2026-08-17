@@ -38,7 +38,7 @@ def get_db_connection():
         return None
 
 def init_db():
-    """Initialise toutes les tables dans Supabase / PostgreSQL."""
+    """Initialise toutes les tables dans Supabase / PostgreSQL avec toutes les colonnes requises."""
     conn = get_db_connection()
     if conn is None:
         return
@@ -104,6 +104,9 @@ def init_db():
                     bareme FLOAT
                 );
             """)
+            # Correction automatique si la colonne cycle manquait sur matieres
+            cur.execute("ALTER TABLE matieres ADD COLUMN IF NOT EXISTS cycle VARCHAR(255);")
+
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS periodes (
                     id SERIAL PRIMARY KEY,
@@ -180,6 +183,9 @@ def init_db():
                     piece_jointe TEXT
                 );
             """)
+            # Correction automatique si la colonne piece_jointe manquait sur admin_prof_messages
+            cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe TEXT;")
+
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS admin_assignations_travail (
                     id SERIAL PRIMARY KEY,
@@ -627,14 +633,14 @@ def obtenir_periodes_pour_classe(classe_nom):
 def obtenir_matieres_pour_classe(classe_nom):
     cycle = obtenir_cycle_classe(classe_nom)
     if est_cycle_elementaire(cycle):
-        return []
+        return ["Lecture", "Écriture / Copie", "Calcul / Arithmétique", "Éveil / Sciences", "Éducation Artistique & Morale"]
     else:
         if "matieres_def" in st.session_state and not st.session_state.matieres_def.empty:
             m_df = st.session_state.matieres_def
             res = m_df[m_df["Cycle"].str.lower() == cycle.lower()]
             if not res.empty:
                 return res["Matière"].tolist()
-        return []
+        return ["Mathématiques", "Français", "Histoire-Géographie", "SVT", "Physique-Chimie"]
 
 def obtenir_parametres_matiere(cycle, matiere_nom):
     if est_cycle_elementaire(cycle):
@@ -1192,7 +1198,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.markdown("#### 📥 Documents & Bulletins envoyés par l'Administration dans votre Espace")
             df_shared = st.session_state.admin_prof_messages
             if not df_shared.empty:
-                # Filtrer les messages reçus de l'administration pour cette classe ou pour tous
                 df_profs_view = df_shared[(df_shared["Destinataire"].str.contains("Tous|Professeurs|Classe", case=False, na=True)) | (df_shared["Expéditeur"] == "Administration")]
                 for _, r in df_profs_view.iterrows():
                     st.markdown(f"""
@@ -1447,11 +1452,31 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     st.success("Travail assigné !")
 
         with adm_tab7:
-            st.markdown("### 📊 Étude Comparative")
-            col_res1, col_res2, col_res3 = st.columns(3)
-            col_res1.metric("Moyenne Générale", "14.2 / 20", "+0.8")
-            col_res2.metric("Effectif Total Élèves", len(st.session_state.eleves_db))
-            col_res3.metric("Taux de Réussite", "95.2%")
+            st.markdown("### 📊 Simulation & Analyses Statistiques")
+            col_sim1, col_sim2 = st.columns(2)
+            with col_sim1:
+                classe_sim = st.selectbox("Classe pour simulation", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], key="sim_cls")
+                periode_sim = st.selectbox("Période", obtenir_periodes_pour_classe(classe_sim), key="sim_per")
+            with col_sim2:
+                st.markdown("#### Résultats agrégés simulés")
+                df_eleves_sim = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_sim]
+                effectif_sim = len(df_eleves_sim)
+                st.metric("Effectif de la classe", effectif_sim)
+                st.metric("Moyenne estimée de la classe", "13.8 / 20")
+                st.metric("Taux de réussite estimé", "92.5%")
+            
+            if not df_eleves_sim.empty:
+                sim_data = []
+                for _, r in df_eleves_sim.iterrows():
+                    sim_data.append({
+                        "Élève": r["Nom Complet"],
+                        "Classe": classe_sim,
+                        "Moyenne Générale Simulée": round(np.random.uniform(10.0, 18.5), 2),
+                        "Mention": "Bien"
+                    })
+                st.dataframe(pd.DataFrame(sim_data), use_container_width=True)
+            else:
+                st.info("Aucun élève dans cette classe pour effectuer la simulation détaillée.")
 
         with adm_tab8:
             st.markdown("### 📅 EDT Global")
@@ -1512,7 +1537,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                                     zip_file.writestr(f"Bulletin_{cls_dl_sel}_{nom_complet_el.replace(' ', '_')}.pdf", pdf_b)
                             zip_buffer.seek(0)
                             
-                            # Renvoyer automatiquement vers l'espace professeur / messages
                             new_msg_zip = pd.DataFrame([{
                                 "Expéditeur": "Administration",
                                 "Destinataire": f"Professeurs - {cls_dl_sel}",
