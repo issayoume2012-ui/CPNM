@@ -104,7 +104,6 @@ def init_db():
                     bareme FLOAT
                 );
             """)
-            # Correction automatique si la colonne cycle manquait sur matieres
             cur.execute("ALTER TABLE matieres ADD COLUMN IF NOT EXISTS cycle VARCHAR(255);")
 
             cur.execute("""
@@ -183,7 +182,6 @@ def init_db():
                     piece_jointe TEXT
                 );
             """)
-            # Correction automatique si la colonne piece_jointe manquait sur admin_prof_messages
             cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe TEXT;")
 
             cur.execute("""
@@ -806,7 +804,7 @@ def generer_pdf_bulletin(bul):
     pdf.cell(200, 5, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
     pdf.cell(200, 5, txt=f"Décision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return pdf.output(dest='S').encode('latin1', errors='replace')
 
 def generer_pdf_edt(classe, edt_g):
     pdf = FPDF()
@@ -825,7 +823,7 @@ def generer_pdf_edt(classe, edt_g):
             pdf.cell(32, 5.5, val, 1, 0, "C")
         pdf.cell(32, 5.5, "", 0, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return pdf.output(dest='S').encode('latin1', errors='replace')
 
 def generer_pdf_cahier_texte(classe_filtre):
     pdf = FPDF()
@@ -849,7 +847,7 @@ def generer_pdf_cahier_texte(classe_filtre):
         pdf.cell(55, 5.5, str(r.get("Contenu", ""))[:35], 1, 0, "L")
         pdf.cell(50, 5.5, str(r.get("Travail à faire", ""))[:30], 1, 1, "L")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return pdf.output(dest='S').encode('latin1', errors='replace')
 
 def generer_pdf_liste_eleves_classe(classe):
     pdf = FPDF()
@@ -868,7 +866,7 @@ def generer_pdf_liste_eleves_classe(classe):
         pdf.cell(110, 5.5, str(r.get("Nom Complet", "")), 1, 0, "L")
         pdf.cell(65, 5.5, str(r.get("Date de Naissance", "")), 1, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return pdf.output(dest='S').encode('latin1', errors='replace')
 
 def generer_pdf_registre_absences(classe):
     pdf = FPDF()
@@ -892,7 +890,7 @@ def generer_pdf_registre_absences(classe):
     else:
         pdf.cell(190, 6, "Aucune absence enregistrée pour cette classe.", 1, 1, "C")
     ajouter_signature_pdf(pdf)
-    return pdf.output(dest='S').encode('latin1')
+    return pdf.output(dest='S').encode('latin1', errors='replace')
 
 # ==========================================
 # 4. EN-TÊTE XXL & DESIGN D'ACCUEIL
@@ -1524,60 +1522,34 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                         st.warning("Aucun élève trouvé dans cette classe.")
 
                 with col_dl_b:
-                    st.markdown("#### 📚 2. Bulletins complets par Classe & Envoi Espace Prof")
-                    if st.button("📦 Générer TOUS les bulletins de la classe (Archive ZIP) & Renvoyer vers l'Espace Prof"):
-                        df_cls_eleves = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
-                        if not df_cls_eleves.empty:
+                    st.markdown("#### 📚 2. Bulletins complets de toute la Classe (Archive ZIP)")
+                    st.info("💡 Génère instantanément une archive ZIP contenant les bulletins PDF de tous les élèves de la classe.")
+                    
+                    if st.button("Générer l'Archive ZIP de Toute la Classe"):
+                        df_eleves_classe = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
+                        df_eleves_classe = trier_eleves_par_nom(df_eleves_classe)
+                        
+                        if not df_eleves_classe.empty:
                             zip_buffer = io.BytesIO()
                             with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                                for _, row_el in df_cls_eleves.iterrows():
-                                    nom_complet_el = row_el["Nom Complet"]
-                                    bul_data = calculer_bulletin_eleve(cls_dl_sel, nom_complet_el, per_dl_sel)
-                                    pdf_b = generer_pdf_bulletin(bul_data)
-                                    zip_file.writestr(f"Bulletin_{cls_dl_sel}_{nom_complet_el.replace(' ', '_')}.pdf", pdf_b)
+                                for _, r_el in df_eleves_classe.iterrows():
+                                    nom_complet_el = r_el["Nom Complet"]
+                                    if nom_complet_el:
+                                        bul_cls_data = calculer_bulletin_eleve(cls_dl_sel, nom_complet_el, per_dl_sel)
+                                        pdf_b = generer_pdf_bulletin(bul_cls_data)
+                                        nom_fichier_pdf = f"Bulletin_{cls_dl_sel}_{nom_complet_el.replace(' ', '_')}.pdf"
+                                        zip_file.writestr(nom_fichier_pdf, pdf_b)
+                            
                             zip_buffer.seek(0)
-                            
-                            new_msg_zip = pd.DataFrame([{
-                                "Expéditeur": "Administration",
-                                "Destinataire": f"Professeurs - {cls_dl_sel}",
-                                "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                                "Sujet": f"[BULLETINS OFFICIELS] {cls_dl_sel} - {per_dl_sel}",
-                                "Message": f"L'administration a généré et mis à disposition l'archive complète des bulletins pour la classe {cls_dl_sel} ({per_dl_sel}).",
-                                "Pièce jointe": f"Bulletins_{cls_dl_sel}_{per_dl_sel}.zip"
-                            }])
-                            st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_msg_zip], ignore_index=True)
-                            save_df_to_db(new_msg_zip, "admin_prof_messages")
-                            
-                            st.success("Bulletins de classe générés, archivés et renvoyés avec succès dans l'espace des professeurs !")
+                            st.success(f"Archive ZIP générée avec succès pour la classe {cls_dl_sel} ({len(df_eleves_classe)} bulletins) !")
                             st.download_button(
-                                label="📥 Télécharger l'Archive ZIP des Bulletins de Classe",
+                                label=f"📥 Télécharger l'archive ZIP complète ({cls_dl_sel})",
                                 data=zip_buffer,
-                                file_name=f"Bulletins_{cls_dl_sel}_{per_dl_sel}.zip",
+                                file_name=f"Bulletins_{cls_dl_sel}_{per_dl_sel.replace(' ', '_')}.zip",
                                 mime="application/zip",
-                                key="btn_dl_zip_class"
+                                key="btn_download_zip_classe_complete"
                             )
                         else:
-                            st.warning("Aucun élève dans cette classe pour générer les bulletins.")
-
-                st.markdown("---")
-                st.markdown("#### 📋 3. Registres Officiels & Emplois du Temps")
-                col_reg1, col_reg2, col_reg3, col_reg4 = st.columns(4)
-                
-                with col_reg1:
-                    if st.button("📥 Registre Absences & Présences (PDF)"):
-                        pdf_abs_bytes = generer_pdf_registre_absences(cls_dl_sel)
-                        st.download_button("Télécharger le Registre", pdf_abs_bytes, file_name=f"Registre_Absences_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_abs_reg")
-                with col_reg2:
-                    if st.button("📥 Registre Cahier de Texte (PDF)"):
-                        pdf_ct_bytes = generer_pdf_cahier_texte(cls_dl_sel)
-                        st.download_button("Télécharger le Cahier", pdf_ct_bytes, file_name=f"Cahier_Texte_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_ct_reg")
-                with col_reg3:
-                    if st.button("📥 Emploi du Temps (PDF)"):
-                        pdf_edt_bytes = generer_pdf_edt(cls_dl_sel, get_or_create_edt(cls_dl_sel))
-                        st.download_button("Télécharger l'EDT", pdf_edt_bytes, file_name=f"EDT_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_edt_reg")
-                with col_reg4:
-                    if st.button("📥 Liste Officielle Élèves (PDF)"):
-                        pdf_lst_bytes = generer_pdf_liste_eleves_classe(cls_dl_sel)
-                        st.download_button("Télécharger la Liste", pdf_lst_bytes, file_name=f"Liste_Eleves_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_lst_reg")
+                            st.warning("Aucun élève trouvé dans cette classe pour générer les bulletins.")
             else:
-                st.warning("Veuillez configurer des classes dans l'onglet Classes.")
+                st.warning("Aucune classe enregistrée dans le système.")
