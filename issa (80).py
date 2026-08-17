@@ -6,6 +6,7 @@ import json
 import os
 import zipfile
 import unicodedata
+from urllib.parse import urlparse, parse_qs
 import secrets
 import time
 import numpy as np
@@ -31,47 +32,174 @@ def _secret(section, key, default=""):
     return os.getenv(key.upper(), default)
 
 
-def _get_database_config():
-    """Lit la configuration PostgreSQL depuis [database] ou [postgres].
-    [database] est prioritaire et accepte aussi dbname comme clé."""
+DB_LAST_ERROR = ""
+
+
+def _secret(section, key, default=""):
+    """Lit un secret depuis Streamlit Secrets ou les variables d'environnement."""
     try:
+        section_obj = st.secrets.get(section, {})
+        value = section_obj.get(key, "") if hasattr(section_obj, "get") else ""
+        if value not in (None, ""):
+            return str(value)
+    except Exception:
+        pass
+    return os.getenv(key.upper(), default)
+
+
+def _database_url_to_config(url):
+    """Convertit une URL PostgreSQL/Supabase en configuration psycopg2."""
+    if not url:
+        return None
+    try:
+        raw = str(url).strip()
+        if not raw:
+            return None
+        parsed = urlparse(raw)
+        if parsed.scheme not in ("postgres", "postgresql") or not parsed.hostname:
+            return None
+        query = parse_qs(parsed.query)
+        port = parsed.port or 5432
+        return {
+            "host": parsed.hostname,
+            "port": port,
+            "dbname": (parsed.path or "/postgres").lstrip("/") or "postgres",
+            "user": parsed.username or "postgres",
+            "password": parsed.password or "",
+            "sslmode": query.get("sslmode", ["require"])[0],
+            "connect_timeout": int(query.get("connect_timeout", ["10"])[0]),
+        }
+    except Exception:
+        return None
+
+
+def _get_database_config():
+    """Lit une configuration PostgreSQL/Supabase robuste.
+
+    Priorité : [database] > [postgres] > DATABASE_URL/SUPABASE_DB_URL.
+    Les configurations Supabase utilisent SSL obligatoirement par défaut.
+    Un second hôte pooler peut être fourni pour les environnements où le
+    serveur direct n'est pas joignable (IPv6, réseau local, etc.).
+    """
+    global DB_LAST_ERROR
+    DB_LAST_ERROR = ""
+    try:
+        cfg = None
         if "database" in st.secrets:
             cfg = st.secrets["database"]
         elif "postgres" in st.secrets:
             cfg = st.secrets["postgres"]
-        else:
+
+        if cfg is None:
+            url = os.getenv("DATABASE_URL") or os.getenv("SUPABASE_DB_URL")
+            parsed = _database_url_to_config(url)
+            if parsed:
+                return parsed
+            DB_LAST_ERROR = (
+                "Configuration absente : ajoutez [database] dans .streamlit/secrets.toml "
+                "ou DATABASE_URL/SUPABASE_DB_URL dans l'environnement."
+            )
             return None
+
+        url = str(cfg.get("url", cfg.get("database_url", ""))).strip()
+        if url:
+            parsed = _database_url_to_config(url)
+            if parsed:
+                # Les clés explicites ont priorité sur l'URL.
+                for key in ("host", "port", "dbname", "user", "password", "sslmode", "connect_timeout"):
+                    if cfg.get(key) not in (None, ""):
+                        if key == "port":
+                            parsed[key] = int(cfg[key])
+                        elif key == "connect_timeout":
+                            parsed[key] = int(cfg[key])
+                        else:
+                            parsed[key] = str(cfg[key]).strip()
+                return parsed
 
         host = str(cfg.get("host", "")).strip()
         port = int(cfg.get("port", 5432))
         dbname = str(cfg.get("dbname", cfg.get("database", "postgres"))).strip()
         user = str(cfg.get("user", "postgres")).strip()
         password = str(cfg.get("password", ""))
+        sslmode = str(cfg.get("sslmode", "require")).strip() or "require"
+        connect_timeout = int(cfg.get("connect_timeout", 10))
 
-        if not host or not user or not password:
+        if not host or host.lower().startswith("votre-") or host.lower() in {"localhost", "supabase"}:
+            DB_LAST_ERROR = (
+                "Le host Supabase n'est pas configuré. Remplacez la valeur d'exemple par "
+                "le host réel de Supabase (Dashboard → Connect → Host)."
+            )
             return None
-        return {"host": host, "port": port, "dbname": dbname, "user": user, "password": password}
-    except Exception:
+        if not user or not password:
+            DB_LAST_ERROR = "Les champs user et password de [database] sont obligatoires."
+            return None
+        return {
+            "host": host,
+            "port": port,
+            "dbname": dbname,
+            "user": user,
+            "password": password,
+            "sslmode": sslmode,
+            "connect_timeout": connect_timeout,
+            "pooler_host": str(cfg.get("pooler_host", "")).strip(),
+            "pooler_port": int(cfg.get("pooler_port", 6543)),
+        }
+    except Exception as e:
+        DB_LAST_ERROR = f"Configuration PostgreSQL invalide : {e}"
         return None
+
+
+def _safe_db_error(exc):
+    """Retourne une erreur DB exploitable sans exposer le mot de passe."""
+    text = str(exc or "").strip()
+    for secret_name in ("password", "passfile"):
+        _ = secret_name
+    if len(text) > 700:
+        text = text[:700] + "…"
+    return text or "Erreur PostgreSQL inconnue."
 
 
 def get_db_connection():
-    """Connexion PostgreSQL sécurisée depuis Streamlit Secrets, sans secret dans le code."""
+    """Ouvre une connexion PostgreSQL/Supabase avec SSL et fallback pooler."""
+    global DB_LAST_ERROR
     cfg = _get_database_config()
     if not cfg:
         return None
-    try:
-        return psycopg2.connect(
-            host=cfg["host"], dbname=cfg["dbname"], user=cfg["user"],
-            password=cfg["password"], port=cfg["port"],
-            connect_timeout=5, application_name="CPNM_Portail_Educatif",
-            keepalives=1, keepalives_idle=30, keepalives_interval=10, keepalives_count=3
-        )
-    except Exception:
-        return None
 
-@st.cache_resource(show_spinner=False)
+    attempts = [(cfg["host"], cfg["port"])]
+    pooler_host = cfg.get("pooler_host", "")
+    if pooler_host and (pooler_host, cfg.get("pooler_port", 6543)) not in attempts:
+        attempts.append((pooler_host, cfg.get("pooler_port", 6543)))
+
+    errors = []
+    for host, port in attempts:
+        try:
+            conn = psycopg2.connect(
+                host=host,
+                dbname=cfg["dbname"],
+                user=cfg["user"],
+                password=cfg["password"],
+                port=port,
+                sslmode=cfg.get("sslmode", "require"),
+                connect_timeout=cfg.get("connect_timeout", 10),
+                application_name="CPNM_Portail_Educatif",
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=3,
+            )
+            conn.autocommit = False
+            DB_LAST_ERROR = ""
+            return conn
+        except Exception as exc:
+            errors.append(f"{host}:{port} → {_safe_db_error(exc)}")
+
+    DB_LAST_ERROR = " | ".join(errors) if errors else "Connexion PostgreSQL impossible."
+    return None
+
+@st.cache_resource(ttl=300, show_spinner=False)
 def init_db():
+    global DB_LAST_ERROR
     """Initialise toutes les tables dans Supabase / PostgreSQL avec toutes les colonnes requises."""
     conn = get_db_connection()
     if conn is None:
@@ -244,12 +372,18 @@ def init_db():
             conn.commit()
     except Exception as e:
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        DB_LAST_ERROR = f"Initialisation de la base impossible : {_safe_db_error(e)}"
+        return False
     finally:
         if conn:
             conn.close()
+    return True
 
-init_db()
+DB_READY = init_db()
 
 def nettoyer_date(val):
     if val is None or pd.isna(val) or str(val).lower() in ["nan", "nat", "none", ""]:
@@ -283,9 +417,15 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
+    global DB_LAST_ERROR
+    """Sauvegarde transactionnelle avec diagnostic explicite et invalidation du cache."""
+    if not isinstance(table_name, str) or not table_name.strip():
+        st.error("Nom de table invalide.")
+        return False
     conn = get_db_connection()
     if conn is None:
-        st.error("Impossible d'établir la connexion à la base de données Supabase.")
+        detail = DB_LAST_ERROR or "Aucune connexion PostgreSQL disponible."
+        st.error(f"Impossible d'établir la connexion à la base de données Supabase. {detail}")
         return False
     try:
         with conn.cursor() as cur:
@@ -408,12 +548,19 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
         return True
     except Exception as e:
         if conn:
-            conn.rollback()
-        st.error(f"Détail technique Supabase ({table_name}) : {str(e)}")
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+        DB_LAST_ERROR = f"Sauvegarde {table_name} : {_safe_db_error(e)}"
+        st.error(f"Détail technique Supabase ({table_name}) : {DB_LAST_ERROR}")
         return False
     finally:
         if conn:
-            conn.close()
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 # ==========================================
 # 0. BIS. SÉCURITÉ & AUTHENTIFICATION
@@ -642,6 +789,10 @@ st.html("""
 """)
 
 st.html("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>")
+
+# Diagnostic DB : affiché uniquement si la base n'est pas disponible.
+if not DB_READY and DB_LAST_ERROR:
+    st.warning("⚠️ Base Supabase non disponible : " + DB_LAST_ERROR)
 
 # Le message de configuration du compte maître est affiché uniquement dans
 # l'espace Administration, afin de ne jamais polluer l'écran d'accueil.
