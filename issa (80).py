@@ -329,7 +329,7 @@ def normaliser_texte(texte):
     if not texte: return ""
     return "".join(c for c in unicodedata.normalize('NFD', str(texte)) if unicodedata.category(c) != 'Mn').strip().lower()
 
-ADMIN_EMAIL_MAITRE = "cpnjcpn@gmail.com"
+ADMIN_EMAIL_MAITRE = "cpnm@gmail.com"
 
 def enregistrer_log_action(acteur: str, action: str, details: str):
     horodatage = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
