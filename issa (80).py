@@ -1,4 +1,4 @@
-# --- BIBLIOTHÈQUES STANDARDS (Python) ---[cite: 5]
+# --- BIBLIOTHÈQUES STANDARDS (Python) ---
 import base64
 from datetime import datetime
 import io
@@ -20,7 +20,7 @@ from psycopg2.extras import RealDictCursor
 DATABASE_URL = "postgresql://postgres.dzxotavktglasrcpyrwx:xTS1vLLFnlGWJXrr@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
 
 def get_db_connection():
-    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""[cite: 5]
+    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
     try:
         if "postgres" in st.secrets:
             conn = psycopg2.connect(
@@ -38,7 +38,7 @@ def get_db_connection():
         return None
 
 def init_db():
-    """Initialise toutes les tables dans Supabase / PostgreSQL."""[cite: 5]
+    """Initialise toutes les tables dans Supabase / PostgreSQL."""
     conn = get_db_connection()
     if conn is None:
         return
@@ -93,7 +93,6 @@ def init_db():
                     photo TEXT
                 );
             """)
-            # Sécurité additionnelle pour s'assurer que la colonne accepte les formats textuels/dates sans erreur de type
             cur.execute("ALTER TABLE eleves ALTER COLUMN date_de_naissance TYPE VARCHAR(50);")
             
             cur.execute("""
@@ -221,7 +220,6 @@ def nettoyer_date(val):
     val_str = str(val).strip()
     if val_str == "" or val_str.lower() in ["nan", "nat", "none"]:
         return None
-    # Essayer de normaliser les formats courants vers YYYY-MM-DD ou conserver proprement
     for fmt in ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%Y/%m/%d", "%d-%m-%y", "%d/%m/%y"):
         try:
             dt = datetime.strptime(val_str[:10], fmt)
@@ -232,7 +230,7 @@ def nettoyer_date(val):
 
 @st.cache_data(ttl=5, show_spinner=False)
 def load_table_from_db(query, columns):
-    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""[cite: 5]
+    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
     conn = get_db_connection()
     if conn is None:
         return pd.DataFrame(columns=columns)
@@ -248,7 +246,7 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée avec débogage d'erreurs."""[cite: 5]
+    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée avec débogage d'erreurs."""
     conn = get_db_connection()
     if conn is None:
         st.error("Impossible d'établir la connexion à la base de données Supabase.")
@@ -286,11 +284,9 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         else:
                             photo = str(photo)
                         
-                        # Ignorer les lignes totalement vides créées par le tableau
                         if not nom_complet and not prenom and not nom and not classe:
                             continue
                             
-                        # Auto-complétion si un champ est manquant
                         if nom_complet and (not prenom or pd.isna(prenom)) and (not nom or pd.isna(nom)):
                             parts = str(nom_complet).strip().split()
                             if len(parts) >= 2:
@@ -434,7 +430,7 @@ def trier_eleves_par_nom(df):
     return df_copy.reset_index(drop=True)
 
 # ==========================================
-# 0. TER. DESIGN XXL & CONFIGURATION PAGE (REFONTE MODERNE ACTIVE & SÉCURISÉE)
+# 0. TER. DESIGN XXL & CONFIGURATION PAGE
 # ==========================================
 st.set_page_config(
     page_title="Sénégal - Portail Éducatif de l'École Président Nelson Mandela",
@@ -869,7 +865,7 @@ def generer_pdf_liste_eleves_classe(classe):
     return pdf.output(dest='S').encode('latin1')
 
 # ==========================================
-# 4. EN-TÊTE XXL & DESIGN D'ACCUEIL ACTIVANT
+# 4. EN-TÊTE XXL & DESIGN D'ACCUEIL
 # ==========================================
 header_html = """
 <div class="header-institutionnel">
@@ -1266,7 +1262,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 st.info("Aucun message.")
 
 # ==========================================
-# 7. ESPACE ADMINISTRATION & LISTE BLANCHE SÉCURISÉE (cpnjcpn@gmail.com)
+# 7. ESPACE ADMINISTRATION & LISTE BLANCHE SÉCURISÉE
 # ==========================================
 elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (Sécurisé)":
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900; margin-bottom: 20px;">🔒 Administration Sécurisée — Liste Blanche & Pilotage Global</div>', unsafe_allow_html=True)
