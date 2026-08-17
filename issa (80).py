@@ -433,7 +433,6 @@ if "authenticated_admin" not in st.session_state:
 if "current_admin_email" not in st.session_state:
     st.session_state.current_admin_email = ""
 
-# Fonction utilitaire de rechargement universel lors des reconnexions
 def recharger_toutes_les_donnees():
     df_eleves_db = load_table_from_db(
         'SELECT nom_complet AS "Nom Complet", prenom AS "Prénom", nom AS "Nom", date_de_naissance AS "Date de Naissance", classe AS "Classe", photo AS "Photo" FROM eleves',
@@ -794,7 +793,7 @@ def generer_pdf_liste_eleves_classe(classe):
     return pdf.output(dest='S').encode('latin1')
 
 # ==========================================
-# 4. EN-TÊTE XXL & DESIGN D'ACCUEIL ACTIVANT (REFONTE)
+# 4. EN-TÊTE XXL & DESIGN D'ACCUEIL ACTIVANT
 # ==========================================
 header_html = """
 <div class="header-institutionnel">
@@ -817,7 +816,6 @@ header_html += """
 """
 st.markdown(header_html, unsafe_allow_html=True)
 
-# BOUTON DE FORÇAGE RECONNEXION / SYNCHRONISATION EN HAUT DE PAGE
 col_top1, col_top2 = st.columns([3, 1])
 with col_top2:
     if st.button("🔄 Reconnecter & Recharger Supabase"):
@@ -844,7 +842,7 @@ if st.session_state.espace_actif == "🏠 Accueil":
             <span style="background: #0284C7; color: white; padding: 6px 18px; border-radius: 20px; font-weight: 800; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px;">Portail Officiel National Sécurisé</span>
             <h1 style="color: #0F172A; font-weight: 900; font-size: 2.8rem; margin-top: 15px;">Bienvenue à l'École Président Nelson Mandela</h1>
             <p style="font-size: 1.2rem; color: #334155; max-width: 900px; margin: 10px auto 0 auto; font-weight: 500; line-height: 1.6;">
-                Plateforme numérique unifiée et ultra-rapide. Accédez directement aux deux portails exclusifs : l'<b>Espace Enseignants & Bibliothèque de 100+ documents paginés</b> et l'<b>Administration Générale Sécurisée</b>.
+                Plateforme numérique unifiée et ultra-rapide. Accédez directement aux deux portails exclusifs : l'<b>Espace Enseignants</b> et l'<b>Administration Générale Sécurisée</b>.
             </p>
         </div>
         """,
@@ -853,22 +851,22 @@ if st.session_state.espace_actif == "🏠 Accueil":
 
     c1, c2 = st.columns(2)
     with c1:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs & Bibliothèque XXL</h2><p style="font-size: 1rem; color: #475569;">Gestion exhaustive du cycle élémentaire (toutes matières) et secondaire, saisie multi-utilisateurs sécurisée, bibliothèque interactive avec <b>plus de 100 documents paginés (pages 1, 2, 3...)</b> et transmission de fichiers multimédias.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">👨‍🏫</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Professeurs</h2><p style="font-size: 1rem; color: #475569;">Gestion exhaustive du cycle élémentaire (toutes matières) et secondaire, saisie multi-utilisateurs sécurisée et transmission de fichiers multimédias.</p></div>', unsafe_allow_html=True)
         if st.button("🚀 Accéder à l'Espace Professeurs", key="btn_p"):
             st.session_state.espace_actif = "👨‍🏫 Espace Professeurs / Maîtres"
             st.rerun()
 
     with c2:
-        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Liste Blanche</h2><p style="font-size: 1rem; color: #475569;">Espace hautement sécurisé géré par <b>cpnjcpn@gmail.com</b> (Devoir Total). Liste blanche des administrateurs (ajout, modification, suppression), objectifs mensuels par classe, et génération de bulletins officiels.</p></div>', unsafe_allow_html=True)
+        st.markdown('<div class="animated-card-xxl"><h1 style="font-size: 4rem; margin: 0;">🔒</h1><h2 style="color: #0284C7; margin: 15px 0; font-weight: 800;">Espace Administration & Liste Blanche</h2><p style="font-size: 1rem; color: #475569;">Espace hautement sécurisé géré par <b>cpnjcpn@gmail.com</b> (Devoir Total). Liste blanche des administrateurs, objectifs mensuels par classe, et génération de bulletins officiels.</p></div>', unsafe_allow_html=True)
         if st.button("⚡ Accéder à l'Administration XXL", key="btn_ad"):
             st.session_state.espace_actif = "🔒 Espace Administration & Rapports (Sécurisé)"
             st.rerun()
 
 # ==========================================
-# 6. ESPACE PROFESSEURS & BIBLIOTHÈQUE XXL (100+ DOCS PAGINÉS)
+# 6. ESPACE PROFESSEURS (SANS ONGLET BIBLIO)
 # ==========================================
 elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres":
-    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900; margin-bottom: 20px;">👨‍🏫 Espace Enseignants & Bibliothèque Numérique Paginée (100+ Documents)</div>', unsafe_allow_html=True)
+    st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900; margin-bottom: 20px;">👨‍🏫 Espace Enseignants & Outils Pédagogiques</div>', unsafe_allow_html=True)
 
     if "prof_logged" not in st.session_state: st.session_state.prof_logged = False
     if "prof_nom_connecte" not in st.session_state: st.session_state.prof_nom_connecte = ""
@@ -876,16 +874,25 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
     if "prof_matiere_principale" not in st.session_state: st.session_state.prof_matiere_principale = ""
 
     if not st.session_state.prof_logged:
-        st.info("Veuillez vous authentifier par Email ou Nom/Prénom.")
+        st.info("Veuillez vous authentifier en renseignant votre Nom, votre Prénom, votre Mot de passe et optionnellement votre Email.")
         with st.form("form_login_prof"):
-            p_email = st.text_input("Email professionnel ou Nom")
-            p_pass = st.text_input("Mot de passe sécurisé", type="password")
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                p_nom = st.text_input("Nom")
+                p_prenom = st.text_input("Prénom")
+            with col_f2:
+                p_email = st.text_input("Email (Optionnel)")
+                p_pass = st.text_input("Mot de passe sécurisé", type="password")
+            
             if st.form_submit_button("Se connecter au portail prof"):
                 match_prof = False
                 classe_trouvee = "CP"
                 matiere_trouvee = "Toutes les matières"
                 nom_complet_prof = ""
-                input_norm = normaliser_texte(p_email)
+                
+                nom_norm = normaliser_texte(p_nom)
+                prenom_norm = normaliser_texte(p_prenom)
+                email_norm = normaliser_texte(p_email)
 
                 targets = [st.session_state.prof_white_list]
                 for target_df in targets:
@@ -894,7 +901,12 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             db_email = str(row.get("Email", row.get("email", ""))).strip().lower()
                             db_nom = normaliser_texte(row.get("Nom", row.get("nom", "")))
                             db_prenom = normaliser_texte(row.get("Prénom", row.get("prénom", row.get("prenom", ""))))
-                            if input_norm == db_email or input_norm == db_nom or input_norm == f"{db_prenom} {db_nom}":
+                            
+                            # Correspondance par nom/prénom ou email
+                            correspond_nom_prenom = (nom_norm and nom_norm in db_nom) and (not prenom_norm or prenom_norm in db_prenom)
+                            correspond_email = email_norm and email_norm == db_email
+
+                            if correspond_nom_prenom or correspond_email:
                                 stored_pwd = str(row.get("Mot de passe", row.get("password", "")))
                                 if not stored_pwd or verifier_mot_de_passe(p_pass, stored_pwd) or p_pass == "cpnm2026":
                                     match_prof = True
@@ -904,15 +916,15 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                                     break
                     if match_prof: break
 
-                if match_prof or (input_norm == ADMIN_EMAIL_MAITRE.lower() and p_pass == "cpnjcpn2026"):
+                if match_prof or (email_norm == ADMIN_EMAIL_MAITRE.lower() and p_pass == "cpnjcpn2026"):
                     st.session_state.prof_logged = True
-                    st.session_state.prof_nom_connecte = nom_complet_prof if nom_complet_prof else p_email
+                    st.session_state.prof_nom_connecte = nom_complet_prof if nom_complet_prof else f"{p_prenom} {p_nom}".strip()
                     st.session_state.prof_classe_autorisee = classe_trouvee
                     st.session_state.prof_matiere_principale = matiere_trouvee
                     st.success("Connexion réussie !")
                     st.rerun()
                 else:
-                    st.error("Identifiants incorrects.")
+                    st.error("Identifiants incorrects (Nom, Prénom ou Mot de passe invalide).")
     else:
         prof_connecte = st.session_state.prof_nom_connecte
         classe_autorisee = st.session_state.prof_classe_autorisee
@@ -929,7 +941,8 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         st.markdown("---")
 
-        t_notes, t_appel, t_biblio, t_echange, t_travaux_admin, t_progression, t_cahier, t_edt_prof, t_msg = st.tabs([
+        # ONGLET BIBLIO SUPPRIMÉ ICI CI-DESSOUS
+        t_notes, t_appel, t_echange, t_travaux_admin, t_progression, t_cahier, t_edt_prof, t_msg = st.tabs([
             "📝 Saisie des Notes (Toutes Matières & Anti-Perte)",
             "📋 Feuille d'Appel",
             "📂 Échange & Fichiers à Transmettre",
@@ -1048,7 +1061,6 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                     save_df_to_db(df_new_abs, "absences")
                     st.success("Appel sauvegardé et synchronisé !")
 
-
         with t_echange:
             st.markdown("### 📂 Échange de Documents & Fichiers à Transmettre (Administration & Parents)")
             st.info("Transmettez vos documents officiels, rapports, notes, et joignez directement des **fichiers joints (fichiers réels, photos et vidéos)** dans cet espace sécurisé.")
@@ -1094,12 +1106,12 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 st.info("Aucun travail assigné pour le moment par l'administration.")
 
         with t_progression:
-            st.markdown("### 📈 Fiche de Progression, Avis & Objectifs par Mois pour la Bibliothèque et les Classes")
-            st.info("Établissez clairement les objectifs à atteindre par mois pour chaque classe, la progression pédagogique et l'utilisation des documents de la bibliothèque.")
+            st.markdown("### 📈 Fiche de Progression, Avis & Objectifs par Mois pour les Classes")
+            st.info("Établissez clairement les objectifs à atteindre par mois pour chaque classe et la progression pédagogique.")
             
             with st.form("form_fiche_progression_prof"):
                 mois_objectif = st.selectbox("Mois concerné", ["Octobre", "Novembre", "Décembre", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet"])
-                objectifs_mois = st.text_area("Objectifs précis à atteindre par mois pour la bibliothèque et les enseignements (ex: Maîtrise des 50 premiers sons, lecture courante de 3 livres de la bibliothèque, etc.)")
+                objectifs_mois = st.text_area("Objectifs précis à atteindre par mois pour les enseignements")
                 prog_niveau = st.selectbox("Progression du niveau de la classe", ["Excellente progression", "Progression satisfaisante", "Progression lente", "Stagnation", "Régression notable"])
                 avis_classe = st.text_area("Ce que vous pensez de la classe (Comportement, participation, climat général)")
                 regression_notes = st.text_area("Analyse de la régression (Le cas échéant, matières en difficulté, causes identifiées)")
@@ -1184,7 +1196,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
     st.markdown('<div style="color: #0F172A; font-size: 2.2rem; font-weight: 900; margin-bottom: 20px;">🔒 Administration Sécurisée — Liste Blanche & Pilotage Global</div>', unsafe_allow_html=True)
 
     if not st.session_state.authenticated_admin:
-        st.info(f"🔒 **Sécurité Maximale** : Cet espace est strictly protégé. L'administrateur principal avec devoir total est **{ADMIN_EMAIL_MAITRE}**.")
+        st.info(f"🔒 **Sécurité Maximale** : Cet espace est strictement protégé. L'administrateur principal avec devoir total est **{ADMIN_EMAIL_MAITRE}**.")
         with st.form("form_admin_login"):
             email_ad = st.text_input("Email administrateur", value=ADMIN_EMAIL_MAITRE)
             pass_ad = st.text_input("Mot de passe sécurisé", type="password")
@@ -1349,7 +1361,13 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             with st.form("form_admin_assigner_travail"):
                 titre_travail = st.text_input("Titre du travail ou de la consigne")
                 classe_concernee = st.selectbox("Classe concernée", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A", "CP"])
-                prof_destinataire = st.selectbox("Professeur destinataire", st.session_state.prof_white_list["Nom","Prenom"].tolist() if not st.session_state.prof_white_list.empty else ["Prof. Élémentaire"])
+                
+                profs_noms_list = []
+                if not st.session_state.prof_white_list.empty:
+                    profs_noms_list = [f"{r.get('Prénom', '')} {r.get('Nom', '')}".strip() for _, r in st.session_state.prof_white_list.iterrows()]
+                if not profs_noms_list: profs_noms_list = ["Prof. Élémentaire"]
+                
+                prof_destinataire = st.selectbox("Professeur destinataire", profs_noms_list)
                 description_travail = st.text_area("Description détaillée et consignes du travail à faire")
                 
                 pj_travail = st.file_uploader("Joindre un fichier de support (Optionnel)", type=["pdf", "docx", "xlsx"], accept_multiple_files=False)
@@ -1372,8 +1390,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.info("Aucun travail assigné.")
 
         with adm_tab7:
-            st.markdown("### 📊 Étude Comparative entre Classes, Simulations & Objectifs par Mois")
-            st.info("Réalisez des études comparatives de performances entre classes, simulez des scénarios de notes et définissez les objectifs à atteindre par mois pour chaque classe et bibliothèque.")
+            st.markdown("### 📊 Étude Comparative entre Classes & Simulations")
+            st.info("Réalisez des études comparatives de performances entre classes et simulez des scénarios de notes.")
             
             c_comp1, c_comp2 = st.columns(2)
             with c_comp1:
@@ -1387,83 +1405,60 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             col_res2.metric(f"Moyenne Estimée ({classe_ref2})", "13.8 / 20", "+0.4 pt")
             col_res3.metric("Taux de Réussite Global", "94.5%", "+2.1%")
 
-            st.markdown("---")
-            st.markdown("#### 🎯 Objectifs à Atteindre par Mois (Maquette par Classe)")
-            classe_obj_mois = st.selectbox("Classe concernée pour les objectifs", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A", "CP"])
-            mois_cible = st.selectbox("Mois cible", ["Octobre", "Novembre", "Décembre", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin", "Juillet"], key="mois_obj_admin")
-            but_mois = st.text_area("Objectifs précis de lecture et de travail assigné pour ce mois (ex: Maîtrise des 3 premiers livres de la bibliothèque, calcul mental rapide)")
-            
-            if st.button("Enregistrer les Objectifs Mensuels pour cette Classe"):
-                st.success(f"Objectifs du mois de **{mois_cible}** enregistrés avec succès pour la classe **{classe_obj_mois}** !")
-                enregistrer_log_action(admin_actuel, "OBJECTIFS_MENSUELS", f"Objectifs de {mois_cible} fixés pour {classe_obj_mois}")
-
         with adm_tab8:
-            st.markdown("### Emploi du Temps Global (Admin - Synchronisé)")
-            cls_edt_sel = st.selectbox("Sélectionner la classe à configurer", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A"])
-            edt_grid_admin = get_or_create_edt(cls_edt_sel)
-            edited_edt = st.data_editor(edt_grid_admin, key=f"editor_edt_{cls_edt_sel}")
-            if st.button("Enregistrer cet Emploi du Temps (Instantané)"):
-                st.session_state.edt_grid_db[cls_edt_sel] = edited_edt
-                records_edt = []
-                for j in edited_edt.index:
-                    for h in edited_edt.columns:
-                        records_edt.append({"classe": cls_edt_sel, "jour": j, "heure": h, "valeur": edited_edt.loc[j, h]})
-                df_edt_to_save = pd.DataFrame(records_edt)
-                save_df_to_db(df_edt_to_save, "edt_grid")
-                synchroniser_edt_global()
-                enregistrer_log_action(admin_actuel, "EDT_UPDATE", f"Mise à jour EDT pour {cls_edt_sel}")
-                st.success("Emploi du temps synchronisé avec succès pour tous les professeurs !")
+            st.markdown("### 📅 Emploi du Temps Global de l'Établissement")
+            classes_liste = st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"]
+            cls_edt_adm = st.selectbox("Sélectionner la classe pour voir/modifier l'emploi du temps", classes_liste, key="adm_edt_sel")
+            edt_g_adm = get_or_create_edt(cls_edt_adm)
+            
+            jour_a = st.selectbox("Jour", JOURS_LIST, key="adm_j")
+            heure_a = st.selectbox("Créneau", HEURES_LIST, key="adm_h")
+            val_a = st.text_input("Matière / Cours", value="Cours", key="adm_v")
+            if st.button("Mettre à jour l'EDT de cette classe"):
+                edt_g_adm.loc[jour_a, heure_a] = val_a
+                st.session_state.edt_grid_db[cls_edt_adm] = edt_g_adm
+                df_to_save_edt = pd.DataFrame([{"classe": cls_edt_adm, "jour": jour_a, "heure": heure_a, "valeur": val_a}])
+                save_df_to_db(df_to_save_edt, "edt_grid")
+                st.success("Emploi du temps mis à jour et synchronisé !")
+            st.dataframe(edt_g_adm, use_container_width=True)
 
         with adm_tab9:
-            st.markdown("### 📥 Centre de Téléchargement XXL & Partage de Bulletins (Raccordement Professeurs / Administration)")
-            st.markdown("Générez, téléchargez et partagez les bulletins scolaires des élèves par classe au niveau des équipes. Raccordement direct entre les bulletins de chaque élève et l'espace professeur.")
-
-            col_dl1, col_dl2 = st.columns(2)
-
-            with col_dl1:
-                st.markdown("#### 📄 Bulletins Scolaires (Design Inédit & Logo nm.jpg)")
-                cls_r = st.selectbox("Classe ciblée", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["6ème A"], key="cls_dl_bul")
-                periodes_r = obtenir_periodes_pour_classe(cls_r)
-                per_r = st.selectbox("Période active", periodes_r, key="per_dl_bul")
+            st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels Certifiés")
+            st.info("Générez et téléchargez instantanément tous les bulletins scolaires, cahiers de textes et listes d'élèves au format PDF officiel.")
+            
+            classes_dl = st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else []
+            if classes_dl:
+                cls_dl_sel = st.selectbox("Sélectionner la classe", classes_dl, key="cls_dl_bul")
+                periodes_dl = obtenir_periodes_pour_classe(cls_dl_sel)
+                per_dl_sel = st.selectbox("Sélectionner la période", periodes_dl, key="per_dl_bul")
                 
-                df_el_r = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_r]
-                if not df_el_r.empty:
-                    eleve_r = st.selectbox("Élève spécifique", df_el_r["Nom Complet"].tolist(), key="el_dl_bul")
-                    
-                    st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
-                    st.write("✨ **Bulletin Officiel avec Cadre Certifié & Logo nm.jpg**")
-                    bul = calculer_bulletin_eleve(cls_r, eleve_r, per_r)
-                    pdf_bytes = generer_pdf_bulletin(bul)
-                    st.download_button("📥 Télécharger le Bulletin Officiel (PDF)", data=pdf_bytes, file_name=f"Bulletin_{eleve_r}_{per_r}.pdf", mime="application/pdf", key="dl_bul_indiv")
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
-                    st.write("📦 **Archive ZIP Intégrale de la Classe (Partage Équipe & Professeurs)**")
-                    if st.button("Préparer l'archive ZIP des Bulletins de la Classe", key="prep_zip_btn"):
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                            for el_name in df_el_r["Nom Complet"].tolist():
-                                b_data = calculer_bulletin_eleve(cls_r, el_name, per_r)
-                                pdf_data = generer_pdf_bulletin(b_data)
-                                zip_file.writestr(f"Bulletin_{el_name}_{per_r}.pdf", pdf_data)
-                        zip_buffer.seek(0)
-                        st.session_state.zip_data_cache = zip_buffer.getvalue()
-                        st.success("Archive ZIP de la classe générée et raccordée aux professeurs avec succès !")
-
-                    if "zip_data_cache" in st.session_state:
-                        st.download_button("⚡ Télécharger le Pack ZIP Complet de la Classe", data=st.session_state.zip_data_cache, file_name=f"Bulletins_{cls_r}_{per_r}.zip", mime="application/zip", key="dl_zip_class")
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-            with col_dl2:
-                st.markdown("#### 📑 Documents Officiels de l'École")
-                st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
-                if st.button("📥 Télécharger l'Emploi du Temps de la Classe (PDF)"):
-                    pdf_e = generer_pdf_edt(cls_r, get_or_create_edt(cls_r))
-                    st.download_button("Fichier EDT PDF", data=pdf_e, file_name=f"EDT_{cls_r}.pdf", mime="application/pdf", key="dl_edt_pdf")
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                st.markdown('<div class="download-container-xxl">', unsafe_allow_html=True)
-                if st.button("📥 Télécharger la Liste Officielle des Élèves (PDF)"):
-                    pdf_l = generer_pdf_liste_eleves_classe(cls_r)
-                    st.download_button("Fichier Liste Élèves PDF", data=pdf_l, file_name=f"Eleves_{cls_r}.pdf", mime="application/pdf", key="dl_el_pdf")
-                st.markdown('</div>', unsafe_allow_html=True)
+                df_eleves_bul = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
+                df_eleves_bul = trier_eleves_par_nom(df_eleves_bul)
+                eleves_dl_list = df_eleves_bul["Nom Complet"].tolist() if not df_eleves_bul.empty else []
+                
+                if eleves_dl_list:
+                    el_dl_sel = st.selectbox("Sélectionner l'élève", eleves_dl_list, key="el_dl_bul")
+                    if st.button("Générer le Bulletin PDF Officiel"):
+                        bul_data = calculer_bulletin_eleve(cls_dl_sel, el_dl_sel, per_dl_sel)
+                        pdf_bytes = generer_pdf_bulletin(bul_data)
+                        st.download_button(
+                            label=f"📥 Télécharger le Bulletin de {el_dl_sel} (PDF)",
+                            data=pdf_bytes,
+                            file_name=f"Bulletin_{cls_dl_sel}_{el_dl_sel.replace(' ', '_')}_{per_dl_sel.replace(' ', '_')}.pdf",
+                            mime="application/pdf"
+                        )
+                else:
+                    st.warning("Aucun élève dans cette classe.")
+                
+                st.markdown("---")
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    if st.button("Générer PDF Emploi du Temps"):
+                        pdf_edt_bytes = generer_pdf_edt(cls_dl_sel, get_or_create_edt(cls_dl_sel))
+                        st.download_button("📥 Télécharger Emploi du Temps (PDF)", pdf_edt_bytes, file_name=f"EDT_{cls_dl_sel}.pdf", mime="application/pdf")
+                with col_dl2:
+                    if st.button("Générer PDF Liste des Élèves"):
+                        pdf_lst_bytes = generer_pdf_liste_eleves_classe(cls_dl_sel)
+                        st.download_button("📥 Télécharger Liste Élèves (PDF)", pdf_lst_bytes, file_name=f"Liste_Eleves_{cls_dl_sel}.pdf", mime="application/pdf")
+            else:
+                st.warning("Veuillez configurer des classes dans l'onglet Classes.")
