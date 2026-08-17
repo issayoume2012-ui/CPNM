@@ -104,7 +104,6 @@ def init_db():
                     bareme FLOAT
                 );
             """)
-            # Correction automatique si la colonne cycle manquait sur matieres
             cur.execute("ALTER TABLE matieres ADD COLUMN IF NOT EXISTS cycle VARCHAR(255);")
 
             cur.execute("""
@@ -183,7 +182,6 @@ def init_db():
                     piece_jointe TEXT
                 );
             """)
-            # Correction automatique si la colonne piece_jointe manquait sur admin_prof_messages
             cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe TEXT;")
 
             cur.execute("""
@@ -220,7 +218,6 @@ def init_db():
 init_db()
 
 def nettoyer_date(val):
-    """Convertit et nettoie tout format de date (DD-MM-YYYY, YYYY-MM-DD, etc.) et élimine 'nan' / 'None'."""
     if val is None or pd.isna(val) or str(val).lower() in ["nan", "nat", "none", ""]:
         return None
     val_str = str(val).strip()
@@ -234,7 +231,6 @@ def nettoyer_date(val):
             continue
     return val_str
 
-@st.cache_data(ttl=2, show_spinner=False)
 def load_table_from_db(query, columns):
     """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
     conn = get_db_connection()
@@ -252,7 +248,6 @@ def load_table_from_db(query, columns):
             conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    """Sauvegarde résiliente et synchronisation PostgreSQL/Supabase sécurisée avec débogage d'erreurs."""
     conn = get_db_connection()
     if conn is None:
         st.error("Impossible d'établir la connexion à la base de données Supabase.")
@@ -269,21 +264,16 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                         nom_complet = r.get("Nom Complet")
                         if nom_complet is not None and str(nom_complet).lower() in ["nan", "none"]:
                             nom_complet = None
-                            
                         prenom = r.get("Prénom")
                         if prenom is not None and str(prenom).lower() in ["nan", "none"]:
                             prenom = None
-                            
                         nom = r.get("Nom")
                         if nom is not None and str(nom).lower() in ["nan", "none"]:
                             nom = None
-                            
                         date_naiss = nettoyer_date(r.get("Date de Naissance"))
-                        
                         classe = r.get("Classe")
                         if classe is not None and str(classe).lower() in ["nan", "none"]:
                             classe = None
-                            
                         photo = r.get("Photo")
                         if photo is None or pd.isna(photo) or str(photo).lower() in ["nan", "nat", "none", ""]:
                             photo = None
@@ -376,7 +366,6 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     query = f"INSERT INTO {table_name} ({cols_str}) VALUES ({placeholders});"
                     cur.executemany(query, [tuple(x) for x in df_cleaned.to_numpy()])
         conn.commit()
-        st.cache_data.clear()
         return True
     except Exception as e:
         if conn:
@@ -1415,169 +1404,128 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     st.error("Erreur de sauvegarde.")
 
         with adm_tab5:
-            st.markdown("### 📤 Partager des Documents aux Professeurs")
-            with st.form("form_admin_partage_doc_fichiers"):
-                titre_doc_adm = st.text_input("Titre du document à partager")
-                dest_prof_adm = st.selectbox("Destinataire", ["Tous les professeurs", "Professeurs Élémentaire", "Professeurs Collège"])
-                desc_doc_adm = st.text_area("Description")
-                fichiers_joints_adm = st.file_uploader("Fichiers joints", type=["pdf", "docx", "xlsx", "png", "jpg"], accept_multiple_files=True)
-                
-                if st.form_submit_button("Partager avec les Professeurs"):
-                    noms_pj = ", ".join([f.name for f in fichiers_joints_adm]) if fichiers_joints_adm else "Aucune pièce jointe"
-                    new_doc_partage = pd.DataFrame([{
-                        "Expéditeur": "Administration", "Destinataire": dest_prof_adm,
+            st.markdown("### 📥 Partager des Documents aux Professeurs")
+            with st.form("form_admin_share_doc"):
+                sujet_doc = st.text_input("Titre du document partagé")
+                dest_doc = st.selectbox("Destinataires", ["Tous les Professeurs", "Classe Spécifique"])
+                desc_doc = st.text_area("Instructions ou description")
+                pj_admin = st.file_uploader("Fichier à partager", type=["pdf", "docx", "xlsx", "png", "jpg"], accept_multiple_files=False)
+                if st.form_submit_button("Diffuser le Document"):
+                    nom_pj_admin = pj_admin.name if pj_admin else "Document_Officiel.pdf"
+                    new_share = pd.DataFrame([{
+                        "Expéditeur": "Administration", "Destinataire": dest_doc,
                         "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": f"[DOCUMENT ADMINISTRATIF] {titre_doc_adm}",
-                        "Message": desc_doc_adm, "Pièce jointe": noms_pj
+                        "Sujet": sujet_doc, "Message": desc_doc, "Pièce jointe": nom_pj_admin
                     }])
-                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_doc_partage], ignore_index=True)
-                    save_df_to_db(new_doc_partage, "admin_prof_messages")
-                    st.success("Document partagé avec succès !")
+                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_share], ignore_index=True)
+                    save_df_to_db(new_share, "admin_prof_messages")
+                    st.success("Document diffusé avec succès !")
 
         with adm_tab6:
-            st.markdown("### 📋 Assigner un Travail")
-            with st.form("form_admin_assigner_travail"):
-                titre_travail = st.text_input("Titre")
-                classe_concernee = st.selectbox("Classe", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"])
-                profs_noms_list = [f"{r.get('Prénom', '')} {r.get('Nom', '')}".strip() for _, r in st.session_state.prof_white_list.iterrows()] if not st.session_state.prof_white_list.empty else ["Prof"]
-                prof_destinataire = st.selectbox("Professeur", profs_noms_list)
-                description_travail = st.text_area("Description")
-                if st.form_submit_button("Assigner"):
-                    new_assignation = pd.DataFrame([{
-                        "Titre": titre_travail, "Classe": classe_concernee, "Professeur": prof_destinataire,
-                        "Date": str(datetime.now().strftime("%Y-%m-%d")), "Description": description_travail, "Pièce jointe": ""
+            st.markdown("### 📋 Assigner un Travail ou Devoir aux Professeurs / Classes")
+            with st.form("form_admin_assign_work"):
+                titre_travail = st.text_input("Titre du travail")
+                classe_travail = st.selectbox("Classe concernée", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"])
+                prof_cible = st.text_input("Professeur concerné (ou Tous)")
+                desc_travail = st.text_area("Consignes détaillées")
+                pj_travail = st.file_uploader("Fichier joint (Consignes/Sujet)", type=["pdf", "docx"], accept_multiple_files=False)
+                if st.form_submit_button("Envoyer l'Assignation"):
+                    nom_pj_tr = pj_travail.name if pj_travail else "Consignes.pdf"
+                    new_assign = pd.DataFrame([{
+                        "Titre": titre_travail, "Classe": classe_travail, "Professeur": prof_cible,
+                        "Date": str(datetime.now().strftime("%Y-%m-%d")), "Description": desc_travail, "Pièce jointe": nom_pj_tr
                     }])
-                    st.session_state.admin_assignations_travail = pd.concat([st.session_state.admin_assignations_travail, new_assignation], ignore_index=True)
-                    save_df_to_db(new_assignation, "admin_assignations_travail")
-                    st.success("Travail assigné !")
+                    st.session_state.admin_assignations_travail = pd.concat([st.session_state.admin_assignations_travail, new_assign], ignore_index=True)
+                    save_df_to_db(new_assign, "admin_assignations_travail")
+                    st.success("Travail assigné avec succès !")
 
         with adm_tab7:
-            st.markdown("### 📊 Simulation & Analyses Statistiques")
-            col_sim1, col_sim2 = st.columns(2)
-            with col_sim1:
-                classe_sim = st.selectbox("Classe pour simulation", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], key="sim_cls")
-                periode_sim = st.selectbox("Période", obtenir_periodes_pour_classe(classe_sim), key="sim_per")
-            with col_sim2:
-                st.markdown("#### Résultats agrégés simulés")
-                df_eleves_sim = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_sim]
-                effectif_sim = len(df_eleves_sim)
-                st.metric("Effectif de la classe", effectif_sim)
-                st.metric("Moyenne estimée de la classe", "13.8 / 20")
-                st.metric("Taux de réussite estimé", "92.5%")
-            
-            if not df_eleves_sim.empty:
-                sim_data = []
-                for _, r in df_eleves_sim.iterrows():
-                    sim_data.append({
-                        "Élève": r["Nom Complet"],
-                        "Classe": classe_sim,
-                        "Moyenne Générale Simulée": round(np.random.uniform(10.0, 18.5), 2),
-                        "Mention": "Bien"
-                    })
-                st.dataframe(pd.DataFrame(sim_data), use_container_width=True)
-            else:
-                st.info("Aucun élève dans cette classe pour effectuer la simulation détaillée.")
+            st.markdown("### 📊 Simulation & Tableau de Bord Global")
+            st.metric("Total Élèves Inscrits", len(st.session_state.eleves_db))
+            st.metric("Total Classes", len(st.session_state.classes_db))
+            st.metric("Total Professeurs", len(st.session_state.prof_white_list))
 
         with adm_tab8:
-            st.markdown("### 📅 EDT Global")
-            classes_liste = st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"]
-            cls_edt_adm = st.selectbox("Classe", classes_liste, key="adm_edt_sel")
-            edt_g_adm = get_or_create_edt(cls_edt_adm)
-            st.dataframe(edt_g_adm, use_container_width=True)
+            st.markdown("### 📅 Gestion Emploi du Temps Global (Toutes Classes)")
+            classe_edt_admin = st.selectbox("Choisir la classe", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], key="admin_edt_cls")
+            edt_g = get_or_create_edt(classe_edt_admin)
+            edited_edt = st.data_editor(edt_g, use_container_width=True, key=f"edt_grid_admin_{classe_edt_admin}")
+            if st.button("Enregistrer l'Emploi du Temps de cette classe"):
+                st.session_state.edt_grid_db[classe_edt_admin] = edited_edt
+                rows_to_save = []
+                for jour in JOURS_LIST:
+                    for h in HEURES_LIST:
+                        val = edited_edt.loc[jour, h] if h in edited_edt.columns else ""
+                        rows_to_save.append({"classe": classe_edt_admin, "jour": jour, "heure": h, "valeur": val})
+                df_edt_save = pd.DataFrame(rows_to_save)
+                save_df_to_db(df_edt_save, "edt_grid")
+                st.success("Emploi du temps enregistré avec succès dans Supabase !")
 
         with adm_tab9:
-            st.markdown("""
-                <div class="download-container-xxl">
-                    <h2 style="color: #0284C7; font-weight: 900; margin-bottom: 10px;">🌟 CENTRE DE TÉLÉCHARGEMENT & DISTRIBUTION XXL (DESIGN CERTIFIÉ)</h2>
-                    <p style="color: #334155; font-weight: 600;">Téléchargez instantanément et envoyez directement dans l'espace professeur les registres d'absence, cahiers de texte, bulletins individuels, bulletins par classe et emplois du temps officiels.</p>
-                </div>
-            """, unsafe_allow_html=True)
+    st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
+    
+    classe_bul_sel = st.selectbox(
+        "Sélectionner la classe pour les rapports et bulletins", 
+        st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], 
+        key="cls_bul_admin"
+    )
+    periodes_bul = obtenir_periodes_pour_classe(classe_bul_sel)
+    periode_bul_sel = st.selectbox("Sélectionner la période", periodes_bul, key="per_bul_admin")
+    
+    df_el_bul = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_bul_sel]
+    
+    if df_el_bul.empty:
+        st.warning("Aucun élève dans cette classe.")
+    else:
+        df_el_bul = trier_eleves_par_nom(df_el_bul)
+        eleve_sel_bul = st.selectbox(
+            "Sélectionner l'élève", 
+            df_el_bul["Nom Complet"].tolist(), 
+            key="el_bul_admin"
+        )
+        
+        # 1. Optionnel : Pré-calcul ou vérification des données avant génération
+        if st.button("Vérifier / Préparer les données du bulletin"):
+            st.session_state.bul_data_cache = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
+            st.success("Données prêtes pour le téléchargement !")
 
-            classes_dl = st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else []
-            if classes_dl:
-                cls_dl_sel = st.selectbox("Sélectionner la classe cible", classes_dl, key="cls_dl_bul_admin")
-                periodes_dl = obtenir_periodes_pour_classe(cls_dl_sel)
-                per_dl_sel = st.selectbox("Sélectionner la période / trimestre", periodes_dl, key="per_dl_bul_admin")
-                
-                st.markdown("---")
-                col_dl_a, col_dl_b = st.columns(2)
-
-                with col_dl_a:
-                    st.markdown("#### 👤 1. Bulletin individuel par Élève")
-                    df_eleves_bul = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
-                    df_eleves_bul = trier_eleves_par_nom(df_eleves_bul)
-                    eleves_dl_list = df_eleves_bul["Nom Complet"].tolist() if not df_eleves_bul.empty else []
-                    
-                    if eleves_dl_list:
-                        el_dl_sel = st.selectbox("Sélectionner l'élève", eleves_dl_list, key="el_dl_bul_adm")
-                        if st.button("Générer & Télécharger le Bulletin (PDF)"):
-                            bul_data = calculer_bulletin_eleve(cls_dl_sel, el_dl_sel, per_dl_sel)
-                            pdf_bytes = generer_pdf_bulletin(bul_data)
-                            st.download_button(
-                                label=f"📥 Télécharger le Bulletin de {el_dl_sel}",
-                                data=pdf_bytes,
-                                file_name=f"Bulletin_{cls_dl_sel}_{el_dl_sel.replace(' ', '_')}.pdf",
-                                mime="application/pdf",
-                                key="btn_dl_bulletin_indiv"
-                            )
-                    else:
-                        st.warning("Aucun élève trouvé dans cette classe.")
-
-                with col_dl_b:
-                    st.markdown("#### 📚 2. Bulletins complets par Classe & Envoi Espace Prof")
-                    if st.button("📦 Générer TOUS les bulletins de la classe (Archive ZIP) & Renvoyer vers l'Espace Prof"):
-                        df_cls_eleves = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == cls_dl_sel]
-                        if not df_cls_eleves.empty:
-                            zip_buffer = io.BytesIO()
-                            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-                                for _, row_el in df_cls_eleves.iterrows():
-                                    nom_complet_el = row_el["Nom Complet"]
-                                    bul_data = calculer_bulletin_eleve(cls_dl_sel, nom_complet_el, per_dl_sel)
-                                    pdf_b = generer_pdf_bulletin(bul_data)
-                                    zip_file.writestr(f"Bulletin_{cls_dl_sel}_{nom_complet_el.replace(' ', '_')}.pdf", pdf_b)
-                            zip_buffer.seek(0)
-                            
-                            new_msg_zip = pd.DataFrame([{
-                                "Expéditeur": "Administration",
-                                "Destinataire": f"Professeurs - {cls_dl_sel}",
-                                "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                                "Sujet": f"[BULLETINS OFFICIELS] {cls_dl_sel} - {per_dl_sel}",
-                                "Message": f"L'administration a généré et mis à disposition l'archive complète des bulletins pour la classe {cls_dl_sel} ({per_dl_sel}).",
-                                "Pièce jointe": f"Bulletins_{cls_dl_sel}_{per_dl_sel}.zip"
-                            }])
-                            st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_msg_zip], ignore_index=True)
-                            save_df_to_db(new_msg_zip, "admin_prof_messages")
-                            
-                            st.success("Bulletins de classe générés, archivés et renvoyés avec succès dans l'espace des professeurs !")
-                            st.download_button(
-                                label="📥 Télécharger l'Archive ZIP des Bulletins de Classe",
-                                data=zip_buffer,
-                                file_name=f"Bulletins_{cls_dl_sel}_{per_dl_sel}.zip",
-                                mime="application/zip",
-                                key="btn_dl_zip_class"
-                            )
-                        else:
-                            st.warning("Aucun élève dans cette classe pour générer les bulletins.")
-
-                st.markdown("---")
-                st.markdown("#### 📋 3. Registres Officiels & Emplois du Temps")
-                col_reg1, col_reg2, col_reg3, col_reg4 = st.columns(4)
-                
-                with col_reg1:
-                    if st.button("📥 Registre Absences & Présences (PDF)"):
-                        pdf_abs_bytes = generer_pdf_registre_absences(cls_dl_sel)
-                        st.download_button("Télécharger le Registre", pdf_abs_bytes, file_name=f"Registre_Absences_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_abs_reg")
-                with col_reg2:
-                    if st.button("📥 Registre Cahier de Texte (PDF)"):
-                        pdf_ct_bytes = generer_pdf_cahier_texte(cls_dl_sel)
-                        st.download_button("Télécharger le Cahier", pdf_ct_bytes, file_name=f"Cahier_Texte_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_ct_reg")
-                with col_reg3:
-                    if st.button("📥 Emploi du Temps (PDF)"):
-                        pdf_edt_bytes = generer_pdf_edt(cls_dl_sel, get_or_create_edt(cls_dl_sel))
-                        st.download_button("Télécharger l'EDT", pdf_edt_bytes, file_name=f"EDT_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_edt_reg")
-                with col_reg4:
-                    if st.button("📥 Liste Officielle Élèves (PDF)"):
-                        pdf_lst_bytes = generer_pdf_liste_eleves_classe(cls_dl_sel)
-                        st.download_button("Télécharger la Liste", pdf_lst_bytes, file_name=f"Liste_Eleves_{cls_dl_sel}.pdf", mime="application/pdf", key="dl_lst_reg")
+        # 2. Utilisation d'une fonction de rappel ou génération directe pour le st.download_button
+        # Si vous préférez tout générer directement au clic sur le bouton de téléchargement :
+        try:
+            # On calcule les données du bulletin
+            bul_data = calculer_bulletin_eleve(classe_bul_sel, eleve_sel_bul, periode_bul_sel)
+            
+            # On génère les octets PDF (assurez-vous que generer_pdf_bulletin retourne bien des bytes ou un BytesIO)
+            pdf_bytes = generer_pdf_bulletin(bul_data)
+            
+            if pdf_bytes:
+                st.download_button(
+                    label="📥 Télécharger le Bulletin Officiel (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"Bulletin_{eleve_sel_bul.replace(' ', '_')}_{periode_bul_sel}.pdf",
+                    mime="application/pdf",
+                    key="dl_bulletin_official_btn"
+                )
             else:
-                st.warning("Veuillez configurer des classes dans l'onglet Classes.")
+                st.error("Erreur : Le contenu du PDF généré est vide.")
+                
+        except Exception as e:
+            st.error(fErreur lors de la préparation du bulletin : {e}")
+
+            st.markdown("---")
+            st.markdown("#### Génération des Documents Officiels de la Classe")
+            col_d1, col_d2, col_d3 = st.columns(3)
+            with col_d1:
+                if st.button("📄 Emploi du Temps (PDF)"):
+                    pdf_edt = generer_pdf_edt(classe_bul_sel, get_or_create_edt(classe_bul_sel))
+                    st.download_button("Télécharger EDT", pdf_edt, f"EDT_{classe_bul_sel}.pdf", "application/pdf")
+            with col_d2:
+                if st.button("📑 Cahier de Texte (PDF)"):
+                    pdf_ct = generer_pdf_cahier_texte(classe_bul_sel)
+                    st.download_button("Télécharger Cahier Texte", pdf_ct, f"CahierTexte_{classe_bul_sel}.pdf", "application/pdf")
+            with col_d3:
+                if st.button("📋 Liste des Élèves (PDF)"):
+                    pdf_liste = generer_pdf_liste_eleves_classe(classe_bul_sel)
+                    st.download_button("Télécharger Liste", pdf_liste, f"ListeEleves_{classe_bul_sel}.pdf", "application/pdf")
+
+[cite: 4]
