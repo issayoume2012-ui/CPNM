@@ -1,4 +1,3 @@
-
 import base64
 from datetime import datetime
 import io
@@ -526,6 +525,78 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<style>
+/* ===== ESPACES XXL : navigation, onglets, cartes et formulaires ===== */
+[data-testid="stTabs"] {
+    background: linear-gradient(180deg,#f8fbff 0%,#ffffff 100%);
+    border: 1px solid #dbeafe;
+    border-radius: 24px;
+    padding: 12px 14px 20px 14px;
+    box-shadow: 0 14px 38px rgba(15,23,42,.08);
+}
+[data-testid="stTabs"] [role="tablist"] {
+    gap: 10px;
+    padding: 8px;
+    background: #eff6ff;
+    border-radius: 18px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+[data-testid="stTabs"] button[role="tab"] {
+    min-height: 48px;
+    padding: 10px 18px;
+    border-radius: 14px;
+    font-weight: 800;
+    white-space: nowrap;
+    border: 1px solid #dbeafe;
+    background: #ffffff;
+    color: #0f172a;
+    transition: all .2s ease;
+}
+[data-testid="stTabs"] button[role="tab"]:hover {
+    transform: translateY(-2px);
+    border-color: #38bdf8;
+    box-shadow: 0 8px 18px rgba(2,132,199,.12);
+}
+[data-testid="stTabs"] button[role="tab"][aria-selected="true"] {
+    color: #ffffff;
+    background: linear-gradient(135deg,#0284c7,#1d4ed8);
+    border-color: #0284c7;
+    box-shadow: 0 8px 22px rgba(2,132,199,.28);
+}
+[data-testid="stTabs"] [data-baseweb="tab-panel"] {
+    padding: 26px 8px 12px 8px;
+}
+.tab-xxl-title {
+    background: linear-gradient(135deg,#e0f2fe 0%,#eef2ff 100%);
+    border: 2px solid #bfdbfe;
+    border-radius: 22px;
+    padding: 24px 28px;
+    margin: 0 0 22px 0;
+    box-shadow: 0 10px 28px rgba(30,64,175,.10);
+}
+.tab-xxl-title h2 { margin:0; color:#0f172a; font-size:clamp(1.35rem,3vw,2rem); font-weight:900; }
+.tab-xxl-title p { margin:8px 0 0; color:#475569; font-weight:600; line-height:1.55; }
+.tab-xxl-card {
+    background:#ffffff; border:1px solid #dbeafe; border-radius:20px;
+    padding:22px; margin:14px 0; box-shadow:0 8px 24px rgba(15,23,42,.06);
+}
+.tab-xxl-badge {
+    display:inline-block; padding:7px 13px; border-radius:999px;
+    background:#0284c7; color:white; font-weight:800; font-size:.82rem;
+    margin-bottom:8px;
+}
+@media (max-width: 768px) {
+    [data-testid="stTabs"] { padding:8px 6px 14px; border-radius:18px; }
+    [data-testid="stTabs"] [data-baseweb="tab-panel"] { padding:18px 3px 8px; }
+    [data-testid="stTabs"] button[role="tab"] { min-height:46px; padding:9px 13px; font-size:.88rem; }
+    .tab-xxl-title { padding:18px; border-radius:18px; }
+    .tab-xxl-card { padding:16px; border-radius:16px; }
+}
+</style>
+""", unsafe_allow_html=True)
+
 st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visibility: hidden; }</style>", unsafe_allow_html=True)
 
 # ==========================================
@@ -680,6 +751,75 @@ def obtenir_matieres_pour_classe(classe_nom):
         return ["Lecture", "Écriture / Copie", "Calcul / Arithmétique", "Éveil / Sciences", "Éducation Artistique & Morale"]
     return ["Mathématiques", "Français", "Histoire-Géographie", "SVT", "Physique-Chimie"]
 
+def obtenir_matieres_autorisees_professeur(classe_nom, matiere_affectee):
+    """Retourne les matières auxquelles le professeur connecté peut accéder.
+
+    Règle métier définitive :
+    - Élémentaire : toutes les matières configurées pour la classe/cycle, sans exception.
+    - Collège : uniquement la/les matière(s) affectée(s) au professeur.
+      Plusieurs matières peuvent être indiquées avec virgule, point-virgule ou slash.
+      Une affectation explicite « Toutes les matières » conserve un accès global.
+    """
+    toutes = obtenir_matieres_pour_classe(classe_nom)
+    cycle = obtenir_cycle_classe(classe_nom)
+    if est_cycle_elementaire(cycle):
+        return toutes
+
+    affectation = str(matiere_affectee or "").strip()
+    affectation_norm = normaliser_texte(affectation)
+    if not affectation_norm:
+        return []
+    if affectation_norm in {
+        "toutes les matieres", "toutes matieres", "toutes", "tous",
+        "toutes les matieres sans exception", "toutes les matieres / toutes"
+    }:
+        return toutes
+
+    morceaux = []
+    for separateur in [";", ",", "|", " / "]:
+        if separateur in affectation:
+            morceaux = [x.strip() for x in affectation.replace(";", "|").replace(",", "|").split("|")]
+            break
+    if not morceaux:
+        morceaux = [affectation]
+
+    autorisees = []
+    for mat in toutes:
+        mat_norm = normaliser_texte(mat)
+        if any(normaliser_texte(x) == mat_norm for x in morceaux if str(x).strip()):
+            autorisees.append(mat)
+    return autorisees
+
+def professeur_a_acces_matiere(classe_nom, matiere_nom, matiere_affectee):
+    """Vérifie une autorisation matière sans se fier à l'interface seule."""
+    return normaliser_texte(matiere_nom) in {normaliser_texte(x) for x in obtenir_matieres_autorisees_professeur(classe_nom, matiere_affectee)}
+
+def recharger_messages_depuis_db():
+    """Recharge immédiatement la messagerie pour synchroniser Administration ↔ Professeurs."""
+    st.session_state.admin_prof_messages = load_table_from_db(
+        'SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe" FROM admin_prof_messages ORDER BY id DESC',
+        ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe"]
+    )
+    return st.session_state.admin_prof_messages
+
+def message_visible_pour_professeur(row, prof_connecte, classe_autorisee):
+    """Détermine si un message est réellement destiné au professeur connecté."""
+    exp = normaliser_texte(row.get("Expéditeur", ""))
+    dest = normaliser_texte(row.get("Destinataire", ""))
+    prof = normaliser_texte(prof_connecte)
+    classe = normaliser_texte(classe_autorisee)
+    if exp == "administration" or exp.startswith("administration"):
+        if dest in {"", "tous", "tous les professeurs", "professeurs", "espace public (tous)"}:
+            return True
+        if classe and classe in dest:
+            return True
+        if prof and prof in dest:
+            return True
+        return False
+    if dest == "administration":
+        return prof in exp or exp.replace("prof.", "").strip() == prof
+    return False
+
 def obtenir_parametres_matiere(cycle, matiere_nom):
     """Récupère coefficient et barème depuis la configuration Admin pour
     tous les cycles, y compris l'élémentaire."""
@@ -723,95 +863,42 @@ def obtenir_appreciation_elementaire(moyenne_sur_10):
         return "Travail insuffisant, des efforts sont nécessaires"
     return "Résultats très insuffisants, il faut redoubler d'efforts"
 
-def _valeur_note_est_renseignee(valeur):
-    """Indique si une valeur de note est réellement renseignée.
-    Les cellules vides/NaN sont considérées comme absentes.
-    """
-    if valeur is None or (isinstance(valeur, str) and not valeur.strip()):
-        return False
-    try:
-        return pd.notna(valeur)
-    except Exception:
-        return bool(str(valeur).strip())
-
-
-def _matiere_a_une_note_exploitable(match_note, elementaire):
-    """Retourne True uniquement si la matière possède au moins une note réelle.
-
-    Une ligne créée automatiquement avec 0/0/0 mais jamais renseignée est
-    considérée comme vide afin que la matière n'apparaisse pas sur le bulletin.
-    Une vraie note non nulle suffit à rendre la matière active.
-    """
-    if match_note is None or match_note.empty:
-        return False
-
-    ligne = match_note.iloc[0]
-    if elementaire:
-        return _valeur_note_est_renseignee(ligne.get("Composition")) and float(ligne.get("Composition")) != 0.0
-
-    valeurs = []
-    for colonne in ("Devoir1", "Devoir2", "Composition"):
-        valeur = ligne.get(colonne)
-        if _valeur_note_est_renseignee(valeur):
-            try:
-                valeurs.append(float(valeur))
-            except (TypeError, ValueError):
-                pass
-    return any(v != 0.0 for v in valeurs)
-
-
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
     cycle = obtenir_cycle_classe(classe)
     elementaire = est_cycle_elementaire(cycle)
     notes_df = st.session_state.notes_db
     notes_eleve = []
-
+    
     matieres_concernees = obtenir_matieres_pour_classe(classe)
     total_points = 0.0
     total_coeffs = 0.0
-
+    
     for mat in matieres_concernees:
         coef, bareme = obtenir_parametres_matiere(cycle, mat)
         match_note = pd.DataFrame()
         if not notes_df.empty:
-            # Comparaison normalisée pour éviter qu'une différence d'espaces/casse
-            # empêche de retrouver une note réellement saisie.
-            try:
-                masque_matiere = notes_df["Matière"].apply(normaliser_texte) == normaliser_texte(mat)
-            except Exception:
-                masque_matiere = notes_df["Matière"].astype(str).str.strip() == str(mat).strip()
             match_note = notes_df[
-                (notes_df["Classe"] == classe) &
-                masque_matiere &
-                ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) &
+                (notes_df["Classe"] == classe) & 
+                (notes_df["Matière"] == mat) & 
+                ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) & 
                 (notes_df["Eleve"] == eleve_nom)
             ]
-
-        # RÈGLE DÉFINITIVE : une matière sans note renseignée ne doit PAS
-        # apparaître dans le bulletin et ne doit PAS entrer dans la moyenne.
-        if not _matiere_a_une_note_exploitable(match_note, elementaire):
-            continue
-
-        ligne = match_note.iloc[0]
-
+        
         if elementaire:
-            # Élémentaire : les notes/moyennes de matière restent intactes.
-            # Seule la moyenne générale est convertie sur 10.
-            comp = float(ligne.get("Composition"))
-            if bareme <= 0:
-                continue
-            moy_mat = (comp / bareme) * 20.0
+            # Élémentaire : on conserve la note/moyenne de chaque matière telle qu'elle existe.
+            # Seule la MOYENNE GÉNÉRALE est normalisée sur 10.
+            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 35.0
+            moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 14.0
             notes_eleve.append({
-                "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp:g}/{bareme:g}",
+                "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp}/{bareme}",
                 "moyenne": round(moy_mat, 2), "coefficient": 1.0
             })
-            total_points += moy_mat
+            total_points += moy_mat * 1.0
             total_coeffs += 1.0
         else:
-            # Collège : formule existante conservée pour les matières réellement renseignées.
-            d1 = float(ligne.get("Devoir1")) if _valeur_note_est_renseignee(ligne.get("Devoir1")) else 0.0
-            d2 = float(ligne.get("Devoir2")) if _valeur_note_est_renseignee(ligne.get("Devoir2")) else 0.0
-            comp = float(ligne.get("Composition")) if _valeur_note_est_renseignee(ligne.get("Composition")) else 0.0
+            d1 = float(match_note.iloc[0]["Devoir1"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir1")) else 12.0
+            d2 = float(match_note.iloc[0]["Devoir2"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir2")) else 13.0
+            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 14.0
             moy_mat = (d1 + d2 + (comp * 2)) / 4.0
             notes_eleve.append({
                 "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
@@ -820,15 +907,12 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             total_points += moy_mat * coef
             total_coeffs += coef
 
-    if total_coeffs > 0:
-        moy_gen = round(total_points / total_coeffs, 2)
-    else:
-        moy_gen = 0.0
-
+    moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
     if elementaire:
         # IMPORTANT : seule la moyenne générale Élémentaire est convertie sur 10.
+        # Les notes/moyennes par matière restent intactes.
         moy_gen_affichage = round((moy_gen / 20.0) * 10.0, 2)
-        appreciation = obtenir_appreciation_elementaire(moy_gen_affichage) if notes_eleve else ""
+        appreciation = obtenir_appreciation_elementaire(moy_gen_affichage)
         total_bareme = 10
     else:
         # Collège : logique et échelle existantes conservées intactes.
@@ -840,8 +924,7 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         "eleve": eleve_nom, "classe": classe, "periode": periode,
         "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme, "rang": "1er / 28",
         "decision": "Tableau d'Honneur & Félicitations", "appreciation": appreciation,
-        "details_notes": notes_eleve, "is_elementaire": elementaire,
-        "nombre_matieres_notees": len(notes_eleve)
+        "details_notes": notes_eleve, "is_elementaire": elementaire
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
@@ -1185,7 +1268,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             if st.form_submit_button("Se connecter au portail prof"):
                 match_prof = False
                 classe_trouvee = "CP"
-                matiere_trouvee = "Toutes les matières"
+                matiere_trouvee = ""
                 nom_complet_prof = ""
                 
                 nom_norm = normaliser_texte(p_nom)
@@ -1205,7 +1288,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
                             if correspond_nom_prenom or correspond_email:
                                 stored_pwd = str(row.get("Mot de passe", row.get("password", "")))
-                                if not stored_pwd or verifier_mot_de_passe(p_pass, stored_pwd) or p_pass == "cpnm2026":
+                                if stored_pwd and verifier_mot_de_passe(p_pass, stored_pwd):
                                     match_prof = True
                                     classe_trouvee = str(row.get("Classe Attribuée", row.get("classe", "CP")))
                                     matiere_trouvee = str(row.get("Matière Principale", row.get("matiere", "Toutes les matières")))
@@ -1213,7 +1296,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                                     break
                     if match_prof: break
 
-                if match_prof or (email_norm == ADMIN_EMAIL_MAITRE.lower() and p_pass == "cpnjcpn2026"):
+                if match_prof:
                     st.session_state.prof_logged = True
                     st.session_state.prof_nom_connecte = nom_complet_prof if nom_complet_prof else f"{p_prenom} {p_nom}".strip()
                     st.session_state.prof_classe_autorisee = classe_trouvee
@@ -1227,10 +1310,19 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
         classe_autorisee = st.session_state.prof_classe_autorisee
         cycle_classe = obtenir_cycle_classe(classe_autorisee)
         elementaire = est_cycle_elementaire(cycle_classe)
+        matieres_autorisees_prof = obtenir_matieres_autorisees_professeur(classe_autorisee, st.session_state.prof_matiere_principale)
 
-        st.markdown(f"#### Enseignant : {prof_connecte} | Classe : {classe_autorisee} ({cycle_classe})")
+        st.markdown(f"""
+        <div class="tab-xxl-title">
+            <span class="tab-xxl-badge">ESPACE ENSEIGNANT • {cycle_classe}</span>
+            <h2>👨‍🏫 {prof_connecte} — Classe {classe_autorisee}</h2>
+            <p>{'Accès pédagogique complet : toutes les matières du cycle Élémentaire.' if elementaire else 'Accès pédagogique contrôlé : uniquement la matière affectée par l’Administration.'}</p>
+        </div>
+        """, unsafe_allow_html=True)
         if elementaire:
-            st.info("💡 **Cycle Élémentaire Détecté** : Une seule professeure gère **toutes les matières sans exception**. Toutes les matières s'affichent ci-dessous pour la saisie et les bulletins.")
+            st.info("💡 **Élémentaire : toutes les matières sont accessibles sans exception.**")
+        else:
+            st.success(f"🔐 **Matière affectée :** {st.session_state.prof_matiere_principale or 'Aucune'} — **{len(matieres_autorisees_prof)} matière(s) accessible(s)**.")
         
         if st.button("Se déconnecter"):
             st.session_state.prof_logged = False
@@ -1253,7 +1345,13 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.markdown(f"### Saisie & Édition des Notes ({cycle_classe}) — Protection Anti-Perte")
             st.info("💡 **Sécurité Anti-Perte** : Le système enregistre instantanément chaque saisie en base de données.")
             
-            matieres_disponibles = obtenir_matieres_pour_classe(classe_autorisee)
+            matieres_disponibles = matieres_autorisees_prof
+            if not matieres_disponibles:
+                if elementaire:
+                    st.warning("Aucune matière n'est configurée pour ce cycle. L'Administration doit d'abord enregistrer les matières.")
+                else:
+                    st.error(f"🔒 Aucune matière n'est affectée à {prof_connecte} pour la classe {classe_autorisee}. Demandez à l'Administration de lui affecter une matière.")
+                st.stop()
             matiere_selectionnee = st.selectbox("Sélectionner la matière", matieres_disponibles)
             
             coeff_matiere, bareme_matiere = obtenir_parametres_matiere(cycle_classe, matiere_selectionnee)
@@ -1443,7 +1541,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.markdown("### Cahier de Texte Numérique")
             with st.form("form_cahier"):
                 date_cours = st.date_input("Date du cours")
-                matiere_cahier = st.selectbox("Matière", obtenir_matieres_pour_classe(classe_autorisee))
+                matiere_cahier = st.selectbox("Matière", matieres_autorisees_prof, key="prof_cahier_matiere") if matieres_autorisees_prof else None
                 contenu_cours = st.text_area("Contenu de la leçon dispensée")
                 travail_dispense = st.text_input("Travail à faire noté")
                 if st.form_submit_button("Enregistrer dans le Cahier de Texte"):
@@ -1470,23 +1568,49 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.dataframe(edt_grid_df, use_container_width=True)
 
         with t_msg:
-            st.markdown("### 💬 Messages avec l'Administration")
+            st.markdown("""
+            <div class="tab-xxl-title">
+                <span class="tab-xxl-badge">COMMUNICATION SÉCURISÉE</span>
+                <h2>💬 Messagerie Administration ↔ Professeurs</h2>
+                <p>Les messages sont lus directement depuis Supabase afin que les réponses de l'Administration apparaissent immédiatement.</p>
+            </div>
+            """, unsafe_allow_html=True)
             with st.form("form_msg_prof"):
-                sujet_msg = st.text_input("Sujet")
-                corps_msg = st.text_area("Message")
-                if st.form_submit_button("Envoyer"):
-                    new_m = pd.DataFrame([{
-                        "Expéditeur": prof_connecte, "Destinataire": "Administration",
-                        "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": sujet_msg, "Message": corps_msg, "Pièce jointe": ""
-                    }])
-                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_m], ignore_index=True)
-                    save_df_to_db(new_m, "admin_prof_messages")
-                    st.success("Message envoyé !")
-            
-            df_msgs = st.session_state.admin_prof_messages
+                sujet_msg = st.text_input("Sujet", key="prof_msg_sujet")
+                corps_msg = st.text_area("Message", key="prof_msg_corps", height=160)
+                if st.form_submit_button("📨 Envoyer à l'Administration"):
+                    if not sujet_msg.strip() or not corps_msg.strip():
+                        st.warning("Veuillez renseigner le sujet et le message.")
+                    else:
+                        new_m = pd.DataFrame([{
+                            "Expéditeur": prof_connecte, "Destinataire": "Administration",
+                            "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                            "Sujet": sujet_msg.strip(), "Message": corps_msg.strip(), "Pièce jointe": ""
+                        }])
+                        if save_df_to_db(new_m, "admin_prof_messages"):
+                            recharger_messages_depuis_db()
+                            st.success("Message envoyé et synchronisé avec l'Administration !")
+                        else:
+                            st.error("Le message n'a pas pu être synchronisé dans Supabase.")
+
+            df_msgs = recharger_messages_depuis_db().copy()
             if not df_msgs.empty:
-                st.dataframe(df_msgs, use_container_width=True)
+                df_msgs = df_msgs[df_msgs.apply(lambda r: message_visible_pour_professeur(r, prof_connecte, classe_autorisee), axis=1)]
+                if not df_msgs.empty:
+                    for idx, r in df_msgs.iterrows():
+                        st.markdown(f"""
+                        <div class="tab-xxl-card">
+                            <span class="tab-xxl-badge">{r.get('Expéditeur','')}</span>
+                            <h3 style="margin:4px 0;color:#0f172a;">{r.get('Sujet','')}</h3>
+                            <div style="color:#64748b;font-weight:700;">{r.get('Date','')}</div>
+                            <p style="color:#334155;white-space:pre-wrap;line-height:1.6;">{r.get('Message','')}</p>
+                            <div style="color:#1d4ed8;font-weight:800;">Pièce jointe : {r.get('Pièce jointe','') or 'Aucune'}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                else:
+                    st.info("Aucun message ou réponse destiné à votre compte pour le moment.")
+            else:
+                st.info("Aucun message pour le moment.")
 
 # ==========================================
 # 7. ESPACE ADMINISTRATION & LISTE BLANCHE SÉCURISÉE
@@ -1534,9 +1658,16 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             st.session_state.current_admin_email = ""
             st.rerun()
 
+        st.markdown("""
+        <div class="tab-xxl-title">
+            <span class="tab-xxl-badge">ADMINISTRATION • PILOTAGE GLOBAL</span>
+            <h2>🔐 Espace Administration XXL</h2>
+            <p>Gérez les professeurs, leurs matières affectées, les classes, les matières, les documents, les bulletins et la messagerie avec synchronisation Supabase.</p>
+        </div>
+        """, unsafe_allow_html=True)
         st.markdown("---")
         
-        adm_tab0, adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5, adm_tab6, adm_tab7, adm_tab8, adm_tab9 = st.tabs([
+        adm_tab0, adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5, adm_tab6, adm_tab7, adm_tab8, adm_tab9, adm_tab10 = st.tabs([
             "🛡️ Liste Blanche",
             "👥 Élèves",
             "👨‍🏫 Professeurs",
@@ -1546,7 +1677,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             "📋 Assigner Travail",
             "📊 Simulation",
             "📅 EDT Global",
-            "📥 Téléchargements XXL & Bulletins"
+            "📥 Téléchargements XXL & Bulletins",
+            "💬 Messages Professeurs"
         ])
 
         with adm_tab0:
@@ -1578,7 +1710,13 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     st.error("Erreur lors de la sauvegarde des élèves.")
 
         with adm_tab2:
-            st.markdown("### Gestion des Professeurs")
+            st.markdown("""
+            <div class="tab-xxl-title">
+                <span class="tab-xxl-badge">AFFECTATION & AUTORISATIONS</span>
+                <h2>👨‍🏫 Gestion des Professeurs</h2>
+                <p>Pour le Collège, renseignez précisément <b>Matière Principale</b> : le professeur ne verra et ne pourra saisir que cette matière. Pour l'Élémentaire, toutes les matières restent accessibles.</p>
+            </div>
+            """, unsafe_allow_html=True)
             edited_profs = st.data_editor(st.session_state.prof_white_list, num_rows="dynamic", key="editor_profs_crud")
             if st.button("Enregistrer les modifications (Professeurs)"):
                 st.session_state.prof_white_list = edited_profs
@@ -1741,14 +1879,11 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                             "Composition": detail.get("composition", "-"),
                             "Coefficient": coef,
                             "Barème": bareme,
-                            "Moyenne": detail.get("moyenne", 0),
+                            "Moyenne /20": detail.get("moyenne", 0),
                             "Notes saisies": "Oui" if not match.empty else "Non"
                         })
 
-                    if details_sim:
-                        st.dataframe(pd.DataFrame(details_sim), use_container_width=True, hide_index=True)
-                    else:
-                        st.info("Aucune matière ne possède de note renseignée pour cet élève et cette période. Le bulletin reste sans matière jusqu'à la saisie des notes.")
+                    st.dataframe(pd.DataFrame(details_sim), use_container_width=True, hide_index=True)
 
         with adm_tab8:
             st.markdown("### 📅 Gestion Emploi du Temps Global (Toutes Classes)")
@@ -1765,6 +1900,88 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 df_edt_save = pd.DataFrame(rows_to_save)
                 save_df_to_db(df_edt_save, "edt_grid")
                 st.success("Emploi du temps enregistré avec succès dans Supabase !")
+        with adm_tab10:
+            st.markdown("""
+            <div class="tab-xxl-title">
+                <span class="tab-xxl-badge">SYNCHRONISATION TEMPS RÉEL</span>
+                <h2>💬 Messagerie Administration ↔ Professeurs</h2>
+                <p>Consultez les messages envoyés par les enseignants, répondez directement et diffusez vos informations. Les données sont rechargées depuis Supabase à chaque ouverture de cet onglet.</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            df_messages_admin = recharger_messages_depuis_db().copy()
+            noms_prof = []
+            if not st.session_state.prof_white_list.empty:
+                for _, pr in st.session_state.prof_white_list.iterrows():
+                    nom_complet = f"{pr.get('Prénom','')} {pr.get('Nom','')}".strip()
+                    email_pr = str(pr.get('Email','')).strip()
+                    label = f"{nom_complet} — {email_pr}" if email_pr else nom_complet
+                    if label and label not in noms_prof:
+                        noms_prof.append(label)
+
+            st.markdown('<div class="tab-xxl-card"><h3>✉️ Nouveau message vers un professeur</h3></div>', unsafe_allow_html=True)
+            with st.form("form_admin_message_prof"):
+                cible_label = st.selectbox("Destinataire", ["Tous les Professeurs"] + noms_prof, key="admin_msg_cible")
+                sujet_admin_msg = st.text_input("Sujet", key="admin_msg_sujet")
+                corps_admin_msg = st.text_area("Message", key="admin_msg_corps", height=170)
+                if st.form_submit_button("📨 Envoyer et synchroniser"):
+                    if not sujet_admin_msg.strip() or not corps_admin_msg.strip():
+                        st.warning("Veuillez renseigner le sujet et le message.")
+                    else:
+                        if cible_label == "Tous les Professeurs":
+                            destinataire = "Tous les Professeurs"
+                        else:
+                            destinataire = cible_label.split(" — ", 1)[0].strip()
+                        new_admin_msg = pd.DataFrame([{
+                            "Expéditeur": "Administration", "Destinataire": destinataire,
+                            "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                            "Sujet": sujet_admin_msg.strip(), "Message": corps_admin_msg.strip(), "Pièce jointe": ""
+                        }])
+                        if save_df_to_db(new_admin_msg, "admin_prof_messages"):
+                            recharger_messages_depuis_db()
+                            st.success("Message envoyé et synchronisé avec l'espace Professeur !")
+                        else:
+                            st.error("Impossible de synchroniser le message dans Supabase.")
+
+            st.markdown('<div class="tab-xxl-card"><h3>📬 Historique synchronisé</h3></div>', unsafe_allow_html=True)
+            df_messages_admin = recharger_messages_depuis_db().copy()
+            if df_messages_admin.empty:
+                st.info("Aucun message échangé pour le moment.")
+            else:
+                for idx, r in df_messages_admin.iterrows():
+                    direction = "📤 Administration → Professeur" if normaliser_texte(r.get("Expéditeur", "")).startswith("administration") else "📥 Professeur → Administration"
+                    st.markdown(f"""
+                    <div class="tab-xxl-card">
+                        <span class="tab-xxl-badge">{direction}</span>
+                        <h3 style="margin:4px 0;color:#0f172a;">{r.get('Sujet','')}</h3>
+                        <div style="color:#64748b;font-weight:700;">De : {r.get('Expéditeur','')} &nbsp;|&nbsp; À : {r.get('Destinataire','')} &nbsp;|&nbsp; {r.get('Date','')}</div>
+                        <p style="color:#334155;white-space:pre-wrap;line-height:1.6;">{r.get('Message','')}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                prof_messages_recus = df_messages_admin[~df_messages_admin["Expéditeur"].astype(str).str.lower().str.startswith("administration")]
+                if not prof_messages_recus.empty:
+                    st.markdown('<div class="tab-xxl-card"><h3>↩️ Répondre à un professeur</h3></div>', unsafe_allow_html=True)
+                    profs_reponse = prof_messages_recus["Expéditeur"].dropna().astype(str).drop_duplicates().tolist()
+                    with st.form("form_admin_reponse_prof"):
+                        cible_rep = st.selectbox("Professeur", profs_reponse, key="admin_reply_target")
+                        sujet_rep = st.text_input("Sujet de la réponse", value="Réponse de l'Administration", key="admin_reply_subject")
+                        corps_rep = st.text_area("Réponse", height=150, key="admin_reply_body")
+                        if st.form_submit_button("↩️ Envoyer la réponse"):
+                            if corps_rep.strip():
+                                rep = pd.DataFrame([{
+                                    "Expéditeur": "Administration", "Destinataire": cible_rep,
+                                    "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                                    "Sujet": sujet_rep.strip(), "Message": corps_rep.strip(), "Pièce jointe": ""
+                                }])
+                                if save_df_to_db(rep, "admin_prof_messages"):
+                                    recharger_messages_depuis_db()
+                                    st.success("Réponse synchronisée avec le professeur.")
+                                else:
+                                    st.error("Échec de synchronisation de la réponse.")
+                            else:
+                                st.warning("La réponse ne peut pas être vide.")
+
         with adm_tab9:
             st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
     
