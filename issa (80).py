@@ -723,42 +723,95 @@ def obtenir_appreciation_elementaire(moyenne_sur_10):
         return "Travail insuffisant, des efforts sont nécessaires"
     return "Résultats très insuffisants, il faut redoubler d'efforts"
 
+def _valeur_note_est_renseignee(valeur):
+    """Indique si une valeur de note est réellement renseignée.
+    Les cellules vides/NaN sont considérées comme absentes.
+    """
+    if valeur is None or (isinstance(valeur, str) and not valeur.strip()):
+        return False
+    try:
+        return pd.notna(valeur)
+    except Exception:
+        return bool(str(valeur).strip())
+
+
+def _matiere_a_une_note_exploitable(match_note, elementaire):
+    """Retourne True uniquement si la matière possède au moins une note réelle.
+
+    Une ligne créée automatiquement avec 0/0/0 mais jamais renseignée est
+    considérée comme vide afin que la matière n'apparaisse pas sur le bulletin.
+    Une vraie note non nulle suffit à rendre la matière active.
+    """
+    if match_note is None or match_note.empty:
+        return False
+
+    ligne = match_note.iloc[0]
+    if elementaire:
+        return _valeur_note_est_renseignee(ligne.get("Composition")) and float(ligne.get("Composition")) != 0.0
+
+    valeurs = []
+    for colonne in ("Devoir1", "Devoir2", "Composition"):
+        valeur = ligne.get(colonne)
+        if _valeur_note_est_renseignee(valeur):
+            try:
+                valeurs.append(float(valeur))
+            except (TypeError, ValueError):
+                pass
+    return any(v != 0.0 for v in valeurs)
+
+
 def calculer_bulletin_eleve(classe, eleve_nom, periode):
     cycle = obtenir_cycle_classe(classe)
     elementaire = est_cycle_elementaire(cycle)
     notes_df = st.session_state.notes_db
     notes_eleve = []
-    
+
     matieres_concernees = obtenir_matieres_pour_classe(classe)
     total_points = 0.0
     total_coeffs = 0.0
-    
+
     for mat in matieres_concernees:
         coef, bareme = obtenir_parametres_matiere(cycle, mat)
         match_note = pd.DataFrame()
         if not notes_df.empty:
+            # Comparaison normalisée pour éviter qu'une différence d'espaces/casse
+            # empêche de retrouver une note réellement saisie.
+            try:
+                masque_matiere = notes_df["Matière"].apply(normaliser_texte) == normaliser_texte(mat)
+            except Exception:
+                masque_matiere = notes_df["Matière"].astype(str).str.strip() == str(mat).strip()
             match_note = notes_df[
-                (notes_df["Classe"] == classe) & 
-                (notes_df["Matière"] == mat) & 
-                ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) & 
+                (notes_df["Classe"] == classe) &
+                masque_matiere &
+                ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) &
                 (notes_df["Eleve"] == eleve_nom)
             ]
-        
+
+        # RÈGLE DÉFINITIVE : une matière sans note renseignée ne doit PAS
+        # apparaître dans le bulletin et ne doit PAS entrer dans la moyenne.
+        if not _matiere_a_une_note_exploitable(match_note, elementaire):
+            continue
+
+        ligne = match_note.iloc[0]
+
         if elementaire:
-            # Élémentaire : on conserve la note/moyenne de chaque matière telle qu'elle existe.
-            # Seule la MOYENNE GÉNÉRALE est normalisée sur 10.
-            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 35.0
-            moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 14.0
+            # Élémentaire : les notes/moyennes de matière restent intactes.
+            # Seule la moyenne générale est convertie sur 10.
+            comp = float(ligne.get("Composition"))
+            if bareme <= 0:
+                continue
+            moy_mat = (comp / bareme) * 20.0
             notes_eleve.append({
-                "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp}/{bareme}",
+                "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp:g}/{bareme:g}",
                 "moyenne": round(moy_mat, 2), "coefficient": 1.0
             })
-            total_points += moy_mat * 1.0
+            total_points += moy_mat
             total_coeffs += 1.0
         else:
-            d1 = float(match_note.iloc[0]["Devoir1"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir1")) else 12.0
-            d2 = float(match_note.iloc[0]["Devoir2"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir2")) else 13.0
-            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 14.0
+            # Collège : formule existante conservée pour les matières réellement renseignées.
+            d1 = float(ligne.get("Devoir1")) if _valeur_note_est_renseignee(ligne.get("Devoir1")) else 0.0
+            d2 = float(ligne.get("Devoir2")) if _valeur_note_est_renseignee(ligne.get("Devoir2")) else 0.0
+            comp = float(ligne.get("Composition")) if _valeur_note_est_renseignee(ligne.get("Composition")) else 0.0
             moy_mat = (d1 + d2 + (comp * 2)) / 4.0
             notes_eleve.append({
                 "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
@@ -767,12 +820,15 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
             total_points += moy_mat * coef
             total_coeffs += coef
 
-    moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
+    if total_coeffs > 0:
+        moy_gen = round(total_points / total_coeffs, 2)
+    else:
+        moy_gen = 0.0
+
     if elementaire:
         # IMPORTANT : seule la moyenne générale Élémentaire est convertie sur 10.
-        # Les notes/moyennes par matière restent intactes.
         moy_gen_affichage = round((moy_gen / 20.0) * 10.0, 2)
-        appreciation = obtenir_appreciation_elementaire(moy_gen_affichage)
+        appreciation = obtenir_appreciation_elementaire(moy_gen_affichage) if notes_eleve else ""
         total_bareme = 10
     else:
         # Collège : logique et échelle existantes conservées intactes.
@@ -784,7 +840,8 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         "eleve": eleve_nom, "classe": classe, "periode": periode,
         "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme, "rang": "1er / 28",
         "decision": "Tableau d'Honneur & Félicitations", "appreciation": appreciation,
-        "details_notes": notes_eleve, "is_elementaire": elementaire
+        "details_notes": notes_eleve, "is_elementaire": elementaire,
+        "nombre_matieres_notees": len(notes_eleve)
     }
 
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
@@ -1684,11 +1741,14 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                             "Composition": detail.get("composition", "-"),
                             "Coefficient": coef,
                             "Barème": bareme,
-                            "Moyenne /20": detail.get("moyenne", 0),
+                            "Moyenne": detail.get("moyenne", 0),
                             "Notes saisies": "Oui" if not match.empty else "Non"
                         })
 
-                    st.dataframe(pd.DataFrame(details_sim), use_container_width=True, hide_index=True)
+                    if details_sim:
+                        st.dataframe(pd.DataFrame(details_sim), use_container_width=True, hide_index=True)
+                    else:
+                        st.info("Aucune matière ne possède de note renseignée pour cet élève et cette période. Le bulletin reste sans matière jusqu'à la saisie des notes.")
 
         with adm_tab8:
             st.markdown("### 📅 Gestion Emploi du Temps Global (Toutes Classes)")
