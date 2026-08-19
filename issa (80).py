@@ -7,8 +7,106 @@ import zipfile
 import unicodedata
 import numpy as np
 import pandas as pd
-from fpdf import FPDF
+from fpdf import FPDF as _FPDF_BASE
 import streamlit as st
+
+# ---------------------------------------------------------------------------
+# PROTECTION FPDF UNICODE (globale, sans changer la logique métier)
+# ---------------------------------------------------------------------------
+def _fpdf_texte_compatible(val):
+    """Rend un texte sûr pour les polices cœur FPDF/Helvetica/Arial."""
+    if not isinstance(val, str):
+        return val
+    remplacements = {
+        "•": " - ", "·": " - ", "‣": " - ", "▪": " - ", "▫": " - ",
+        "→": "->", "←": "<-", "↔": "<->", "⇒": "=>", "⇐": "<=",
+        "≥": ">=", "≤": "<=", "≠": "!=", "≈": "~",
+        "×": "x", "÷": "/", "±": "+/-",
+        "—": "-", "–": "-", "‑": "-", "‒": "-",
+        "’": "'", "‘": "'", "‚": "'", "‛": "'",
+        "“": '"', "”": '"', "„": '"', "‟": '"',
+        "…": "...", "©": "(c)", "®": "(R)", "™": "TM",
+        "\u00a0": " ", "\u202f": " ",
+        "✓": "OK", "✔": "OK", "✗": "X", "✘": "X",
+        "♀": "F", "♂": "M",
+    }
+    for a, b in remplacements.items():
+        val = val.replace(a, b)
+    return val.encode("latin-1", errors="replace").decode("latin-1")
+
+
+class FPDF(_FPDF_BASE):
+    """FPDF sécurisé : accepte les textes Unicode sans casser l'application."""
+    def cell(self, *args, **kwargs):
+        args = list(args)
+        if len(args) >= 3:
+            args[2] = _fpdf_texte_compatible(args[2])
+        if "txt" in kwargs:
+            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
+        if "text" in kwargs:
+            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
+        return super().cell(*args, **kwargs)
+
+    def multi_cell(self, *args, **kwargs):
+        args = list(args)
+        if len(args) >= 3:
+            args[2] = _fpdf_texte_compatible(args[2])
+        if "txt" in kwargs:
+            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
+        if "text" in kwargs:
+            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
+        return super().multi_cell(*args, **kwargs)
+
+    def text(self, *args, **kwargs):
+        args = list(args)
+        if len(args) >= 3:
+            args[2] = _fpdf_texte_compatible(args[2])
+        if "txt" in kwargs:
+            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
+        if "text" in kwargs:
+            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
+        return super().text(*args, **kwargs)
+
+    def write(self, *args, **kwargs):
+        args = list(args)
+        if len(args) >= 2:
+            args[1] = _fpdf_texte_compatible(args[1])
+        if "txt" in kwargs:
+            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
+        if "text" in kwargs:
+            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
+        return super().write(*args, **kwargs)
+
+    def set_title(self, title, *args, **kwargs):
+        return super().set_title(_fpdf_texte_compatible(title), *args, **kwargs)
+
+    def set_subject(self, subject, *args, **kwargs):
+        return super().set_subject(_fpdf_texte_compatible(subject), *args, **kwargs)
+
+    def set_author(self, author, *args, **kwargs):
+        return super().set_author(_fpdf_texte_compatible(author), *args, **kwargs)
+
+    def set_keywords(self, keywords, *args, **kwargs):
+        return super().set_keywords(_fpdf_texte_compatible(keywords), *args, **kwargs)
+
+    def _putpages(self, *args, **kwargs):
+        # FPDF 1.x encode les pages en latin-1 DANS cette méthode.
+        # On nettoie donc une dernière fois juste avant l'encodage interne.
+        pages = getattr(self, "pages", None)
+        if isinstance(pages, dict):
+            for k, v in list(pages.items()):
+                if isinstance(v, str):
+                    pages[k] = _fpdf_texte_compatible(v)
+                elif isinstance(v, bytes):
+                    pages[k] = v.decode("latin-1", errors="replace")
+        elif isinstance(pages, list):
+            for i, v in enumerate(pages):
+                if isinstance(v, str):
+                    pages[i] = _fpdf_texte_compatible(v)
+                elif isinstance(v, bytes):
+                    pages[i] = v.decode("latin-1", errors="replace")
+        return super()._putpages(*args, **kwargs)
+
 import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -1103,15 +1201,105 @@ def ajouter_signature_pdf(pdf):
     pdf.set_font("Arial", 'I', 7)
     pdf.cell(75, 4, "( Signature, Cachet & Sceau Officiel )", 0, 1, "C")
 
+def _texte_pdf_latin1_sur(text):
+    """
+    Sécurise une chaîne destinée aux polices cœur FPDF (Arial/Helvetica/Times).
+
+    IMPORTANT : FPDF 1.x encode le contenu de chaque page en latin-1 au moment
+    de pdf.output(). Un seul caractère Unicode non représentable (emoji, puce,
+    apostrophe typographique, flèche, etc.) suffit à provoquer UnicodeEncodeError.
+    Cette fonction conserve les caractères latin-1 valides et remplace proprement
+    les autres caractères sans toucher à la structure PDF.
+    """
+    if text is None:
+        return text
+    if not isinstance(text, str):
+        return text
+
+    remplacements = {
+        "•": " - ", "·": " - ", "‣": " - ", "▪": " - ", "▫": " - ",
+        "→": "->", "←": "<-", "↔": "<->", "⇒": "=>", "⇐": "<=",
+        "≥": ">=", "≤": "<=", "≠": "!=", "≈": "~",
+        "×": "x", "÷": "/", "±": "+/-", "°": " deg",
+        "—": "-", "–": "-", "‑": "-", "‒": "-",
+        "’": "'", "‘": "'", "‚": "'", "‛": "'",
+        "“": '"', "”": '"', "„": '"', "‟": '"',
+        "…": "...", "©": "(c)", "®": "(R)", "™": "TM",
+        " ": " ", " ": " ",
+        "✓": "OK", "✔": "OK", "✗": "X", "✘": "X",
+        "♀": "F", "♂": "M",
+    }
+    for caractere, remplacement in remplacements.items():
+        text = text.replace(caractere, remplacement)
+
+    # Les accents français (é, è, ê, ç, à, ù, œ...) restent compatibles
+    # avec latin-1. Les caractères réellement impossibles sont remplacés.
+    try:
+        return text.encode("latin-1", errors="replace").decode("latin-1")
+    except Exception:
+        return str(text).encode("latin-1", errors="replace").decode("latin-1")
+
+
+def _securiser_pages_fpdf(pdf):
+    """
+    Nettoie les pages internes AVANT pdf.output().
+
+    C'est la correction définitive du crash : le traceback apparaissait dans
+    fpdf._putpages(), donc nettoyer uniquement la valeur retournée par output()
+    était trop tard.
+    """
+    try:
+        pages = getattr(pdf, "pages", None)
+        if isinstance(pages, dict):
+            for numero, contenu in list(pages.items()):
+                if isinstance(contenu, str):
+                    pages[numero] = _texte_pdf_latin1_sur(contenu)
+                elif isinstance(contenu, bytes):
+                    pages[numero] = contenu.decode("latin-1", errors="replace")
+        elif isinstance(pages, list):
+            for i, contenu in enumerate(pages):
+                if isinstance(contenu, str):
+                    pages[i] = _texte_pdf_latin1_sur(contenu)
+                elif isinstance(contenu, bytes):
+                    pages[i] = contenu.decode("latin-1", errors="replace")
+    except Exception:
+        # Ne jamais bloquer l'application pour la sécurisation du PDF.
+        pass
+
+    # Les métadonnées peuvent également être encodées par FPDF.
+    for attribut in ("title", "subject", "author", "keywords", "creator"):
+        try:
+            if hasattr(pdf, attribut):
+                valeur = getattr(pdf, attribut)
+                if isinstance(valeur, str):
+                    setattr(pdf, attribut, _texte_pdf_latin1_sur(valeur))
+        except Exception:
+            pass
+
+
 def convertir_pdf_en_bytes(pdf):
-    """Convertit la sortie FPDF en vrais octets, compatible fpdf/FPDF2."""
-    data = pdf.output(dest="S")
+    """
+    Conversion FPDF -> bytes avec protection Unicode AVANT output().
+
+    Compatible avec les versions FPDF/FPDF2 présentes sur Streamlit Cloud.
+    """
+    _securiser_pages_fpdf(pdf)
+
+    try:
+        data = pdf.output(dest="S")
+    except UnicodeEncodeError:
+        # Deuxième passe de sécurité : certaines versions de FPDF reconstruisent
+        # leur contenu pendant close(). On resécurise donc juste avant la seconde
+        # tentative au lieu de laisser l'application planter.
+        _securiser_pages_fpdf(pdf)
+        data = pdf.output(dest="S")
+
     if isinstance(data, bytes):
         return data
     if isinstance(data, bytearray):
         return bytes(data)
     if isinstance(data, str):
-        return data.encode("latin1")
+        return data.encode("latin-1", errors="replace")
     return bytes(data)
 
 
