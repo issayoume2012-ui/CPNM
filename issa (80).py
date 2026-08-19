@@ -137,7 +137,9 @@ def init_db():
                     retards INT,
                     heures_perdues INT,
                     observations TEXT,
-                    decision_conseil TEXT
+                    decision_conseil TEXT,
+                    conduite TEXT,
+                    appreciation TEXT
                 );
             """)
             cur.execute("""
@@ -182,6 +184,8 @@ def init_db():
                 );
             """)
             cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe TEXT;")
+            cur.execute("ALTER TABLE vie_scolaire ADD COLUMN IF NOT EXISTS conduite TEXT;")
+            cur.execute("ALTER TABLE vie_scolaire ADD COLUMN IF NOT EXISTS appreciation TEXT;")
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS admin_assignations_travail (
@@ -203,9 +207,11 @@ def init_db():
                     progression_niveau VARCHAR(100),
                     avis_classe TEXT,
                     regression_notes TEXT,
-                    piece_jointe TEXT
+                    piece_jointe TEXT,
+                    objectifs_mois TEXT
                 );
             """)
+            cur.execute("ALTER TABLE fiches_progression_classe ADD COLUMN IF NOT EXISTS objectifs_mois TEXT;")
             conn.commit()
     except Exception as e:
         if conn:
@@ -354,8 +360,8 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                     if data_tuples:
                         cur.executemany(query, data_tuples)
                 elif table_name == "fiches_progression_classe":
-                    query = "INSERT INTO fiches_progression_classe (professeur, classe, date, progression_niveau, avis_classe, regression_notes, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s, %s);"
-                    data_tuples = [(r.get("Professeur"), r.get("Classe"), str(r.get("Date", "")), r.get("Progression Niveau"), r.get("Avis Classe"), r.get("Régression Notes"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
+                    query = "INSERT INTO fiches_progression_classe (professeur, classe, date, progression_niveau, avis_classe, regression_notes, piece_jointe, objectifs_mois) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
+                    data_tuples = [(r.get("Professeur"), r.get("Classe"), str(r.get("Date", "")), r.get("Progression Niveau"), r.get("Avis Classe"), r.get("Régression Notes"), r.get("Pièce jointe"), r.get("Objectifs Mois")) for _, r in df_cleaned.iterrows()]
                     if data_tuples:
                         cur.executemany(query, data_tuples)
                 else:
@@ -662,11 +668,11 @@ def recharger_toutes_les_donnees():
         st.session_state.matieres_def = preparer_matieres_dataframe(df_mat)
 
     st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
-    st.session_state.viescolaire_db = load_table_from_db('SELECT classe AS "Classe", periode AS "Periode", periode AS "Période", eleve AS "Eleve", absences_justifiees AS "AbsencesJustifiees", absences_non_justifiees AS "AbsencesNonJustifiees", retards AS "Retards", heures_perdues AS "HeuresPerdues", observations AS "Observations", decision_conseil AS "DecisionConseil" FROM vie_scolaire', ["Classe", "Periode", "Période", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil"])
+    st.session_state.viescolaire_db = load_table_from_db('SELECT classe AS "Classe", periode AS "Periode", periode AS "Période", eleve AS "Eleve", absences_justifiees AS "AbsencesJustifiees", absences_non_justifiees AS "AbsencesNonJustifiees", retards AS "Retards", heures_perdues AS "HeuresPerdues", observations AS "Observations", decision_conseil AS "DecisionConseil", conduite AS "Conduite", appreciation AS "Appreciation" FROM vie_scolaire', ["Classe", "Periode", "Période", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil", "Conduite", "Appreciation"])
     st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
     st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe"])
     st.session_state.admin_assignations_travail = load_table_from_db('SELECT titre AS "Titre", classe AS "Classe", professeur AS "Professeur", date AS "Date", description AS "Description", piece_jointe AS "Pièce jointe" FROM admin_assignations_travail', ["Titre", "Classe", "Professeur", "Date", "Description", "Pièce jointe"])
-    st.session_state.fiches_progression_classe = load_table_from_db('SELECT professeur AS "Professeur", classe AS "Classe", date AS "Date", progression_niveau AS "Progression Niveau", avis_classe AS "Avis Classe", regression_notes AS "Régression Notes", piece_jointe AS "Pièce jointe" FROM fiches_progression_classe', ["Professeur", "Classe", "Date", "Progression Niveau", "Avis Classe", "Régression Notes", "Pièce jointe"])
+    st.session_state.fiches_progression_classe = load_table_from_db('SELECT professeur AS "Professeur", classe AS "Classe", date AS "Date", progression_niveau AS "Progression Niveau", avis_classe AS "Avis Classe", regression_notes AS "Régression Notes", piece_jointe AS "Pièce jointe", objectifs_mois AS "Objectifs Mois" FROM fiches_progression_classe ORDER BY id DESC', ["Professeur", "Classe", "Date", "Progression Niveau", "Avis Classe", "Régression Notes", "Pièce jointe", "Objectifs Mois"])
     st.session_state.cahier_textes = load_table_from_db('SELECT professeur AS "Professeur", date AS "Date", classe AS "Classe", matiere AS "Matière", contenu AS "Contenu", travail_a_faire AS "Travail à faire" FROM cahier_textes', ["Professeur", "Date", "Classe", "Matière", "Contenu", "Travail à faire"])
     st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
 
@@ -863,7 +869,100 @@ def obtenir_appreciation_elementaire(moyenne_sur_10):
         return "Travail insuffisant, des efforts sont nécessaires"
     return "Résultats très insuffisants, il faut redoubler d'efforts"
 
-def calculer_bulletin_eleve(classe, eleve_nom, periode):
+
+def obtenir_vie_scolaire_eleve(classe, eleve_nom, periode=None):
+    """Retourne les indicateurs de vie scolaire à intégrer au bulletin."""
+    abs_df = st.session_state.get("absences_db", pd.DataFrame())
+    if abs_df is None or abs_df.empty:
+        abs_df = pd.DataFrame(columns=["Date", "Classe", "Élève", "Statut", "Motif"])
+
+    sub = abs_df[
+        (abs_df["Classe"].astype(str) == str(classe)) &
+        (abs_df["Élève"].astype(str) == str(eleve_nom))
+    ].copy() if not abs_df.empty else pd.DataFrame()
+
+    absences = int((sub["Statut"].astype(str).str.contains("Absent", case=False, na=False)).sum()) if not sub.empty else 0
+    retards = int((sub["Statut"].astype(str).str.contains("Retard", case=False, na=False)).sum()) if not sub.empty else 0
+    presents = int((sub["Statut"].astype(str).str.contains("Présent", case=False, na=False)).sum()) if not sub.empty else 0
+
+    vs = st.session_state.get("viescolaire_db", pd.DataFrame())
+    conduite = ""
+    appreciation = ""
+    decision = ""
+    observations = ""
+    if vs is not None and not vs.empty:
+        rows = vs[
+            (vs["Classe"].astype(str) == str(classe)) &
+            (vs["Eleve"].astype(str) == str(eleve_nom))
+        ].copy()
+        if periode and not rows.empty and "Periode" in rows.columns:
+            rp = rows[(rows["Periode"].astype(str) == str(periode)) |
+                      (rows["Période"].astype(str) == str(periode))]
+            if not rp.empty:
+                rows = rp
+        if not rows.empty:
+            r = rows.iloc[-1]
+            conduite = str(r.get("Conduite", "") or "")
+            appreciation = str(r.get("Appreciation", "") or "")
+            decision = str(r.get("DecisionConseil", "") or "")
+            observations = str(r.get("Observations", "") or "")
+
+    if not appreciation:
+        appreciation = observations
+    if not conduite:
+        conduite = "Satisfaisante" if retards == 0 and absences == 0 else ("À surveiller" if retards + absences <= 3 else "Doit s'améliorer")
+    if not decision:
+        decision = "À examiner par le conseil de classe"
+
+    return {
+        "absences": absences,
+        "retards": retards,
+        "presents": presents,
+        "conduite": conduite,
+        "appreciation": appreciation,
+        "decision": decision,
+        "observations": observations,
+    }
+
+
+def calculer_rang_classe(classe, periode, eleve_nom):
+    """Classe les élèves selon la moyenne générale calculée, sans rang fictif."""
+    df_cls = st.session_state.eleves_db[
+        st.session_state.eleves_db["Classe"].astype(str) == str(classe)
+    ].copy()
+    if df_cls.empty:
+        return "N/A"
+    resultats = []
+    for _, row in df_cls.iterrows():
+        nom = str(row.get("Nom Complet", "")).strip()
+        if not nom:
+            continue
+        try:
+            b = calculer_bulletin_eleve_sans_rang(classe, nom, periode)
+            resultats.append((nom, float(b.get("moyenne_generale", 0))))
+        except Exception:
+            continue
+    if not resultats:
+        return "N/A"
+    resultats.sort(key=lambda x: x[1], reverse=True)
+    rangs = {}
+    last_score = None
+    last_rank = 0
+    for idx, (_, score) in enumerate(resultats, start=1):
+        if last_score is None or score != last_score:
+            last_rank = idx
+            last_score = score
+        rangs[_] = last_rank
+    rang = next((rangs[n] for n, _ in resultats if n == eleve_nom), None)
+    return f"{rang}er / {len(resultats)}" if rang == 1 else f"{rang}e / {len(resultats)}"
+
+
+def calculer_bulletin_eleve_sans_rang(classe, eleve_nom, periode):
+    """Version interne utilisée pour calculer les rangs sans récursion."""
+    return calculer_bulletin_eleve(classe, eleve_nom, periode, calculer_rang=False)
+
+
+def calculer_bulletin_eleve(classe, eleve_nom, periode, calculer_rang=True):
     cycle = obtenir_cycle_classe(classe)
     elementaire = est_cycle_elementaire(cycle)
     notes_df = st.session_state.notes_db
@@ -871,6 +970,7 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
     
     matieres_concernees = obtenir_matieres_pour_classe(classe)
     total_points = 0.0
+    total_points_possibles = 0.0
     total_coeffs = 0.0
     
     for mat in matieres_concernees:
@@ -893,7 +993,8 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
                 "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp}/{bareme}",
                 "moyenne": round(moy_mat, 2), "coefficient": 1.0
             })
-            total_points += moy_mat * 1.0
+            total_points += float(comp)
+            total_points_possibles += float(bareme)
             total_coeffs += 1.0
         else:
             d1 = float(match_note.iloc[0]["Devoir1"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir1")) else 12.0
@@ -904,7 +1005,8 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
                 "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
                 "moyenne": round(moy_mat, 2), "coefficient": coef
             })
-            total_points += moy_mat * coef
+            total_points += float(moy_mat / 20.0 * bareme * coef)
+            total_points_possibles += float(bareme * coef)
             total_coeffs += coef
 
     moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
@@ -920,10 +1022,29 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode):
         appreciation = ""
         total_bareme = 20
 
+    vie = obtenir_vie_scolaire_eleve(classe, eleve_nom, periode)
+    rang = "Calcul..."
+    if calculer_rang:
+        rang = calculer_rang_classe(classe, periode, eleve_nom)
+    points_obtenus = round(total_points, 2)
+    points_possibles = round(total_points_possibles, 2)
+    taux_points = round((points_obtenus / points_possibles) * 100, 2) if points_possibles else 0.0
+    if not appreciation:
+        appreciation = vie.get("appreciation", "")
     return {
         "eleve": eleve_nom, "classe": classe, "periode": periode,
-        "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme, "rang": "1er / 28",
-        "decision": "Tableau d'Honneur & Félicitations", "appreciation": appreciation,
+        "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme,
+        "points_obtenus": points_obtenus, "points_possibles": points_possibles,
+        "points_affichage": f"{points_obtenus:g} / {points_possibles:g}",
+        "taux_points": taux_points,
+        "rang": rang,
+        "decision": vie.get("decision", "À examiner par le conseil de classe"),
+        "appreciation": appreciation,
+        "conduite": vie.get("conduite", ""),
+        "absences": vie.get("absences", 0),
+        "retards": vie.get("retards", 0),
+        "presents": vie.get("presents", 0),
+        "observations_vie_scolaire": vie.get("observations", ""),
         "details_notes": notes_eleve, "is_elementaire": elementaire
     }
 
@@ -995,55 +1116,81 @@ def convertir_pdf_en_bytes(pdf):
 
 
 def generer_pdf_bulletin(bul):
+    """Bulletin officiel enrichi : points, moyenne, rang, conduite et vie scolaire."""
     pdf = FPDF()
     pdf.add_page()
     ajouter_en_tete_officiel_pdf(pdf, "BULLETIN SCOLAIRE OFFICIEL - CADRE CERTIFIÉ")
-    
+
+    # Identité
     pdf.set_draw_color(2, 132, 199)
     pdf.set_fill_color(240, 249, 255)
-    pdf.rect(10, pdf.get_y(), 190, 12, 'FD')
+    pdf.rect(10, pdf.get_y(), 190, 15, 'FD')
     pdf.set_font("Arial", 'B', 9)
-    pdf.set_y(pdf.get_y() + 3.5)
-    pdf.cell(200, 5, txt=f"Élève : {bul.get('eleve', '')}   |   Classe : {bul.get('classe', '')}   |   Période : {bul.get('periode', '')}", ln=1, align="C")
-    pdf.ln(6)
-    
-    pdf.set_fill_color(224, 242, 254)
-    pdf.set_font("Arial", 'B', 9)
-    if bul.get("is_elementaire", False):
-        pdf.cell(100, 6, "Matière (Cycle Élémentaire - Toutes matières)", 1, 0, "C", fill=True)
-        pdf.cell(50, 6, "Note / Barème", 1, 0, "C", fill=True)
-        pdf.cell(40, 6, "Moyenne /20", 1, 1, "C", fill=True)
-        pdf.set_font("Arial", size=8)
-        for d in bul.get("details_notes", []):
-            pdf.cell(100, 5.5, str(d.get("matiere", "")), 1, 0, "L")
-            pdf.cell(50, 5.5, str(d.get("composition", 0)), 1, 0, "C")
-            pdf.cell(40, 5.5, str(d.get("moyenne", 0)), 1, 1, "C")
-    else:
-        pdf.cell(60, 6, "Matière", 1, 0, "C", fill=True)
-        pdf.cell(30, 6, "Devoir 1", 1, 0, "C", fill=True)
-        pdf.cell(30, 6, "Devoir 2", 1, 0, "C", fill=True)
-        pdf.cell(30, 6, "Compo", 1, 0, "C", fill=True)
-        pdf.cell(20, 6, "Coeff", 1, 0, "C", fill=True)
-        pdf.cell(20, 6, "Moy", 1, 1, "C", fill=True)
-        pdf.set_font("Arial", size=8)
-        for d in bul.get("details_notes", []):
-            pdf.cell(60, 5.5, str(d.get("matiere", "")), 1, 0, "L")
-            pdf.cell(30, 5.5, str(d.get("devoir1", 0)), 1, 0, "C")
-            pdf.cell(30, 5.5, str(d.get("devoir2", 0)), 1, 0, "C")
-            pdf.cell(30, 5.5, str(d.get("composition", 0)), 1, 0, "C")
-            pdf.cell(20, 5.5, str(d.get("coefficient", 1)), 1, 0, "C")
-            pdf.cell(20, 5.5, str(d.get("moyenne", 0)), 1, 1, "C")
+    pdf.set_y(pdf.get_y() + 2.5)
+    pdf.cell(200, 5, txt=f"Élève : {bul.get('eleve', '')}   |   Classe : {bul.get('classe', '')}", ln=1, align="C")
+    pdf.cell(200, 5, txt=f"Période : {bul.get('periode', '')}", ln=1, align="C")
+    pdf.ln(5)
 
-    pdf.ln(4)
+    # Notes
+    pdf.set_fill_color(224, 242, 254)
+    pdf.set_font("Arial", 'B', 8.5)
+    if bul.get("is_elementaire", False):
+        pdf.cell(82, 6, "Matière", 1, 0, "C", fill=True)
+        pdf.cell(48, 6, "Note / Barème", 1, 0, "C", fill=True)
+        pdf.cell(30, 6, "Moyenne /20", 1, 0, "C", fill=True)
+        pdf.cell(30, 6, "Coeff.", 1, 1, "C", fill=True)
+        pdf.set_font("Arial", size=8)
+        for d in bul.get("details_notes", []):
+            pdf.cell(82, 5.5, str(d.get("matiere", ""))[:34], 1, 0, "L")
+            pdf.cell(48, 5.5, str(d.get("composition", 0)), 1, 0, "C")
+            pdf.cell(30, 5.5, str(d.get("moyenne", 0)), 1, 0, "C")
+            pdf.cell(30, 5.5, str(d.get("coefficient", 1)), 1, 1, "C")
+    else:
+        pdf.cell(52, 6, "Matière", 1, 0, "C", fill=True)
+        pdf.cell(25, 6, "Devoir 1", 1, 0, "C", fill=True)
+        pdf.cell(25, 6, "Devoir 2", 1, 0, "C", fill=True)
+        pdf.cell(25, 6, "Compo", 1, 0, "C", fill=True)
+        pdf.cell(22, 6, "Coeff.", 1, 0, "C", fill=True)
+        pdf.cell(41, 6, "Moyenne /20", 1, 1, "C", fill=True)
+        pdf.set_font("Arial", size=8)
+        for d in bul.get("details_notes", []):
+            pdf.cell(52, 5.5, str(d.get("matiere", ""))[:23], 1, 0, "L")
+            pdf.cell(25, 5.5, str(d.get("devoir1", 0)), 1, 0, "C")
+            pdf.cell(25, 5.5, str(d.get("devoir2", 0)), 1, 0, "C")
+            pdf.cell(25, 5.5, str(d.get("composition", 0)), 1, 0, "C")
+            pdf.cell(22, 5.5, str(d.get("coefficient", 1)), 1, 0, "C")
+            pdf.cell(41, 5.5, str(d.get("moyenne", 0)), 1, 1, "C")
+
+    # Synthèse dans un cadre unique
+    pdf.ln(5)
+    y = pdf.get_y()
+    pdf.set_draw_color(2, 132, 199)
+    pdf.set_fill_color(248, 250, 252)
+    pdf.rect(10, y, 190, 47, 'FD')
+    pdf.set_y(y + 3)
     pdf.set_font("Arial", 'B', 9)
     echelle_generale = 10 if bul.get("is_elementaire", False) else 20
-    pdf.cell(200, 5, txt=f"Moyenne Générale : {bul.get('moyenne_generale', 0)} / {echelle_generale}", ln=1, align="L")
-    if bul.get("is_elementaire", False):
-        pdf.cell(200, 5, txt=f"Appréciation : {bul.get('appreciation', '')}", ln=1, align="L")
-    pdf.cell(200, 5, txt=f"Rang : {bul.get('rang', 'N/A')}", ln=1, align="L")
-    pdf.cell(200, 5, txt=f"Décision du Conseil : {bul.get('decision', 'N/A')}", ln=1, align="L")
+    pdf.cell(95, 6, f"Moyenne générale : {bul.get('moyenne_generale', 0)} / {echelle_generale}", 0, 0, "L")
+    pdf.cell(95, 6, f"Rang : {bul.get('rang', 'N/A')}", 0, 1, "R")
+    pdf.cell(95, 6, f"Points : {bul.get('points_affichage', '0 / 0')}", 0, 0, "L")
+    pdf.cell(95, 6, f"Taux : {bul.get('taux_points', 0)} %", 0, 1, "R")
+    pdf.cell(95, 6, f"Absences : {bul.get('absences', 0)}", 0, 0, "L")
+    pdf.cell(95, 6, f"Retards : {bul.get('retards', 0)}", 0, 1, "R")
+    pdf.cell(95, 6, f"Présences enregistrées : {bul.get('presents', 0)}", 0, 0, "L")
+    pdf.cell(95, 6, f"Conduite : {bul.get('conduite', '')[:35]}", 0, 1, "R")
+    appreciation = bul.get("appreciation", "") or "Aucune appréciation renseignée."
+    decision = bul.get("decision", "") or "À examiner par le conseil de classe"
+    pdf.set_font("Arial", 'B', 8.5)
+    pdf.cell(190, 5.5, f"Appréciation : {appreciation[:90]}", 0, 1, "L")
+    pdf.cell(190, 5.5, f"Décision : {decision[:90]}", 0, 1, "L")
+    pdf.set_font("Arial", 'I', 7.5)
+    obs = bul.get("observations_vie_scolaire", "")
+    if obs:
+        pdf.cell(190, 5, f"Observation vie scolaire : {obs[:105]}", 0, 1, "L")
+
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
+
 
 def generer_pdf_edt(classe, edt_g):
     pdf = FPDF()
@@ -1130,6 +1277,72 @@ def generer_pdf_registre_absences(classe):
         pdf.cell(190, 6, "Aucune absence enregistrée pour cette classe.", 1, 1, "C")
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
+
+
+def generer_pdf_fiche_progression_classe(classe, professeur=None):
+    """Génère la fiche de progression établie par les professeurs."""
+    pdf = FPDF()
+    pdf.add_page()
+    titre = f"FICHE DE PROGRESSION PÉDAGOGIQUE - {classe}"
+    ajouter_en_tete_officiel_pdf(pdf, titre)
+    df = st.session_state.fiches_progression_classe.copy()
+    if not df.empty:
+        df = df[df["Classe"].astype(str) == str(classe)]
+        if professeur:
+            df = df[df["Professeur"].astype(str) == str(professeur)]
+    pdf.set_font("Arial", 'B', 8)
+    pdf.set_fill_color(224, 242, 254)
+    for label, width in [("Date", 22), ("Professeur", 35), ("Progression", 43), ("Objectifs", 42), ("Avis / Analyse", 48)]:
+        pdf.cell(width, 6, label, 1, 0, "C", fill=True)
+    pdf.ln()
+    pdf.set_font("Arial", size=7)
+    if df.empty:
+        pdf.cell(190, 7, "Aucune fiche de progression enregistrée pour cette classe.", 1, 1, "C")
+    else:
+        for _, r in df.iterrows():
+            avis = f"{r.get('Avis Classe','')} {r.get('Régression Notes','')}".strip()
+            vals = [
+                str(r.get("Date",""))[:10],
+                str(r.get("Professeur",""))[:20],
+                str(r.get("Progression Niveau",""))[:25],
+                str(r.get("Objectifs Mois",""))[:25],
+                avis[:32]
+            ]
+            for val, width in zip(vals, [22,35,43,42,48]):
+                pdf.cell(width, 6, val, 1, 0, "L")
+            pdf.ln()
+    ajouter_signature_pdf(pdf)
+    return convertir_pdf_en_bytes(pdf)
+
+
+def generer_pdf_suivi_absences(classe):
+    """Registre complet présence/absence/retard avec synthèse par élève."""
+    pdf = FPDF()
+    pdf.add_page()
+    ajouter_en_tete_officiel_pdf(pdf, f"REGISTRE PRÉSENCES • ABSENCES • RETARDS - {classe}")
+    df_el = st.session_state.eleves_db[st.session_state.eleves_db["Classe"].astype(str) == str(classe)].copy()
+    df_el = trier_eleves_par_nom(df_el)
+    pdf.set_font("Arial", 'B', 8)
+    pdf.set_fill_color(224, 242, 254)
+    for label, width in [("N°",10),("Élève",82),("Présences",25),("Absences",25),("Retards",23),("Conduite",25)]:
+        pdf.cell(width, 6, label, 1, 0, "C", fill=True)
+    pdf.ln()
+    pdf.set_font("Arial", size=7.5)
+    if df_el.empty:
+        pdf.cell(190, 7, "Aucun élève dans cette classe.", 1, 1, "C")
+    else:
+        for idx, (_, r) in enumerate(df_el.iterrows(), 1):
+            nom = str(r.get("Nom Complet",""))
+            vie = obtenir_vie_scolaire_eleve(classe, nom)
+            pdf.cell(10, 5.5, str(idx), 1, 0, "C")
+            pdf.cell(82, 5.5, nom[:34], 1, 0, "L")
+            pdf.cell(25, 5.5, str(vie["presents"]), 1, 0, "C")
+            pdf.cell(25, 5.5, str(vie["absences"]), 1, 0, "C")
+            pdf.cell(23, 5.5, str(vie["retards"]), 1, 0, "C")
+            pdf.cell(25, 5.5, vie["conduite"][:13], 1, 1, "C")
+    ajouter_signature_pdf(pdf)
+    return convertir_pdf_en_bytes(pdf)
+
 
 def nettoyer_nom_fichier(texte):
     """Produit un nom de fichier sûr pour Windows/Linux/macOS."""
@@ -1531,11 +1744,30 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                         "Date": str(datetime.now().strftime("%Y-%m-%d")),
                         "Progression Niveau": f"[{mois_objectif}] {prog_niveau}", 
                         "Avis Classe": avis_classe,
-                        "Régression Notes": regression_notes, "Pièce jointe": nom_pj
+                        "Régression Notes": regression_notes, "Pièce jointe": nom_pj,
+                        "Objectifs Mois": objectifs_mois
                     }])
                     st.session_state.fiches_progression_classe = pd.concat([st.session_state.fiches_progression_classe, new_fiche], ignore_index=True)
                     save_df_to_db(new_fiche, "fiches_progression_classe")
                     st.success("Fiche de progression transmise avec succès !")
+                    st.rerun()
+
+            st.markdown("#### 📚 Historique de vos fiches de progression")
+            df_prog_prof = st.session_state.fiches_progression_classe[
+                st.session_state.fiches_progression_classe["Professeur"].astype(str) == str(prof_connecte)
+            ]
+            if not df_prog_prof.empty:
+                st.dataframe(df_prog_prof, use_container_width=True, hide_index=True)
+                pdf_prog_prof = generer_pdf_fiche_progression_classe(classe_autorisee, prof_connecte)
+                st.download_button(
+                    "📥 Télécharger mes fiches de progression (PDF)",
+                    pdf_prog_prof,
+                    f"Progression_{nettoyer_nom_fichier(prof_connecte)}_{nettoyer_nom_fichier(classe_autorisee)}.pdf",
+                    "application/pdf",
+                    key="dl_progression_prof"
+                )
+            else:
+                st.info("Aucune fiche de progression enregistrée pour le moment.")
 
         with t_cahier:
             st.markdown("### Cahier de Texte Numérique")
@@ -1667,7 +1899,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
         """, unsafe_allow_html=True)
         st.markdown("---")
         
-        adm_tab0, adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5, adm_tab6, adm_tab7, adm_tab8, adm_tab9, adm_tab10 = st.tabs([
+        adm_tab0, adm_tab1, adm_tab2, adm_tab3, adm_tab4, adm_tab5, adm_tab6, adm_tab7, adm_tab8, adm_tab9, adm_tab10, adm_tab11, adm_tab12 = st.tabs([
             "🛡️ Liste Blanche",
             "👥 Élèves",
             "👨‍🏫 Professeurs",
@@ -1677,6 +1909,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             "📋 Assigner Travail",
             "📊 Simulation",
             "📅 EDT Global",
+            "📈 Progression Professeurs",
+            "🕘 Présences • Absences • Retards",
             "📥 Téléchargements XXL & Bulletins",
             "💬 Messages Professeurs"
         ])
@@ -1900,7 +2134,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 df_edt_save = pd.DataFrame(rows_to_save)
                 save_df_to_db(df_edt_save, "edt_grid")
                 st.success("Emploi du temps enregistré avec succès dans Supabase !")
-        with adm_tab10:
+        with adm_tab12:
             st.markdown("""
             <div class="tab-xxl-title">
                 <span class="tab-xxl-badge">SYNCHRONISATION TEMPS RÉEL</span>
@@ -1983,6 +2217,78 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                                 st.warning("La réponse ne peut pas être vide.")
 
         with adm_tab9:
+            st.markdown("""
+            <div class="tab-xxl-title">
+                <span class="tab-xxl-badge">SUIVI PÉDAGOGIQUE CENTRALISÉ</span>
+                <h2>📈 Fiches de Progression des Professeurs</h2>
+                <p>L'Administration consulte, filtre et télécharge les fiches établies depuis l'Espace Professeurs.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            df_prog_admin = st.session_state.fiches_progression_classe.copy()
+            cpa, cpa2 = st.columns(2)
+            classes_prog = ["Toutes"] + (st.session_state.classes_db["Classe"].dropna().astype(str).tolist() if not st.session_state.classes_db.empty else [])
+            with cpa:
+                filtre_prog_classe = st.selectbox("Classe", classes_prog, key="admin_progression_classe")
+            profs_prog = ["Tous"] + (df_prog_admin["Professeur"].dropna().astype(str).drop_duplicates().tolist() if not df_prog_admin.empty else [])
+            with cpa2:
+                filtre_prog_prof = st.selectbox("Professeur", profs_prog, key="admin_progression_prof")
+            if not df_prog_admin.empty:
+                if filtre_prog_classe != "Toutes":
+                    df_prog_admin = df_prog_admin[df_prog_admin["Classe"].astype(str) == filtre_prog_classe]
+                if filtre_prog_prof != "Tous":
+                    df_prog_admin = df_prog_admin[df_prog_admin["Professeur"].astype(str) == filtre_prog_prof]
+            if df_prog_admin.empty:
+                st.info("Aucune fiche de progression ne correspond aux filtres.")
+            else:
+                st.dataframe(df_prog_admin, use_container_width=True, hide_index=True)
+                classe_pdf_prog = filtre_prog_classe if filtre_prog_classe != "Toutes" else str(df_prog_admin.iloc[0]["Classe"])
+                prof_pdf_prog = filtre_prog_prof if filtre_prog_prof != "Tous" else None
+                st.download_button(
+                    "📥 Télécharger la fiche de progression (PDF)",
+                    generer_pdf_fiche_progression_classe(classe_pdf_prog, prof_pdf_prog),
+                    f"Fiches_Progression_{nettoyer_nom_fichier(classe_pdf_prog)}.pdf",
+                    "application/pdf",
+                    key="dl_progression_admin"
+                )
+
+        with adm_tab10:
+            st.markdown("""
+            <div class="tab-xxl-title">
+                <span class="tab-xxl-badge">VIE SCOLAIRE • PILOTAGE</span>
+                <h2>🕘 Présences, Absences & Retards</h2>
+                <p>Vue administrative complète des appels enregistrés par les professeurs, avec synthèse par élève.</p>
+            </div>
+            """, unsafe_allow_html=True)
+            classes_abs_admin = st.session_state.classes_db["Classe"].dropna().astype(str).tolist() if not st.session_state.classes_db.empty else ["CP"]
+            classe_abs_admin = st.selectbox("Classe à consulter", classes_abs_admin, key="admin_absence_classe")
+            df_abs_admin = st.session_state.absences_db.copy()
+            if not df_abs_admin.empty:
+                df_abs_admin = df_abs_admin[df_abs_admin["Classe"].astype(str) == classe_abs_admin]
+            if df_abs_admin.empty:
+                st.info("Aucun appel d'absence, présence ou retard enregistré pour cette classe.")
+            else:
+                st.dataframe(df_abs_admin.sort_values(["Date", "Élève"], ascending=[False, True]), use_container_width=True, hide_index=True)
+            df_synth_abs = []
+            df_cls_abs = st.session_state.eleves_db[st.session_state.eleves_db["Classe"].astype(str) == classe_abs_admin]
+            for _, rr in trier_eleves_par_nom(df_cls_abs).iterrows():
+                nom = str(rr.get("Nom Complet",""))
+                v = obtenir_vie_scolaire_eleve(classe_abs_admin, nom)
+                df_synth_abs.append({
+                    "Élève": nom, "Présences": v["presents"], "Absences": v["absences"],
+                    "Retards": v["retards"], "Conduite": v["conduite"]
+                })
+            if df_synth_abs:
+                st.markdown("#### 📊 Synthèse par élève")
+                st.dataframe(pd.DataFrame(df_synth_abs), use_container_width=True, hide_index=True)
+            st.download_button(
+                "📥 Télécharger le registre Présences / Absences / Retards (PDF)",
+                generer_pdf_suivi_absences(classe_abs_admin),
+                f"Registre_Vie_Scolaire_{nettoyer_nom_fichier(classe_abs_admin)}.pdf",
+                "application/pdf",
+                key="dl_registre_vie_admin"
+            )
+
+        with adm_tab11:
             st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
     
             classe_bul_sel = st.selectbox(
@@ -2071,3 +2377,23 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 if st.button("📋 Liste des Élèves (PDF)"):
                     pdf_liste = generer_pdf_liste_eleves_classe(classe_bul_sel)
                     st.download_button("Télécharger Liste", pdf_liste, f"ListeEleves_{classe_bul_sel}.pdf", "application/pdf")
+            st.markdown("#### 📈 Progression & Vie scolaire")
+            col_d4, col_d5 = st.columns(2)
+            with col_d4:
+                pdf_prog_dl = generer_pdf_fiche_progression_classe(classe_bul_sel)
+                st.download_button(
+                    "📥 Télécharger les fiches de progression",
+                    pdf_prog_dl,
+                    f"Progression_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                    "application/pdf",
+                    key="dl_progression_downloads"
+                )
+            with col_d5:
+                pdf_abs_dl = generer_pdf_suivi_absences(classe_bul_sel)
+                st.download_button(
+                    "📥 Télécharger Présences / Absences / Retards",
+                    pdf_abs_dl,
+                    f"VieScolaire_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                    "application/pdf",
+                    key="dl_absences_downloads"
+                )
