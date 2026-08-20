@@ -1449,48 +1449,158 @@ def _trouver_police(*noms):
 
 
 class YAMPDF(FPDF):
-    """FPDF avec police Unicode DejaVu.
+    """Moteur PDF Unicode robuste pour FPDF 1.x.
 
-    Le problème historique venait de la police core Arial/Helvetica de FPDF
-    qui encode les pages en Latin-1. Les documents YAM utilisent maintenant
-    une vraie police Unicode : les accents, apostrophes, symboles et caractères
-    français ne deviennent plus des points d'interrogation.
+    FPDF 1.x sérialise les pages en Latin-1 au moment de output().
+    La solution est donc de s'assurer AVANT toute écriture que toutes les
+    polices utilisées sont des polices TTF Unicode (DejaVu), et de fournir
+    un vrai fallback si elles ne sont pas disponibles.
     """
-    _unicode_fonts_ready = False
     _font_paths = {}
+    _unicode_available = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._unicode_available = False
         self._prepare_unicode_fonts()
+
+    @classmethod
+    def _find_font(cls, *names):
+        for name in names:
+            path = _trouver_police(name)
+            if path and os.path.isfile(path):
+                return path
+        return None
 
     def _prepare_unicode_fonts(self):
         if not YAMPDF._font_paths:
             YAMPDF._font_paths = {
-                "": _trouver_police("DejaVuSans.ttf"),
-                "B": _trouver_police("DejaVuSans-Bold.ttf"),
-                "I": _trouver_police("DejaVuSans-Oblique.ttf"),
-                "BI": _trouver_police("DejaVuSans-BoldOblique.ttf"),
+                "": self._find_font(
+                    "DejaVuSans.ttf",
+                    "DejaVuSansCondensed.ttf",
+                ),
+                "B": self._find_font(
+                    "DejaVuSans-Bold.ttf",
+                    "DejaVuSansCondensed-Bold.ttf",
+                ),
+                "I": self._find_font(
+                    "DejaVuSans-Oblique.ttf",
+                    "DejaVuSansCondensed-Oblique.ttf",
+                ),
+                "BI": self._find_font(
+                    "DejaVuSans-BoldOblique.ttf",
+                    "DejaVuSansCondensed-BoldOblique.ttf",
+                ),
             }
+
+        regular = YAMPDF._font_paths.get("")
+        if not regular:
+            self._unicode_available = False
+            return
+
         try:
-            if YAMPDF._font_paths.get(""):
-                self.add_font("YAMUnicode", "", YAMPDF._font_paths[""], uni=True)
-                if YAMPDF._font_paths.get("B"):
-                    self.add_font("YAMUnicode", "B", YAMPDF._font_paths["B"], uni=True)
-                if YAMPDF._font_paths.get("I"):
-                    self.add_font("YAMUnicode", "I", YAMPDF._font_paths["I"], uni=True)
-                if YAMPDF._font_paths.get("BI"):
-                    self.add_font("YAMUnicode", "BI", YAMPDF._font_paths["BI"], uni=True)
-                YAMPDF._unicode_fonts_ready = True
+            self.add_font("YAMUnicode", "", regular, uni=True)
+
+            for style in ("B", "I", "BI"):
+                path = YAMPDF._font_paths.get(style)
+                if path:
+                    try:
+                        self.add_font("YAMUnicode", style, path, uni=True)
+                    except Exception:
+                        pass
+
+            self._unicode_available = True
+            YAMPDF._unicode_available = True
         except Exception:
-            YAMPDF._unicode_fonts_ready = False
+            self._unicode_available = False
+
+    @staticmethod
+    def _safe_latin1(value):
+        """Fallback ultime pour FPDF core fonts sans lever UnicodeEncodeError."""
+        if value is None:
+            return ""
+
+        s = str(value).replace("\x00", "").replace("\r", " ")
+
+        replacements = {
+            "\u2018": "'",
+            "\u2019": "'",
+            "\u201c": '"',
+            "\u201d": '"',
+            "\u2013": "-",
+            "\u2014": "-",
+            "\u2011": "-",
+            "\u2022": "-",
+            "\u2026": "...",
+            "\u0153": "oe",
+            "\u0152": "OE",
+            "\u00e6": "ae",
+            "\u00c6": "AE",
+            "\u2192": "->",
+            "\u2190": "<-",
+            "\u2265": ">=",
+            "\u2264": "<=",
+            "\u2260": "!=",
+            "\u00d7": "x",
+            "\u00f7": "/",
+            "\u2713": "OK",
+            "\u2717": "X",
+            "\U0001f1f8\U0001f1f3": "SN",
+        }
+        for old, new in replacements.items():
+            s = s.replace(old, new)
+
+        # Décomposition des accents : é -> e, à -> a, etc.
+        s = unicodedata.normalize("NFKD", s)
+        return s.encode("latin-1", errors="replace").decode("latin-1")
+
+    def _safe_text(self, value):
+        if self._unicode_available:
+            return "" if value is None else str(value).replace("\x00", "").replace("\r", " ")
+        return self._safe_latin1(value)
 
     def set_font(self, family, style="", size=0):
-        if YAMPDF._unicode_fonts_ready and str(family).lower() in {
-            "arial", "helvetica", "times", "courier"
+        requested_family = str(family or "")
+        requested_style = str(style or "").upper()
+
+        if self._unicode_available and requested_family.lower() in {
+            "arial", "helvetica", "times", "courier", "yamunicode"
         }:
             family = "YAMUnicode"
+
+            # Ne jamais demander un style qui n'a pas été chargé.
+            available_styles = {""}
+            for style_name in ("B", "I", "BI"):
+                if f"yamunicode{style_name}" in {
+                    str(k).lower() for k in self.fonts.keys()
+                }:
+                    available_styles.add(style_name)
+
+            if requested_style not in available_styles:
+                requested_style = ""
+            style = requested_style
+
+        elif not self._unicode_available and requested_family.lower() == "yamunicode":
+            family = "Arial"
+            style = requested_style
+
         return super().set_font(family, style, size)
 
+    def cell(self, w, h=0, txt="", border=0, ln=0, align="", fill=False, link=""):
+        return super().cell(
+            w, h, self._safe_text(txt), border, ln, align, fill, link
+        )
+
+    def multi_cell(self, w, h, txt="", border=0, align="J", fill=False, split_only=False):
+        return super().multi_cell(
+            w, h, self._safe_text(txt), border, align, fill, split_only
+        )
+
+    def text(self, x, y, txt=""):
+        return super().text(x, y, self._safe_text(txt))
+
+    def write(self, h, txt="", link=""):
+        return super().write(h, self._safe_text(txt), link)
 
 def _pdf_text(valeur):
     """Texte sûr : conserve l'Unicode quand la police Unicode est active."""
@@ -1561,19 +1671,19 @@ def ajouter_signature_pdf(pdf):
 
 
 def convertir_pdf_en_bytes(pdf):
-    """Sortie PDF robuste sans reconversion Latin-1 destructrice."""
+    """Retourne le PDF généré sous forme de bytes sans conversion destructive."""
     try:
         data = pdf.output(dest="S")
     except TypeError:
         data = pdf.output()
+
     if isinstance(data, bytes):
         return data
     if isinstance(data, bytearray):
         return bytes(data)
+    if isinstance(data, memoryview):
+        return data.tobytes()
     if isinstance(data, str):
-        # Les versions anciennes de FPDF peuvent renvoyer une chaîne ASCII
-        # contenant le flux PDF. On ne remplace JAMAIS les caractères Unicode
-        # du contenu lorsqu'une police Unicode est utilisée.
         return data.encode("latin-1", errors="replace")
     return bytes(data)
 
