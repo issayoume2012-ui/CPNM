@@ -16,58 +16,345 @@ from psycopg2.extras import RealDictCursor
 # ==========================================
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
 # ==========================================
+#
+# IMPORTANT :
+# Le message "Aucune configuration ... dans les secrets" signifie que
+# l'application ne trouvait pas les paramètres de connexion dans Streamlit.
+# Cette version accepte plusieurs formats de secrets afin de retrouver la
+# configuration déjà utilisée sans modifier les données de Supabase.
+#
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 DB_LAST_ERROR = ""
 DB_READ_FAILED = False
 DB_CONNECTED = False
 
-def _secret(section, key, default=""):
+def _safe_get(container, key, default=""):
+    """Lecture tolérante d'un dictionnaire/TOML Streamlit."""
     try:
-        if section in st.secrets:
-            value = st.secrets[section].get(key, default)
-            return "" if value is None else str(value).strip()
+        if container is None:
+            return default
+        value = container.get(key, default)
+        if value is None:
+            return default
+        return str(value).strip()
+    except Exception:
+        return default
+
+def _secret_flat(key, default=""):
+    """Recherche d'une clé directement dans st.secrets."""
+    try:
+        if key in st.secrets:
+            return _safe_get(st.secrets, key, default)
     except Exception:
         pass
-    return ""
+    return default
+
+def _secret_section(section, key, default=""):
+    """Recherche d'une clé dans une section TOML."""
+    try:
+        if section in st.secrets:
+            return _safe_get(st.secrets[section], key, default)
+    except Exception:
+        pass
+    return default
+
+def _collect_connection_string(value):
+    if not value:
+        return None
+    value = str(value).strip()
+    return value if value else None
 
 def _database_configs():
-    configs=[]
-    for value in (DATABASE_URL, os.environ.get("SUPABASE_DB_URL", "").strip(), os.environ.get("POSTGRES_URL", "").strip()):
-        if value and value not in configs:
+    """
+    Recherche la connexion dans tous les formats courants de Streamlit Cloud :
+
+    DATABASE_URL
+    SUPABASE_DB_URL
+    POSTGRES_URL
+    [postgres]
+    [supabase]
+    [connections.postgres]
+    [connections.supabase]
+    [connections.postgresql]
+
+    ainsi que les clés plates host/database/user/password/port.
+    """
+    configs = []
+    seen = set()
+
+    # 1. Variables d'environnement
+    for key in ("DATABASE_URL", "SUPABASE_DB_URL", "POSTGRES_URL", "SUPABASE_DATABASE_URL"):
+        value = os.environ.get(key, "").strip()
+        if value and value not in seen:
             configs.append(value)
-    for section in ("postgres", "supabase"):
-        host=_secret(section,"host")
-        database=_secret(section,"database") or _secret(section,"dbname")
-        user=_secret(section,"user") or _secret(section,"username")
-        password=_secret(section,"password")
-        port=_secret(section,"port") or "5432"
-        sslmode=_secret(section,"sslmode") or "require"
+            seen.add(value)
+
+    # 2. Clés directes dans st.secrets
+    for key in ("DATABASE_URL", "SUPABASE_DB_URL", "POSTGRES_URL", "SUPABASE_DATABASE_URL"):
+        value = _secret_flat(key)
+        if value and value not in seen:
+            configs.append(value)
+            seen.add(value)
+
+    # 3. Sections TOML possibles
+    sections = (
+        "database",
+        "postgres",
+        "supabase",
+        "postgresql",
+        "connections.postgres",
+        "connections.supabase",
+        "connections.postgresql",
+    )
+
+    # 4. Certaines configurations Streamlit utilisent réellement :
+    # [connections]
+    #   [connections.postgres]
+    nested_sections = []
+    try:
+        if "connections" in st.secrets:
+            connections = st.secrets["connections"]
+            for name in ("postgres", "supabase", "postgresql"):
+                try:
+                    if name in connections:
+                        nested_sections.append((name, connections[name]))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    section_containers = []
+    for section in sections:
+        if "." in section:
+            parent, child = section.split(".", 1)
+            try:
+                if parent in st.secrets and child in st.secrets[parent]:
+                    section_containers.append((section, st.secrets[parent][child]))
+            except Exception:
+                pass
+        else:
+            try:
+                if section in st.secrets:
+                    section_containers.append((section, st.secrets[section]))
+            except Exception:
+                pass
+
+    section_containers.extend(nested_sections)
+
+    for section_name, container in section_containers:
+        host = _safe_get(container, "host")
+        database = (
+            _safe_get(container, "database")
+            or _safe_get(container, "dbname")
+            or _safe_get(container, "db")
+        )
+        user = (
+            _safe_get(container, "user")
+            or _safe_get(container, "username")
+        )
+        password = _safe_get(container, "password")
+        port = _safe_get(container, "port", "5432")
+        sslmode = _safe_get(container, "sslmode", "require")
+
+        # Certains secrets utilisent "connection_string" / "url".
+        connection_string = (
+            _safe_get(container, "connection_string")
+            or _safe_get(container, "url")
+            or _safe_get(container, "database_url")
+        )
+
+        if connection_string:
+            connection_string = _collect_connection_string(connection_string)
+            if connection_string and connection_string not in seen:
+                configs.append(connection_string)
+                seen.add(connection_string)
+
         if host and database and user and password:
-            try: port=int(port)
-            except Exception: port=5432
-            configs.append({"host":host,"database":database,"user":user,"password":password,"port":port,"sslmode":sslmode})
+            try:
+                port_int = int(port or 5432)
+            except Exception:
+                port_int = 5432
+
+            cfg = {
+                "host": host,
+                "database": database,
+                "user": user,
+                "password": password,
+                "port": port_int,
+                "sslmode": sslmode or "require",
+                "application_name": "YAM_Ecole",
+                "connect_timeout": 15,
+            }
+            configs.append(cfg)
+
+    # 5. Compatibilité explicite avec le format [database] utilisé par YAM.
+    # Exemple :
+    # [database]
+    # host = "..."
+    # port = 5432
+    # dbname = "postgres"
+    # user = "postgres"
+    # password = "..."
+    try:
+        if "database" in st.secrets:
+            container = st.secrets["database"]
+            host = _safe_get(container, "host")
+            database = (
+                _safe_get(container, "dbname")
+                or _safe_get(container, "database")
+                or _safe_get(container, "db")
+            )
+            user = _safe_get(container, "user") or _safe_get(container, "username")
+            password = _safe_get(container, "password")
+            port = _safe_get(container, "port", "5432")
+            sslmode = _safe_get(container, "sslmode", "require")
+
+            if host and database and user and password:
+                try:
+                    port_int = int(port or 5432)
+                except Exception:
+                    port_int = 5432
+
+                configs.append({
+                    "host": host,
+                    "database": database,
+                    "user": user,
+                    "password": password,
+                    "port": port_int,
+                    "sslmode": sslmode or "require",
+                    "application_name": "YAM_Ecole",
+                    "connect_timeout": 15,
+                })
+    except Exception:
+        pass
+
+    # 6. Dernier secours : configuration plate
+    host = (
+        _secret_flat("SUPABASE_DB_HOST")
+        or _secret_flat("POSTGRES_HOST")
+        or _secret_flat("DB_HOST")
+    )
+    database = (
+        _secret_flat("SUPABASE_DB_NAME")
+        or _secret_flat("POSTGRES_DB")
+        or _secret_flat("DB_NAME")
+        or _secret_flat("DATABASE_NAME")
+    )
+    user = (
+        _secret_flat("SUPABASE_DB_USER")
+        or _secret_flat("POSTGRES_USER")
+        or _secret_flat("DB_USER")
+    )
+    password = (
+        _secret_flat("SUPABASE_DB_PASSWORD")
+        or _secret_flat("POSTGRES_PASSWORD")
+        or _secret_flat("DB_PASSWORD")
+    )
+    port = (
+        _secret_flat("SUPABASE_DB_PORT")
+        or _secret_flat("POSTGRES_PORT")
+        or _secret_flat("DB_PORT")
+        or "5432"
+    )
+
+    if host and database and user and password:
+        try:
+            port = int(port)
+        except Exception:
+            port = 5432
+        configs.append({
+            "host": host,
+            "database": database,
+            "user": user,
+            "password": password,
+            "port": port,
+            "sslmode": "require",
+            "application_name": "YAM_Ecole",
+            "connect_timeout": 15,
+        })
+
     return configs
+
+def _secret_inventory():
+    """Diagnostic sans afficher aucune valeur sensible."""
+    try:
+        top_keys = sorted(str(k) for k in st.secrets.keys())
+    except Exception:
+        top_keys = []
+
+    sections = []
+    for name in (
+        "database", "postgres", "supabase", "postgresql", "connections"
+    ):
+        try:
+            if name in st.secrets:
+                try:
+                    sections.append(
+                        f"{name}: {sorted(str(k) for k in st.secrets[name].keys())}"
+                    )
+                except Exception:
+                    sections.append(f"{name}: présent")
+        except Exception:
+            pass
+
+    return top_keys, sections
 
 def get_db_connection(show_error=False):
     global DB_LAST_ERROR, DB_CONNECTED
-    DB_CONNECTED=False; DB_LAST_ERROR=""; errors=[]
-    for cfg in _database_configs():
+
+    DB_CONNECTED = False
+    DB_LAST_ERROR = ""
+    errors = []
+    configs = _database_configs()
+
+    for cfg in configs:
         try:
-            if isinstance(cfg,str):
-                conn=psycopg2.connect(cfg,connect_timeout=12,sslmode="require",application_name="YAM_Ecole")
+            if isinstance(cfg, str):
+                conn = psycopg2.connect(
+                    cfg,
+                    connect_timeout=15,
+                    sslmode="require",
+                    application_name="YAM_Ecole",
+                )
             else:
-                conn=psycopg2.connect(**cfg,connect_timeout=12,application_name="YAM_Ecole")
+                conn = psycopg2.connect(**cfg)
+
+            # Test réel de la connexion et de la base.
             with conn.cursor() as cur:
-                cur.execute("SELECT current_database(), current_user;"); cur.fetchone()
-            DB_CONNECTED=True
+                cur.execute("SELECT current_database(), current_user;")
+                cur.fetchone()
+
+            DB_CONNECTED = True
             return conn
+
         except Exception as e:
+            # Ne jamais exposer le mot de passe.
             errors.append(f"{type(e).__name__}: {e}")
-    DB_LAST_ERROR=" | ".join(errors) if errors else "Aucune configuration Supabase/PostgreSQL valide dans les secrets."
+
+    if not configs:
+        DB_LAST_ERROR = (
+            "Aucune configuration de connexion exploitable n'a été trouvée. "
+            "Le code accepte DATABASE_URL, [postgres], [supabase], "
+            "[connections.postgres], [connections.supabase], "
+            "ou les clés plates SUPABASE_DB_HOST/USER/PASSWORD/NAME."
+        )
+    else:
+        DB_LAST_ERROR = " | ".join(errors)
+
     if show_error:
-        st.error("❌ Supabase inaccessible. Aucune donnée n'a été supprimée ni remplacée.")
-        with st.expander("Diagnostic technique sécurisé"):
+        st.error("❌ Connexion Supabase/PostgreSQL impossible.")
+        with st.expander("🔎 Diagnostic technique sécurisé", expanded=True):
             st.code(DB_LAST_ERROR)
+
+            top_keys, sections = _secret_inventory()
+            st.write("Clés Streamlit détectées (valeurs masquées) :")
+            st.code(", ".join(top_keys) if top_keys else "Aucune clé détectée")
+
+            if sections:
+                st.write("Sections détectées :")
+                for section in sections:
+                    st.code(section)
+
     return None
 
 def init_db():
@@ -674,10 +961,23 @@ st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visi
 _conn_start=get_db_connection()
 if _conn_start is None:
     st.error("🔴 SUPABASE NON CONNECTÉ")
-    st.warning("Les données enregistrées dans Supabase ne sont pas considérées comme perdues. Reconnectez la même base avant toute sauvegarde.")
-    st.info("Streamlit Cloud → Settings → Secrets : vérifiez [postgres] ou [supabase], ou DATABASE_URL, puis faites Reboot.")
-    with st.expander("Diagnostic technique sécurisé", expanded=True):
-        st.code(DB_LAST_ERROR or "Configuration Supabase absente.")
+    st.warning(
+        "Les données Supabase ne sont pas considérées comme perdues. "
+        "Aucune sauvegarde, suppression ou réinitialisation ne sera exécutée."
+    )
+    st.info(
+        "La version actuelle recherche automatiquement DATABASE_URL, "
+        "[postgres], [supabase] et [connections.postgres]."
+    )
+    with st.expander("🔎 Diagnostic technique sécurisé", expanded=True):
+        top_keys, sections = _secret_inventory()
+        st.write("Clés détectées dans Streamlit Secrets (valeurs masquées) :")
+        st.code(", ".join(top_keys) if top_keys else "AUCUNE CLÉ DÉTECTÉE")
+        if sections:
+            st.write("Sections détectées :")
+            for section in sections:
+                st.code(section)
+        st.code(DB_LAST_ERROR or "Aucune configuration exploitable.")
     st.stop()
 try: _conn_start.close()
 except Exception: pass
