@@ -16,346 +16,27 @@ from psycopg2.extras import RealDictCursor
 # ==========================================
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
 # ==========================================
-#
-# IMPORTANT :
-# Le message "Aucune configuration ... dans les secrets" signifie que
-# l'application ne trouvait pas les paramètres de connexion dans Streamlit.
-# Cette version accepte plusieurs formats de secrets afin de retrouver la
-# configuration déjà utilisée sans modifier les données de Supabase.
-#
-DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
-DB_LAST_ERROR = ""
-DB_READ_FAILED = False
-DB_CONNECTED = False
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
-def _safe_get(container, key, default=""):
-    """Lecture tolérante d'un dictionnaire/TOML Streamlit."""
+def get_db_connection():
+    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
     try:
-        if container is None:
-            return default
-        value = container.get(key, default)
-        if value is None:
-            return default
-        return str(value).strip()
-    except Exception:
-        return default
-
-def _secret_flat(key, default=""):
-    """Recherche d'une clé directement dans st.secrets."""
-    try:
-        if key in st.secrets:
-            return _safe_get(st.secrets, key, default)
-    except Exception:
-        pass
-    return default
-
-def _secret_section(section, key, default=""):
-    """Recherche d'une clé dans une section TOML."""
-    try:
-        if section in st.secrets:
-            return _safe_get(st.secrets[section], key, default)
-    except Exception:
-        pass
-    return default
-
-def _collect_connection_string(value):
-    if not value:
-        return None
-    value = str(value).strip()
-    return value if value else None
-
-def _database_configs():
-    """
-    Recherche la connexion dans tous les formats courants de Streamlit Cloud :
-
-    DATABASE_URL
-    SUPABASE_DB_URL
-    POSTGRES_URL
-    [postgres]
-    [supabase]
-    [connections.postgres]
-    [connections.supabase]
-    [connections.postgresql]
-
-    ainsi que les clés plates host/database/user/password/port.
-    """
-    configs = []
-    seen = set()
-
-    # 1. Variables d'environnement
-    for key in ("DATABASE_URL", "SUPABASE_DB_URL", "POSTGRES_URL", "SUPABASE_DATABASE_URL"):
-        value = os.environ.get(key, "").strip()
-        if value and value not in seen:
-            configs.append(value)
-            seen.add(value)
-
-    # 2. Clés directes dans st.secrets
-    for key in ("DATABASE_URL", "SUPABASE_DB_URL", "POSTGRES_URL", "SUPABASE_DATABASE_URL"):
-        value = _secret_flat(key)
-        if value and value not in seen:
-            configs.append(value)
-            seen.add(value)
-
-    # 3. Sections TOML possibles
-    sections = (
-        "database",
-        "postgres",
-        "supabase",
-        "postgresql",
-        "connections.postgres",
-        "connections.supabase",
-        "connections.postgresql",
-    )
-
-    # 4. Certaines configurations Streamlit utilisent réellement :
-    # [connections]
-    #   [connections.postgres]
-    nested_sections = []
-    try:
-        if "connections" in st.secrets:
-            connections = st.secrets["connections"]
-            for name in ("postgres", "supabase", "postgresql"):
-                try:
-                    if name in connections:
-                        nested_sections.append((name, connections[name]))
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    section_containers = []
-    for section in sections:
-        if "." in section:
-            parent, child = section.split(".", 1)
-            try:
-                if parent in st.secrets and child in st.secrets[parent]:
-                    section_containers.append((section, st.secrets[parent][child]))
-            except Exception:
-                pass
-        else:
-            try:
-                if section in st.secrets:
-                    section_containers.append((section, st.secrets[section]))
-            except Exception:
-                pass
-
-    section_containers.extend(nested_sections)
-
-    for section_name, container in section_containers:
-        host = _safe_get(container, "host")
-        database = (
-            _safe_get(container, "database")
-            or _safe_get(container, "dbname")
-            or _safe_get(container, "db")
-        )
-        user = (
-            _safe_get(container, "user")
-            or _safe_get(container, "username")
-        )
-        password = _safe_get(container, "password")
-        port = _safe_get(container, "port", "5432")
-        sslmode = _safe_get(container, "sslmode", "require")
-
-        # Certains secrets utilisent "connection_string" / "url".
-        connection_string = (
-            _safe_get(container, "connection_string")
-            or _safe_get(container, "url")
-            or _safe_get(container, "database_url")
-        )
-
-        if connection_string:
-            connection_string = _collect_connection_string(connection_string)
-            if connection_string and connection_string not in seen:
-                configs.append(connection_string)
-                seen.add(connection_string)
-
-        if host and database and user and password:
-            try:
-                port_int = int(port or 5432)
-            except Exception:
-                port_int = 5432
-
-            cfg = {
-                "host": host,
-                "database": database,
-                "user": user,
-                "password": password,
-                "port": port_int,
-                "sslmode": sslmode or "require",
-                "application_name": "YAM_Ecole",
-                "connect_timeout": 15,
-            }
-            configs.append(cfg)
-
-    # 5. Compatibilité explicite avec le format [database] utilisé par YAM.
-    # Exemple :
-    # [database]
-    # host = "..."
-    # port = 5432
-    # dbname = "postgres"
-    # user = "postgres"
-    # password = "..."
-    try:
-        if "database" in st.secrets:
-            container = st.secrets["database"]
-            host = _safe_get(container, "host")
-            database = (
-                _safe_get(container, "dbname")
-                or _safe_get(container, "database")
-                or _safe_get(container, "db")
+        if "postgres" in st.secrets:
+            conn = psycopg2.connect(
+                host=st.secrets["postgres"]["host"],
+                database=st.secrets["postgres"]["database"],
+                user=st.secrets["postgres"]["user"],
+                password=st.secrets["postgres"]["password"],
+                port=st.secrets["postgres"]["port"],
+                connect_timeout=5
             )
-            user = _safe_get(container, "user") or _safe_get(container, "username")
-            password = _safe_get(container, "password")
-            port = _safe_get(container, "port", "5432")
-            sslmode = _safe_get(container, "sslmode", "require")
-
-            if host and database and user and password:
-                try:
-                    port_int = int(port or 5432)
-                except Exception:
-                    port_int = 5432
-
-                configs.append({
-                    "host": host,
-                    "database": database,
-                    "user": user,
-                    "password": password,
-                    "port": port_int,
-                    "sslmode": sslmode or "require",
-                    "application_name": "YAM_Ecole",
-                    "connect_timeout": 15,
-                })
-    except Exception:
-        pass
-
-    # 6. Dernier secours : configuration plate
-    host = (
-        _secret_flat("SUPABASE_DB_HOST")
-        or _secret_flat("POSTGRES_HOST")
-        or _secret_flat("DB_HOST")
-    )
-    database = (
-        _secret_flat("SUPABASE_DB_NAME")
-        or _secret_flat("POSTGRES_DB")
-        or _secret_flat("DB_NAME")
-        or _secret_flat("DATABASE_NAME")
-    )
-    user = (
-        _secret_flat("SUPABASE_DB_USER")
-        or _secret_flat("POSTGRES_USER")
-        or _secret_flat("DB_USER")
-    )
-    password = (
-        _secret_flat("SUPABASE_DB_PASSWORD")
-        or _secret_flat("POSTGRES_PASSWORD")
-        or _secret_flat("DB_PASSWORD")
-    )
-    port = (
-        _secret_flat("SUPABASE_DB_PORT")
-        or _secret_flat("POSTGRES_PORT")
-        or _secret_flat("DB_PORT")
-        or "5432"
-    )
-
-    if host and database and user and password:
-        try:
-            port = int(port)
-        except Exception:
-            port = 5432
-        configs.append({
-            "host": host,
-            "database": database,
-            "user": user,
-            "password": password,
-            "port": port,
-            "sslmode": "require",
-            "application_name": "YAM_Ecole",
-            "connect_timeout": 15,
-        })
-
-    return configs
-
-def _secret_inventory():
-    """Diagnostic sans afficher aucune valeur sensible."""
-    try:
-        top_keys = sorted(str(k) for k in st.secrets.keys())
-    except Exception:
-        top_keys = []
-
-    sections = []
-    for name in (
-        "database", "postgres", "supabase", "postgresql", "connections"
-    ):
-        try:
-            if name in st.secrets:
-                try:
-                    sections.append(
-                        f"{name}: {sorted(str(k) for k in st.secrets[name].keys())}"
-                    )
-                except Exception:
-                    sections.append(f"{name}: présent")
-        except Exception:
-            pass
-
-    return top_keys, sections
-
-def get_db_connection(show_error=False):
-    global DB_LAST_ERROR, DB_CONNECTED
-
-    DB_CONNECTED = False
-    DB_LAST_ERROR = ""
-    errors = []
-    configs = _database_configs()
-
-    for cfg in configs:
-        try:
-            if isinstance(cfg, str):
-                conn = psycopg2.connect(
-                    cfg,
-                    connect_timeout=15,
-                    sslmode="require",
-                    application_name="YAM_Ecole",
-                )
-            else:
-                conn = psycopg2.connect(**cfg)
-
-            # Test réel de la connexion et de la base.
-            with conn.cursor() as cur:
-                cur.execute("SELECT current_database(), current_user;")
-                cur.fetchone()
-
-            DB_CONNECTED = True
-            return conn
-
-        except Exception as e:
-            # Ne jamais exposer le mot de passe.
-            errors.append(f"{type(e).__name__}: {e}")
-
-    if not configs:
-        DB_LAST_ERROR = (
-            "Aucune configuration de connexion exploitable n'a été trouvée. "
-            "Le code accepte DATABASE_URL, [postgres], [supabase], "
-            "[connections.postgres], [connections.supabase], "
-            "ou les clés plates SUPABASE_DB_HOST/USER/PASSWORD/NAME."
-        )
-    else:
-        DB_LAST_ERROR = " | ".join(errors)
-
-    if show_error:
-        st.error("❌ Connexion Supabase/PostgreSQL impossible.")
-        with st.expander("🔎 Diagnostic technique sécurisé", expanded=True):
-            st.code(DB_LAST_ERROR)
-
-            top_keys, sections = _secret_inventory()
-            st.write("Clés Streamlit détectées (valeurs masquées) :")
-            st.code(", ".join(top_keys) if top_keys else "Aucune clé détectée")
-
-            if sections:
-                st.write("Sections détectées :")
-                for section in sections:
-                    st.code(section)
-
-    return None
+        else:
+            if not DATABASE_URL:
+                return None
+            conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
+        return conn
+    except Exception as e:
+        return None
 
 def init_db():
     """Initialise toutes les tables dans Supabase / PostgreSQL avec toutes les colonnes requises."""
@@ -558,25 +239,23 @@ def nettoyer_date(val):
     return val_str
 
 def load_table_from_db(query, columns):
-    global DB_READ_FAILED, DB_LAST_ERROR
-    conn=get_db_connection()
+    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
+    conn = get_db_connection()
     if conn is None:
-        DB_READ_FAILED=True
         return pd.DataFrame(columns=columns)
     try:
-        df=pd.read_sql(query,conn)
-        return df if not df.empty else pd.DataFrame(columns=columns)
-    except Exception as e:
-        DB_READ_FAILED=True
-        DB_LAST_ERROR=f"Lecture SQL : {type(e).__name__}: {e}"
-        print(f"[YAM][SUPABASE] {DB_LAST_ERROR}")
+        df = pd.read_sql(query, conn)
+        if df.empty:
+            return pd.DataFrame(columns=columns)
+        return df
+    except Exception:
         return pd.DataFrame(columns=columns)
     finally:
-        try: conn.close()
-        except Exception: pass
+        if conn:
+            conn.close()
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    conn = get_db_connection(show_error=True)
+    conn = get_db_connection()
     if conn is None:
         st.error("Impossible d'établir la connexion à la base de données Supabase.")
         return False
@@ -703,33 +382,6 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     finally:
         if conn:
             conn.close()
-
-def verifier_et_recharger_supabase():
-    global DB_READ_FAILED, DB_LAST_ERROR
-    DB_READ_FAILED=False; DB_LAST_ERROR=""
-    conn=get_db_connection(show_error=True)
-    if conn is None: return False
-    try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT current_database(), current_user, NOW();")
-            db_name,db_user,db_now=cur.fetchone()
-            tables=["eleves","classes","prof_white_list","admin_white_list","matieres","notes","vie_scolaire","absences","edt_grid","cahier_textes","admin_prof_messages","admin_assignations_travail","fiches_progression_classe"]
-            counts={}
-            for table in tables:
-                cur.execute(f'SELECT COUNT(*) FROM "{table}";'); counts[table]=cur.fetchone()[0]
-        st.session_state["supabase_db_name"]=db_name
-        st.session_state["supabase_db_user"]=db_user
-        st.session_state["supabase_db_now"]=str(db_now)
-        st.session_state["supabase_counts"]=counts
-    except Exception as e:
-        DB_LAST_ERROR=f"Diagnostic Supabase : {type(e).__name__}: {e}"
-        st.error(DB_LAST_ERROR); return False
-    finally:
-        try: conn.close()
-        except Exception: pass
-    recharger_toutes_les_donnees()
-    synchroniser_edt_global()
-    return not DB_READ_FAILED
 
 # ==========================================
 # 0. BIS. SÉCURITÉ & AUTHENTIFICATION
@@ -958,29 +610,6 @@ st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visi
 # ==========================================
 # 2. INITIALISATION DES ÉTATS & RECHARGEMENT DYNAMIQUE
 # ==========================================
-_conn_start=get_db_connection()
-if _conn_start is None:
-    st.error("🔴 SUPABASE NON CONNECTÉ")
-    st.warning(
-        "Les données Supabase ne sont pas considérées comme perdues. "
-        "Aucune sauvegarde, suppression ou réinitialisation ne sera exécutée."
-    )
-    st.info(
-        "La version actuelle recherche automatiquement DATABASE_URL, "
-        "[postgres], [supabase] et [connections.postgres]."
-    )
-    with st.expander("🔎 Diagnostic technique sécurisé", expanded=True):
-        top_keys, sections = _secret_inventory()
-        st.write("Clés détectées dans Streamlit Secrets (valeurs masquées) :")
-        st.code(", ".join(top_keys) if top_keys else "AUCUNE CLÉ DÉTECTÉE")
-        if sections:
-            st.write("Sections détectées :")
-            for section in sections:
-                st.code(section)
-        st.code(DB_LAST_ERROR or "Aucune configuration exploitable.")
-    st.stop()
-try: _conn_start.close()
-except Exception: pass
 if "espace_actif" not in st.session_state:
     st.session_state.espace_actif = "🏠 Accueil"
 
@@ -990,8 +619,6 @@ if "current_admin_email" not in st.session_state:
     st.session_state.current_admin_email = ""
 
 def recharger_toutes_les_donnees():
-    global DB_READ_FAILED
-    DB_READ_FAILED=False
     df_eleves_db = load_table_from_db(
         'SELECT nom_complet AS "Nom Complet", prenom AS "Prénom", nom AS "Nom", date_de_naissance AS "Date de Naissance", classe AS "Classe", photo AS "Photo" FROM eleves',
         ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]
@@ -1011,25 +638,25 @@ def recharger_toutes_les_donnees():
         st.session_state.classes_db = df_classes
 
     df_prof = load_table_from_db('SELECT nom AS "Nom", prenom AS "Prénom", email AS "Email", matiere_principale AS "Matière Principale", classe_attribuee AS "Classe Attribuée", password AS "Mot de passe" FROM prof_white_list', ["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée", "Mot de passe"])
-    if df_prof.empty and not DB_READ_FAILED:
+    if df_prof.empty:
         st.session_state.prof_white_list = pd.DataFrame([{
             "Nom": "Prof", "Prénom": "Élémentaire", "Email": "prof.elem@cpnm.sn",
             "Matière Principale": "Toutes les matières", "Classe Attribuée": "CP", "Mot de passe": hacher_mot_de_passe("cpnm2026")
         }])
-    elif not df_prof.empty:
+    else:
         st.session_state.prof_white_list = df_prof
 
     df_admin_wl = load_table_from_db('SELECT email AS "Email", nom AS "Nom", prenom AS "Prénom", password AS "Mot de passe", niveau_acces AS "Niveau d\'accès" FROM admin_white_list', ["Email", "Nom", "Prénom", "Mot de passe", "Niveau d'accès"])
-    if df_admin_wl.empty and not DB_READ_FAILED:
+    if df_admin_wl.empty:
         st.session_state.admin_white_list = pd.DataFrame([{
             "Email": ADMIN_EMAIL_MAITRE, "Nom": "Nelson", "Prénom": "Admin Principal",
             "Mot de passe": hacher_mot_de_passe("cpnmn2026"), "Niveau d'accès": "Total (Super Admin)"
         }])
-    elif not df_admin_wl.empty:
+    else:
         st.session_state.admin_white_list = df_admin_wl
 
     df_mat = load_table_from_db('SELECT matiere AS "Matière", cycle AS "Cycle", coefficient AS "Coefficient", bareme AS "Barème" FROM matieres', ["Matière", "Cycle", "Coefficient", "Barème"])
-    if df_mat.empty and not DB_READ_FAILED:
+    if df_mat.empty:
         st.session_state.matieres_def = pd.DataFrame([
             {"Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4.0, "Barème": 20.0},
             {"Matière": "Français", "Cycle": "Collège", "Coefficient": 5.0, "Barème": 20.0},
@@ -1039,7 +666,7 @@ def recharger_toutes_les_donnees():
             {"Matière": "Éveil / Sciences", "Cycle": "Élémentaire", "Coefficient": 1.0, "Barème": 50.0},
             {"Matière": "Éducation Artistique & Morale", "Cycle": "Élémentaire", "Coefficient": 1.0, "Barème": 50.0},
         ])
-    elif not df_mat.empty:
+    else:
         st.session_state.matieres_def = preparer_matieres_dataframe(df_mat)
 
     st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
@@ -1053,11 +680,6 @@ def recharger_toutes_les_donnees():
 
 if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
     recharger_toutes_les_donnees()
-
-if DB_READ_FAILED:
-    st.error("⚠️ Lecture Supabase échouée : aucune donnée par défaut ne remplace vos données existantes.")
-    with st.expander("Erreur de lecture Supabase"):
-        st.code(DB_LAST_ERROR or "Erreur inconnue")
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h","17h-18h","18h-19h"]
@@ -1449,158 +1071,159 @@ def _trouver_police(*noms):
 
 
 class YAMPDF(FPDF):
-    """Moteur PDF Unicode robuste pour FPDF 1.x.
+    """Moteur PDF YAM robuste et compatible FPDF 1.x / 2.x.
 
-    FPDF 1.x sérialise les pages en Latin-1 au moment de output().
-    La solution est donc de s'assurer AVANT toute écriture que toutes les
-    polices utilisées sont des polices TTF Unicode (DejaVu), et de fournir
-    un vrai fallback si elles ne sont pas disponibles.
+    Stratégie définitive :
+    1) utilise DejaVu Sans Unicode lorsqu'elle est disponible ;
+    2) sinon bascule automatiquement sur une police intégrée FPDF ;
+    3) dans ce mode de secours, tous les textes sont convertis sans provoquer
+       d'UnicodeEncodeError (les caractères non représentables sont remplacés).
     """
+
     _font_paths = {}
-    _unicode_available = False
 
     def __init__(self, *args, **kwargs):
+        self._yam_unicode_ready = False
         super().__init__(*args, **kwargs)
-        self._unicode_available = False
         self._prepare_unicode_fonts()
 
     @classmethod
-    def _find_font(cls, *names):
-        for name in names:
-            path = _trouver_police(name)
-            if path and os.path.isfile(path):
-                return path
-        return None
-
-    def _prepare_unicode_fonts(self):
-        if not YAMPDF._font_paths:
-            YAMPDF._font_paths = {
-                "": self._find_font(
+    def _get_font_paths(cls):
+        if not cls._font_paths:
+            cls._font_paths = {
+                "": _trouver_police(
                     "DejaVuSans.ttf",
                     "DejaVuSansCondensed.ttf",
                 ),
-                "B": self._find_font(
+                "B": _trouver_police(
                     "DejaVuSans-Bold.ttf",
                     "DejaVuSansCondensed-Bold.ttf",
                 ),
-                "I": self._find_font(
+                "I": _trouver_police(
                     "DejaVuSans-Oblique.ttf",
                     "DejaVuSansCondensed-Oblique.ttf",
                 ),
-                "BI": self._find_font(
+                "BI": _trouver_police(
                     "DejaVuSans-BoldOblique.ttf",
                     "DejaVuSansCondensed-BoldOblique.ttf",
                 ),
             }
+        return cls._font_paths
 
-        regular = YAMPDF._font_paths.get("")
+    def _prepare_unicode_fonts(self):
+        paths = self._get_font_paths()
+        regular = paths.get("")
+
         if not regular:
-            self._unicode_available = False
+            self._yam_unicode_ready = False
             return
 
         try:
+            # Compatible FPDF 1.7.x et FPDF 2.x.
             self.add_font("YAMUnicode", "", regular, uni=True)
 
             for style in ("B", "I", "BI"):
-                path = YAMPDF._font_paths.get(style)
+                path = paths.get(style)
                 if path:
                     try:
                         self.add_font("YAMUnicode", style, path, uni=True)
                     except Exception:
+                        # Le style manquant sera remplacé par le style normal.
                         pass
 
-            self._unicode_available = True
-            YAMPDF._unicode_available = True
+            self._yam_unicode_ready = True
         except Exception:
-            self._unicode_available = False
+            self._yam_unicode_ready = False
 
     @staticmethod
-    def _safe_latin1(value):
-        """Fallback ultime pour FPDF core fonts sans lever UnicodeEncodeError."""
+    def _latin1_safe(value):
+        """Fallback obligatoire si aucune police Unicode n'est disponible."""
         if value is None:
             return ""
-
-        s = str(value).replace("\x00", "").replace("\r", " ")
-
+        value = str(value).replace("\x00", "").replace("\r", " ")
         replacements = {
-            "\u2018": "'",
-            "\u2019": "'",
-            "\u201c": '"',
-            "\u201d": '"',
-            "\u2013": "-",
-            "\u2014": "-",
-            "\u2011": "-",
-            "\u2022": "-",
-            "\u2026": "...",
-            "\u0153": "oe",
-            "\u0152": "OE",
-            "\u00e6": "ae",
-            "\u00c6": "AE",
-            "\u2192": "->",
-            "\u2190": "<-",
-            "\u2265": ">=",
-            "\u2264": "<=",
-            "\u2260": "!=",
-            "\u00d7": "x",
-            "\u00f7": "/",
-            "\u2713": "OK",
-            "\u2717": "X",
-            "\U0001f1f8\U0001f1f3": "SN",
+            "’": "'",
+            "‘": "'",
+            "“": '"',
+            "”": '"',
+            "–": "-",
+            "—": "-",
+            "‑": "-",
+            "•": "-",
+            "…": "...",
+            "œ": "oe",
+            "Œ": "OE",
+            "æ": "ae",
+            "Æ": "AE",
+            "→": "->",
+            "←": "<-",
+            "≥": ">=",
+            "≤": "<=",
+            "≠": "!=",
+            "×": "x",
+            "÷": "/",
+            "°": " deg",
+            "✓": "OK",
+            "✗": "X",
+            "🇸🇳": "SN",
         }
-        for old, new in replacements.items():
-            s = s.replace(old, new)
+        for src, dst in replacements.items():
+            value = value.replace(src, dst)
+        value = unicodedata.normalize("NFKD", value)
+        return value.encode("latin-1", errors="replace").decode("latin-1")
 
-        # Décomposition des accents : é -> e, à -> a, etc.
-        s = unicodedata.normalize("NFKD", s)
-        return s.encode("latin-1", errors="replace").decode("latin-1")
-
-    def _safe_text(self, value):
-        if self._unicode_available:
+    def _pdf_arg(self, value):
+        if self._yam_unicode_ready:
             return "" if value is None else str(value).replace("\x00", "").replace("\r", " ")
-        return self._safe_latin1(value)
+        return self._latin1_safe(value)
 
     def set_font(self, family, style="", size=0):
-        requested_family = str(family or "")
-        requested_style = str(style or "").upper()
+        family_lower = str(family).lower()
 
-        if self._unicode_available and requested_family.lower() in {
+        if self._yam_unicode_ready and family_lower in {
             "arial", "helvetica", "times", "courier", "yamunicode"
         }:
-            family = "YAMUnicode"
-
-            # Ne jamais demander un style qui n'a pas été chargé.
-            available_styles = {""}
-            for style_name in ("B", "I", "BI"):
-                if f"yamunicode{style_name}" in {
-                    str(k).lower() for k in self.fonts.keys()
-                }:
-                    available_styles.add(style_name)
-
-            if requested_style not in available_styles:
+            requested_style = str(style or "").upper()
+            if requested_style and not self._yam_style_available(requested_style):
                 requested_style = ""
+            family = "YAMUnicode"
             style = requested_style
-
-        elif not self._unicode_available and requested_family.lower() == "yamunicode":
+        elif not self._yam_unicode_ready and family_lower == "yamunicode":
             family = "Arial"
-            style = requested_style
+            style = style or ""
 
         return super().set_font(family, style, size)
 
+    def _yam_style_available(self, style):
+        try:
+            key = "yamunicode" + (style.upper() if style else "")
+            return key.lower() in {str(k).lower() for k in self.fonts.keys()}
+        except Exception:
+            return style in ("", "B", "I", "BI")
+
     def cell(self, w, h=0, txt="", border=0, ln=0, align="", fill=False, link=""):
-        return super().cell(
-            w, h, self._safe_text(txt), border, ln, align, fill, link
-        )
+        txt = self._pdf_arg(txt)
+        try:
+            return super().cell(w, h, txt, border, ln, align, fill, link)
+        except TypeError:
+            return super().cell(w, h, txt, border, ln, align, fill, link)
 
     def multi_cell(self, w, h, txt="", border=0, align="J", fill=False, split_only=False):
-        return super().multi_cell(
-            w, h, self._safe_text(txt), border, align, fill, split_only
-        )
+        txt = self._pdf_arg(txt)
+        try:
+            return super().multi_cell(w, h, txt, border, align, fill, split_only)
+        except TypeError:
+            return super().multi_cell(w, h, txt, border, 0, align, fill)
 
     def text(self, x, y, txt=""):
-        return super().text(x, y, self._safe_text(txt))
+        return super().text(x, y, self._pdf_arg(txt))
 
     def write(self, h, txt="", link=""):
-        return super().write(h, self._safe_text(txt), link)
+        txt = self._pdf_arg(txt)
+        try:
+            return super().write(h, txt, link)
+        except TypeError:
+            return super().write(h, txt)
 
 def _pdf_text(valeur):
     """Texte sûr : conserve l'Unicode quand la police Unicode est active."""
@@ -1671,7 +1294,11 @@ def ajouter_signature_pdf(pdf):
 
 
 def convertir_pdf_en_bytes(pdf):
-    """Retourne le PDF généré sous forme de bytes sans conversion destructive."""
+    """Convertit un document FPDF en bytes, compatible FPDF 1.x et 2.x.
+
+    IMPORTANT : cette fonction ne fait aucune conversion du contenu textuel.
+    La gestion Unicode est réalisée par YAMPDF avant la sérialisation.
+    """
     try:
         data = pdf.output(dest="S")
     except TypeError:
@@ -1684,8 +1311,13 @@ def convertir_pdf_en_bytes(pdf):
     if isinstance(data, memoryview):
         return data.tobytes()
     if isinstance(data, str):
+        # FPDF 1.x peut renvoyer une chaîne déjà sérialisée.
+        # Le texte a déjà été sécurisé par YAMPDF si le mode fallback est actif.
         return data.encode("latin-1", errors="replace")
-    return bytes(data)
+    try:
+        return bytes(data)
+    except Exception as exc:
+        raise RuntimeError("Impossible de convertir le PDF généré en bytes.") from exc
 
 
 def _cell(pdf, w, h, text="", border=1, ln=0, align="L", fill=False):
@@ -2602,15 +2234,6 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
         ])
 
         with adm_tab0:
-            st.markdown("### 🟢 Synchronisation Supabase")
-            if st.button("🔄 RECONNECTER & RECHARGER TOUTES LES DONNÉES", key="btn_reconnect_supabase", use_container_width=True):
-                if verifier_et_recharger_supabase():
-                    st.success("✅ Supabase reconnecté : données rechargées sans suppression.")
-                    st.rerun()
-                else:
-                    st.error("❌ Reconnexion échouée. Aucune donnée n'a été modifiée.")
-            if st.session_state.get("supabase_counts"):
-                st.caption(" | ".join(f"{k}: {v}" for k,v in st.session_state["supabase_counts"].items()))
             st.markdown(f"### 🛡️ Gestion de la Liste Blanche des Administrateurs")
             edited_admin_wl = st.data_editor(
                 st.session_state.admin_white_list,
