@@ -7,106 +7,8 @@ import zipfile
 import unicodedata
 import numpy as np
 import pandas as pd
-from fpdf import FPDF as _FPDF_BASE
+from fpdf import FPDF
 import streamlit as st
-
-# ---------------------------------------------------------------------------
-# PROTECTION FPDF UNICODE (globale, sans changer la logique métier)
-# ---------------------------------------------------------------------------
-def _fpdf_texte_compatible(val):
-    """Rend un texte sûr pour les polices cœur FPDF/Helvetica/Arial."""
-    if not isinstance(val, str):
-        return val
-    remplacements = {
-        "•": " - ", "·": " - ", "‣": " - ", "▪": " - ", "▫": " - ",
-        "→": "->", "←": "<-", "↔": "<->", "⇒": "=>", "⇐": "<=",
-        "≥": ">=", "≤": "<=", "≠": "!=", "≈": "~",
-        "×": "x", "÷": "/", "±": "+/-",
-        "—": "-", "–": "-", "‑": "-", "‒": "-",
-        "’": "'", "‘": "'", "‚": "'", "‛": "'",
-        "“": '"', "”": '"', "„": '"', "‟": '"',
-        "…": "...", "©": "(c)", "®": "(R)", "™": "TM",
-        "\u00a0": " ", "\u202f": " ",
-        "✓": "OK", "✔": "OK", "✗": "X", "✘": "X",
-        "♀": "F", "♂": "M",
-    }
-    for a, b in remplacements.items():
-        val = val.replace(a, b)
-    return val.encode("latin-1", errors="replace").decode("latin-1")
-
-
-class FPDF(_FPDF_BASE):
-    """FPDF sécurisé : accepte les textes Unicode sans casser l'application."""
-    def cell(self, *args, **kwargs):
-        args = list(args)
-        if len(args) >= 3:
-            args[2] = _fpdf_texte_compatible(args[2])
-        if "txt" in kwargs:
-            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
-        if "text" in kwargs:
-            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
-        return super().cell(*args, **kwargs)
-
-    def multi_cell(self, *args, **kwargs):
-        args = list(args)
-        if len(args) >= 3:
-            args[2] = _fpdf_texte_compatible(args[2])
-        if "txt" in kwargs:
-            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
-        if "text" in kwargs:
-            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
-        return super().multi_cell(*args, **kwargs)
-
-    def text(self, *args, **kwargs):
-        args = list(args)
-        if len(args) >= 3:
-            args[2] = _fpdf_texte_compatible(args[2])
-        if "txt" in kwargs:
-            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
-        if "text" in kwargs:
-            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
-        return super().text(*args, **kwargs)
-
-    def write(self, *args, **kwargs):
-        args = list(args)
-        if len(args) >= 2:
-            args[1] = _fpdf_texte_compatible(args[1])
-        if "txt" in kwargs:
-            kwargs["txt"] = _fpdf_texte_compatible(kwargs["txt"])
-        if "text" in kwargs:
-            kwargs["text"] = _fpdf_texte_compatible(kwargs["text"])
-        return super().write(*args, **kwargs)
-
-    def set_title(self, title, *args, **kwargs):
-        return super().set_title(_fpdf_texte_compatible(title), *args, **kwargs)
-
-    def set_subject(self, subject, *args, **kwargs):
-        return super().set_subject(_fpdf_texte_compatible(subject), *args, **kwargs)
-
-    def set_author(self, author, *args, **kwargs):
-        return super().set_author(_fpdf_texte_compatible(author), *args, **kwargs)
-
-    def set_keywords(self, keywords, *args, **kwargs):
-        return super().set_keywords(_fpdf_texte_compatible(keywords), *args, **kwargs)
-
-    def _putpages(self, *args, **kwargs):
-        # FPDF 1.x encode les pages en latin-1 DANS cette méthode.
-        # On nettoie donc une dernière fois juste avant l'encodage interne.
-        pages = getattr(self, "pages", None)
-        if isinstance(pages, dict):
-            for k, v in list(pages.items()):
-                if isinstance(v, str):
-                    pages[k] = _fpdf_texte_compatible(v)
-                elif isinstance(v, bytes):
-                    pages[k] = v.decode("latin-1", errors="replace")
-        elif isinstance(pages, list):
-            for i, v in enumerate(pages):
-                if isinstance(v, str):
-                    pages[i] = _fpdf_texte_compatible(v)
-                elif isinstance(v, bytes):
-                    pages[i] = v.decode("latin-1", errors="replace")
-        return super()._putpages(*args, **kwargs)
-
 import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -1201,107 +1103,54 @@ def ajouter_signature_pdf(pdf):
     pdf.set_font("Arial", 'I', 7)
     pdf.cell(75, 4, "( Signature, Cachet & Sceau Officiel )", 0, 1, "C")
 
-def _texte_pdf_latin1_sur(text):
-    """
-    Sécurise une chaîne destinée aux polices cœur FPDF (Arial/Helvetica/Times).
-
-    IMPORTANT : FPDF 1.x encode le contenu de chaque page en latin-1 au moment
-    de pdf.output(). Un seul caractère Unicode non représentable (emoji, puce,
-    apostrophe typographique, flèche, etc.) suffit à provoquer UnicodeEncodeError.
-    Cette fonction conserve les caractères latin-1 valides et remplace proprement
-    les autres caractères sans toucher à la structure PDF.
-    """
-    if text is None:
-        return text
-    if not isinstance(text, str):
-        return text
-
+def _texte_pdf_latin1(valeur):
+    """Normalise le texte avant l'encodage Latin-1 de FPDF classique."""
+    if valeur is None:
+        return ""
+    texte = str(valeur)
     remplacements = {
-        "•": " - ", "·": " - ", "‣": " - ", "▪": " - ", "▫": " - ",
-        "→": "->", "←": "<-", "↔": "<->", "⇒": "=>", "⇐": "<=",
-        "≥": ">=", "≤": "<=", "≠": "!=", "≈": "~",
-        "×": "x", "÷": "/", "±": "+/-", "°": " deg",
-        "—": "-", "–": "-", "‑": "-", "‒": "-",
-        "’": "'", "‘": "'", "‚": "'", "‛": "'",
-        "“": '"', "”": '"', "„": '"', "‟": '"',
-        "…": "...", "©": "(c)", "®": "(R)", "™": "TM",
-        " ": " ", " ": " ",
-        "✓": "OK", "✔": "OK", "✗": "X", "✘": "X",
-        "♀": "F", "♂": "M",
+        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
+        "\u2013": "-", "\u2014": "-", "\u2212": "-", "\u2026": "...",
+        "\u2022": "-", "\u25cf": "-", "\u25a0": "-", "\u2192": "->",
+        "\u2190": "<-", "\u2194": "<->", "\u2265": ">=", "\u2264": "<=",
+        "\u00a0": " ", "\u2009": " ", "\u200b": "", "\ufeff": "",
     }
-    for caractere, remplacement in remplacements.items():
-        text = text.replace(caractere, remplacement)
-
-    # Les accents français (é, è, ê, ç, à, ù, œ...) restent compatibles
-    # avec latin-1. Les caractères réellement impossibles sont remplacés.
-    try:
-        return text.encode("latin-1", errors="replace").decode("latin-1")
-    except Exception:
-        return str(text).encode("latin-1", errors="replace").decode("latin-1")
+    for ancien, nouveau in remplacements.items():
+        texte = texte.replace(ancien, nouveau)
+    texte = unicodedata.normalize("NFKD", texte)
+    return texte.encode("latin1", errors="replace").decode("latin1")
 
 
-def _securiser_pages_fpdf(pdf):
-    """
-    Nettoie les pages internes AVANT pdf.output().
-
-    C'est la correction définitive du crash : le traceback apparaissait dans
-    fpdf._putpages(), donc nettoyer uniquement la valeur retournée par output()
-    était trop tard.
-    """
+def _securiser_pdf_avant_sortie(pdf):
+    """Nettoie les pages internes AVANT FPDF._putpages()."""
     try:
         pages = getattr(pdf, "pages", None)
         if isinstance(pages, dict):
             for numero, contenu in list(pages.items()):
-                if isinstance(contenu, str):
-                    pages[numero] = _texte_pdf_latin1_sur(contenu)
-                elif isinstance(contenu, bytes):
-                    pages[numero] = contenu.decode("latin-1", errors="replace")
+                pages[numero] = _texte_pdf_latin1(contenu)
         elif isinstance(pages, list):
             for i, contenu in enumerate(pages):
-                if isinstance(contenu, str):
-                    pages[i] = _texte_pdf_latin1_sur(contenu)
-                elif isinstance(contenu, bytes):
-                    pages[i] = contenu.decode("latin-1", errors="replace")
+                pages[i] = _texte_pdf_latin1(contenu)
     except Exception:
-        # Ne jamais bloquer l'application pour la sécurisation du PDF.
         pass
-
-    # Les métadonnées peuvent également être encodées par FPDF.
-    for attribut in ("title", "subject", "author", "keywords", "creator"):
-        try:
-            if hasattr(pdf, attribut):
-                valeur = getattr(pdf, attribut)
-                if isinstance(valeur, str):
-                    setattr(pdf, attribut, _texte_pdf_latin1_sur(valeur))
-        except Exception:
-            pass
+    return pdf
 
 
 def convertir_pdf_en_bytes(pdf):
-    """
-    Conversion FPDF -> bytes avec protection Unicode AVANT output().
-
-    Compatible avec les versions FPDF/FPDF2 présentes sur Streamlit Cloud.
-    """
-    _securiser_pages_fpdf(pdf)
-
+    """Convertit FPDF en octets et empêche tout Unicode incompatible d'atteindre _putpages()."""
+    _securiser_pdf_avant_sortie(pdf)
     try:
         data = pdf.output(dest="S")
     except UnicodeEncodeError:
-        # Deuxième passe de sécurité : certaines versions de FPDF reconstruisent
-        # leur contenu pendant close(). On resécurise donc juste avant la seconde
-        # tentative au lieu de laisser l'application planter.
-        _securiser_pages_fpdf(pdf)
+        _securiser_pdf_avant_sortie(pdf)
         data = pdf.output(dest="S")
-
     if isinstance(data, bytes):
         return data
     if isinstance(data, bytearray):
         return bytes(data)
     if isinstance(data, str):
-        return data.encode("latin-1", errors="replace")
+        return data.encode("latin1", errors="replace")
     return bytes(data)
-
 
 def generer_pdf_bulletin(bul):
     """Bulletin officiel enrichi : points, moyenne, rang, conduite et vie scolaire."""
@@ -1572,6 +1421,86 @@ def generer_zip_bulletins_classe(classe, periode):
         return b""
 
     return zip_buffer.getvalue()
+
+
+def generer_zip_documents_classe(classe, periode):
+    """Archive administrative COMPLETE d'une classe.
+
+    Contenu :
+      - tous les bulletins individuels de la classe ;
+      - emploi du temps ;
+      - cahier de texte / registre ;
+      - fiche élèves ;
+      - registre absences ;
+      - suivi présences / absences / retards ;
+      - fiche de progression.
+    Une erreur sur un document isolé ne bloque jamais la création du ZIP.
+    """
+    fichiers = []
+
+    def ajouter(nom, donnees):
+        try:
+            if donnees is None:
+                return
+            contenu = bytes(donnees)
+            if contenu:
+                fichiers.append((nettoyer_nom_fichier(str(nom)), contenu))
+        except Exception:
+            return
+
+    # 1) TOUS les bulletins de la classe, pas seulement un bulletin de référence.
+    try:
+        df_cls = st.session_state.eleves_db.copy()
+        if "Classe" in df_cls.columns:
+            df_cls = df_cls[df_cls["Classe"].astype(str) == str(classe)]
+        df_cls = trier_eleves_par_nom(df_cls)
+        for index, (_, row) in enumerate(df_cls.iterrows(), start=1):
+            eleve = str(row.get("Nom Complet", "")).strip()
+            if not eleve:
+                continue
+            try:
+                bulletin = calculer_bulletin_eleve(classe, eleve, periode)
+                pdf = generer_pdf_bulletin(bulletin)
+                ajouter(
+                    f"Bulletins/{index:02d}_{eleve}_{periode}.pdf",
+                    pdf
+                )
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # 2) Documents administratifs de la classe.
+    generateurs = [
+        (f"Documents/Emploi_du_temps_{classe}.pdf",
+         lambda: generer_pdf_edt(classe, get_or_create_edt(classe))),
+        (f"Documents/Cahier_de_texte_{classe}.pdf",
+         lambda: generer_pdf_cahier_texte(classe)),
+        (f"Documents/Fiche_Eleves_{classe}.pdf",
+         lambda: generer_pdf_liste_eleves_classe(classe)),
+        (f"Vie_scolaire/Registre_Absences_{classe}.pdf",
+         lambda: generer_pdf_registre_absences(classe)),
+        (f"Vie_scolaire/Suivi_Presences_Absences_Retards_{classe}.pdf",
+         lambda: generer_pdf_suivi_absences(classe)),
+        (f"Progression/Progression_{classe}.pdf",
+         lambda: generer_pdf_fiche_progression_classe(classe)),
+    ]
+
+    for nom, fonction in generateurs:
+        try:
+            ajouter(nom, fonction())
+        except Exception:
+            # Un document défaillant ne doit pas supprimer les autres téléchargements.
+            continue
+
+    if not fichiers:
+        return b""
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for nom, contenu in fichiers:
+            zf.writestr(nom, contenu)
+    return buffer.getvalue()
 
 
 # ==========================================
@@ -2468,120 +2397,245 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             if df_synth_abs:
                 st.markdown("#### 📊 Synthèse par élève")
                 st.dataframe(pd.DataFrame(df_synth_abs), use_container_width=True, hide_index=True)
-            st.download_button(
-                "📥 Télécharger le registre Présences / Absences / Retards (PDF)",
-                generer_pdf_suivi_absences(classe_abs_admin),
-                f"Registre_Vie_Scolaire_{nettoyer_nom_fichier(classe_abs_admin)}.pdf",
-                "application/pdf",
-                key="dl_registre_vie_admin"
-            )
+            # Génération protégée : une erreur PDF ne doit JAMAIS empêcher l'affichage
+            # des autres onglets de l'administration.
+            try:
+                _pdf_vie_admin = generer_pdf_suivi_absences(classe_abs_admin)
+            except Exception as _err_vie_admin:
+                _pdf_vie_admin = None
+                st.warning(f"Le PDF de vie scolaire est temporairement indisponible : {_err_vie_admin}")
+            if _pdf_vie_admin:
+                st.download_button(
+                    "📥 Télécharger le registre Présences / Absences / Retards (PDF)",
+                    _pdf_vie_admin,
+                    f"Registre_Vie_Scolaire_{nettoyer_nom_fichier(classe_abs_admin)}.pdf",
+                    "application/pdf",
+                    key="dl_registre_vie_admin"
+                )
 
         with adm_tab11:
-            st.markdown("### 📥 Téléchargements XXL & Bulletins Scolaires Officiels")
-    
-            classe_bul_sel = st.selectbox(
-                "Sélectionner la classe pour les rapports et bulletins", 
-                st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"], 
-                key="cls_bul_admin"
+            st.markdown("### 📥 TÉLÉCHARGEMENTS XXL — CENTRE DOCUMENTAIRE COMPLET")
+            st.markdown("""
+            <div class="tab-xxl-title">
+                <span class="tab-xxl-badge">CENTRE DOCUMENTAIRE OFFICIEL</span>
+                <h2>📥 TOUT TÉLÉCHARGER AU MÊME ENDROIT</h2>
+                <p>
+                Bulletins individuels • ZIP bulletins • emploi du temps • fiche élèves
+                • cahier de texte • registres • vie scolaire • progression • ZIP complet.
+                </p>
+            </div>
+            """, unsafe_allow_html=True)
+
+            classes_disponibles = (
+                st.session_state.classes_db["Classe"].dropna().astype(str).tolist()
+                if not st.session_state.classes_db.empty and "Classe" in st.session_state.classes_db.columns
+                else ["CP"]
             )
-            periodes_bul = obtenir_periodes_pour_classe(classe_bul_sel)
-            periode_bul_sel = st.selectbox("Sélectionner la période", periodes_bul, key="per_bul_admin")
-            
-            df_el_bul = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe_bul_sel]
-            
-            if df_el_bul.empty:
-                st.warning("Aucun élève dans cette classe.")
-            else:
-                df_el_bul = trier_eleves_par_nom(df_el_bul)
-                eleve_sel_bul = st.selectbox(
-                    "Sélectionner l'élève", 
-                    df_el_bul["Nom Complet"].tolist(), 
-                    key="el_bul_admin"
-                )
-                
-                # Bulletin individuel : génération directe et données binaires sûres.
-                try:
-                    bul_data = calculer_bulletin_eleve(
-                        classe_bul_sel, eleve_sel_bul, periode_bul_sel
-                    )
-                    pdf_bytes = generer_pdf_bulletin(bul_data)
+            classes_disponibles = list(dict.fromkeys(classes_disponibles)) or ["CP"]
 
-                    if not pdf_bytes:
-                        st.error("Le bulletin a été généré sans contenu : téléchargement bloqué.")
-                    else:
-                        st.download_button(
-                            label="📥 Télécharger le Bulletin Officiel (PDF)",
-                            data=pdf_bytes,
-                            file_name=(
-                                f"Bulletin_{nettoyer_nom_fichier(eleve_sel_bul)}_"
-                                f"{nettoyer_nom_fichier(periode_bul_sel)}.pdf"
-                            ),
-                            mime="application/pdf",
-                            key=f"dl_bulletin_official_{nettoyer_nom_fichier(classe_bul_sel)}_"
-                                f"_{nettoyer_nom_fichier(eleve_sel_bul)}_{nettoyer_nom_fichier(periode_bul_sel)}",
-                        )
-                except Exception as e:
-                    st.error(f"Erreur réelle pendant la génération du bulletin : {e}")
-
-                st.markdown("### 📦 Bulletins de toute la classe")
-                try:
-                    zip_bulletins = generer_zip_bulletins_classe(
-                        classe_bul_sel, periode_bul_sel
-                    )
-                    if zip_bulletins:
-                        st.download_button(
-                            label="📦 Télécharger TOUS les bulletins de la classe (ZIP)",
-                            data=zip_bulletins,
-                            file_name=(
-                                f"Bulletins_{nettoyer_nom_fichier(classe_bul_sel)}_"
-                                f"{nettoyer_nom_fichier(periode_bul_sel)}.zip"
-                            ),
-                            mime="application/zip",
-                            key=f"dl_bulletins_classe_{nettoyer_nom_fichier(classe_bul_sel)}_"
-                                f"_{nettoyer_nom_fichier(periode_bul_sel)}",
-                        )
-                        st.success(
-                            "ZIP prêt : chaque élève possède maintenant son bulletin PDF séparé."
-                        )
-                    else:
-                        st.error(
-                            "Le ZIP serait vide : aucun bulletin PDF n'a pu être généré pour cette classe."
-                        )
-                except Exception as e:
-                    st.error(f"Erreur réelle pendant la création du ZIP : {e}")
+            classe_bul_sel = st.selectbox(
+                "🏫 Classe à télécharger",
+                classes_disponibles,
+                key="cls_bul_admin_xxl_definitif"
+            )
+            periodes_bul = obtenir_periodes_pour_classe(classe_bul_sel) or ["Semestre 1"]
+            periode_bul_sel = st.selectbox(
+                "📅 Période des bulletins",
+                periodes_bul,
+                key="per_bul_admin_xxl_definitif"
+            )
 
             st.markdown("---")
-            st.markdown("#### Génération des Documents Officiels de la Classe")
-            col_d1, col_d2, col_d3 = st.columns(3)
-            with col_d1:
-                if st.button("📄 Emploi du Temps (PDF)"):
-                    pdf_edt = generer_pdf_edt(classe_bul_sel, get_or_create_edt(classe_bul_sel))
-                    st.download_button("Télécharger EDT", pdf_edt, f"EDT_{classe_bul_sel}.pdf", "application/pdf")
-            with col_d2:
-                if st.button("📑 Cahier de Texte (PDF)"):
-                    pdf_ct = generer_pdf_cahier_texte(classe_bul_sel)
-                    st.download_button("Télécharger Cahier Texte", pdf_ct, f"CahierTexte_{classe_bul_sel}.pdf", "application/pdf")
-            with col_d3:
-                if st.button("📋 Liste des Élèves (PDF)"):
-                    pdf_liste = generer_pdf_liste_eleves_classe(classe_bul_sel)
-                    st.download_button("Télécharger Liste", pdf_liste, f"ListeEleves_{classe_bul_sel}.pdf", "application/pdf")
-            st.markdown("#### 📈 Progression & Vie scolaire")
-            col_d4, col_d5 = st.columns(2)
-            with col_d4:
-                pdf_prog_dl = generer_pdf_fiche_progression_classe(classe_bul_sel)
+            st.markdown("## 🎓 1. BULLETINS")
+
+            df_el_bul = st.session_state.eleves_db.copy()
+            if "Classe" in df_el_bul.columns:
+                df_el_bul = df_el_bul[
+                    df_el_bul["Classe"].astype(str) == str(classe_bul_sel)
+                ]
+            df_el_bul = trier_eleves_par_nom(df_el_bul)
+
+            if df_el_bul.empty:
+                st.warning("Aucun élève enregistré dans cette classe.")
+            else:
+                noms_eleves_xxl = df_el_bul["Nom Complet"].astype(str).tolist()
+                eleve_sel_bul = st.selectbox(
+                    "👤 Élève pour le bulletin individuel",
+                    noms_eleves_xxl,
+                    key="el_bul_admin_xxl_definitif"
+                )
+
+                b1, b2 = st.columns(2)
+                with b1:
+                    try:
+                        _pdf_bul = generer_pdf_bulletin(
+                            calculer_bulletin_eleve(
+                                classe_bul_sel, eleve_sel_bul, periode_bul_sel
+                            )
+                        )
+                    except Exception as _e:
+                        _pdf_bul = None
+                        st.warning(f"Bulletin individuel indisponible : {_e}")
+                    if _pdf_bul:
+                        st.download_button(
+                            "📄 BULLETIN INDIVIDUEL — PDF",
+                            _pdf_bul,
+                            f"Bulletin_{nettoyer_nom_fichier(eleve_sel_bul)}_{nettoyer_nom_fichier(periode_bul_sel)}.pdf",
+                            "application/pdf",
+                            key="dl_bulletin_individuel_xxl_definitif"
+                        )
+
+                with b2:
+                    try:
+                        _zip_bul = generer_zip_bulletins_classe(
+                            classe_bul_sel, periode_bul_sel
+                        )
+                    except Exception as _e:
+                        _zip_bul = None
+                        st.warning(f"ZIP bulletins indisponible : {_e}")
+                    if _zip_bul:
+                        st.download_button(
+                            "📦 TOUS LES BULLETINS DE LA CLASSE — ZIP",
+                            _zip_bul,
+                            f"Bulletins_{nettoyer_nom_fichier(classe_bul_sel)}_{nettoyer_nom_fichier(periode_bul_sel)}.zip",
+                            "application/zip",
+                            key="dl_bulletins_classe_xxl_definitif"
+                        )
+                    else:
+                        st.info("Aucun bulletin PDF disponible pour cette classe/période.")
+
+            st.markdown("---")
+            st.markdown("## 🏫 2. DOCUMENTS SCOLAIRES")
+
+            d1, d2, d3 = st.columns(3)
+
+            with d1:
+                try:
+                    _edt = generer_pdf_edt(
+                        classe_bul_sel, get_or_create_edt(classe_bul_sel)
+                    )
+                except Exception as _e:
+                    _edt = None
+                    st.warning(f"Emploi du temps indisponible : {_e}")
+                if _edt:
+                    st.download_button(
+                        "📅 EMPLOI DU TEMPS — PDF",
+                        _edt,
+                        f"EDT_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                        "application/pdf",
+                        key="dl_edt_xxl_definitif"
+                    )
+
+            with d2:
+                try:
+                    _cahier = generer_pdf_cahier_texte(classe_bul_sel)
+                except Exception as _e:
+                    _cahier = None
+                    st.warning(f"Cahier de texte indisponible : {_e}")
+                if _cahier:
+                    st.download_button(
+                        "📑 CAHIER DE TEXTE / REGISTRE — PDF",
+                        _cahier,
+                        f"CahierTexte_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                        "application/pdf",
+                        key="dl_cahier_xxl_definitif"
+                    )
+
+            with d3:
+                try:
+                    _fiche = generer_pdf_liste_eleves_classe(classe_bul_sel)
+                except Exception as _e:
+                    _fiche = None
+                    st.warning(f"Fiche élèves indisponible : {_e}")
+                if _fiche:
+                    st.download_button(
+                        "📋 FICHE DES ÉLÈVES PAR CLASSE — PDF",
+                        _fiche,
+                        f"FicheEleves_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                        "application/pdf",
+                        key="dl_fiche_eleves_xxl_definitif"
+                    )
+
+            st.markdown("---")
+            st.markdown("## 🕘 3. VIE SCOLAIRE")
+
+            v1, v2 = st.columns(2)
+
+            with v1:
+                try:
+                    _reg_abs = generer_pdf_registre_absences(classe_bul_sel)
+                except Exception as _e:
+                    _reg_abs = None
+                    st.warning(f"Registre des absences indisponible : {_e}")
+                if _reg_abs:
+                    st.download_button(
+                        "🕘 REGISTRE ABSENCES / PRÉSENCES — PDF",
+                        _reg_abs,
+                        f"RegistreAbsences_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                        "application/pdf",
+                        key="dl_registre_absences_xxl_definitif"
+                    )
+
+            with v2:
+                try:
+                    _suivi = generer_pdf_suivi_absences(classe_bul_sel)
+                except Exception as _e:
+                    _suivi = None
+                    st.warning(f"Suivi présences/absences/retards indisponible : {_e}")
+                if _suivi:
+                    st.download_button(
+                        "📊 PRÉSENCES / ABSENCES / RETARDS — PDF",
+                        _suivi,
+                        f"VieScolaire_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
+                        "application/pdf",
+                        key="dl_suivi_absences_xxl_definitif"
+                    )
+
+            st.markdown("---")
+            st.markdown("## 📈 4. PROGRESSION DES PROFESSEURS")
+
+            try:
+                _progression = generer_pdf_fiche_progression_classe(classe_bul_sel)
+            except Exception as _e:
+                _progression = None
+                st.warning(f"Fiche de progression indisponible : {_e}")
+            if _progression:
                 st.download_button(
-                    "📥 Télécharger les fiches de progression",
-                    pdf_prog_dl,
+                    "📈 FICHE DE PROGRESSION — PDF",
+                    _progression,
                     f"Progression_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
                     "application/pdf",
-                    key="dl_progression_downloads"
+                    key="dl_progression_xxl_definitif"
                 )
-            with col_d5:
-                pdf_abs_dl = generer_pdf_suivi_absences(classe_bul_sel)
+
+            st.markdown("---")
+            st.markdown("## 📦 5. TOUTE LA CLASSE EN UN SEUL ZIP")
+            st.info(
+                "Ce ZIP contient TOUS les bulletins individuels disponibles "
+                "ainsi que l'emploi du temps, la fiche élèves, le cahier de texte, "
+                "les registres de vie scolaire et la progression."
+            )
+
+            try:
+                _zip_complet = generer_zip_documents_classe(
+                    classe_bul_sel, periode_bul_sel
+                )
+            except Exception as _e:
+                _zip_complet = None
+                st.warning(f"Archive complète indisponible : {_e}")
+
+            if _zip_complet:
                 st.download_button(
-                    "📥 Télécharger Présences / Absences / Retards",
-                    pdf_abs_dl,
-                    f"VieScolaire_{nettoyer_nom_fichier(classe_bul_sel)}.pdf",
-                    "application/pdf",
-                    key="dl_absences_downloads"
+                    "📦 TÉLÉCHARGER TOUT LE DOSSIER DE LA CLASSE — ZIP",
+                    _zip_complet,
+                    f"Dossier_Complet_{nettoyer_nom_fichier(classe_bul_sel)}_{nettoyer_nom_fichier(periode_bul_sel)}.zip",
+                    "application/zip",
+                    key="dl_dossier_complet_xxl_definitif"
                 )
+            else:
+                st.info("Aucun document n'est actuellement disponible pour cette classe.")
+
+            st.success(
+                "✅ Centre Téléchargements XXL : bulletins, ZIP, emploi du temps, "
+                "fiche élèves, cahier de texte, registres, vie scolaire et progression."
+            )
