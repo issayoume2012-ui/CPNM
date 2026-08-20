@@ -2848,7 +2848,7 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             df_shared = st.session_state.admin_prof_messages
             if not df_shared.empty:
                 df_profs_view = df_shared[(df_shared["Destinataire"].str.contains("Tous|Professeurs|Classe", case=False, na=True)) | (df_shared["Expéditeur"] == "Administration")]
-                for _, r in df_profs_view.iterrows():
+                for idx, (_, r) in enumerate(df_profs_view.iterrows()):
                     st.markdown(f"""
                         <div style="background: white; padding: 15px; border-radius: 12px; border-left: 5px solid #0284C7; margin-bottom: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
                             <b>De :</b> {r.get('Expéditeur')} | <b>Date :</b> {r.get('Date')}<br>
