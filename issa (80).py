@@ -1043,6 +1043,13 @@ if "authenticated_admin" not in st.session_state:
 if "current_admin_email" not in st.session_state:
     st.session_state.current_admin_email = ""
 
+# Année scolaire globale utilisée dans tous les documents officiels.
+# Elle est modifiable par l'administration et reste disponible pendant toute
+# la session Streamlit.
+if "annee_scolaire" not in st.session_state:
+    st.session_state.annee_scolaire = "2026/2027"
+
+
 def recharger_toutes_les_donnees():
     global DB_READ_FAILED
     DB_READ_FAILED=False
@@ -1391,9 +1398,93 @@ def calculer_rang_classe(classe, periode, eleve_nom):
     return f"{rang}er / {len(resultats)}" if rang == 1 else f"{rang}e / {len(resultats)}"
 
 
+def _appreciation_matiere(moyenne_sur_20):
+    """Appréciation automatique commune aux deux cycles, par matière."""
+    try:
+        m = float(moyenne_sur_20)
+    except Exception:
+        return ""
+    if m >= 18:
+        return "Excellent"
+    if m >= 16:
+        return "Très bien"
+    if m >= 14:
+        return "Bien"
+    if m >= 12:
+        return "Assez bien"
+    if m >= 10:
+        return "Passable"
+    if m >= 8:
+        return "Insuffisant"
+    if m >= 5:
+        return "Très insuffisant"
+    return "Résultats très insuffisants"
+
+
+def _extraire_note_float(row, colonne):
+    if row is None or row.empty or colonne not in row.columns:
+        return None
+    try:
+        value = row.iloc[0].get(colonne)
+        if value is None or pd.isna(value) or str(value).strip() == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def calculer_rang_classe(classe, periode, eleve_nom):
+    """Calcule un rang réel uniquement à partir des élèves ayant des notes."""
+    df_cls = st.session_state.eleves_db[
+        st.session_state.eleves_db["Classe"].astype(str) == str(classe)
+    ].copy()
+    if df_cls.empty:
+        return "N/A"
+
+    resultats = []
+    for _, row in df_cls.iterrows():
+        nom = str(row.get("Nom Complet", "")).strip()
+        if not nom:
+            continue
+        try:
+            b = calculer_bulletin_eleve_sans_rang(classe, nom, periode)
+            details = b.get("details_notes", [])
+            if not details:
+                continue
+            score = float(b.get("moyenne_generale", 0))
+            resultats.append((nom, score))
+        except Exception:
+            continue
+
+    if not resultats:
+        return "N/A"
+
+    resultats.sort(key=lambda x: (-x[1], normaliser_texte(x[0])))
+    rang_cible = None
+    cible_norm = normaliser_texte(eleve_nom)
+
+    last_score = None
+    last_rank = 0
+    rangs = {}
+    for idx, (nom, score) in enumerate(resultats, start=1):
+        if last_score is None or round(score, 6) != round(last_score, 6):
+            last_rank = idx
+            last_score = score
+        rangs[normaliser_texte(nom)] = last_rank
+
+    rang_cible = rangs.get(cible_norm)
+    if rang_cible is None:
+        return "N/A"
+
+    suffixe = "er" if rang_cible == 1 else "e"
+    return f"{rang_cible}{suffixe} / {len(resultats)}"
+
+
 def calculer_bulletin_eleve_sans_rang(classe, eleve_nom, periode):
     """Version interne utilisée pour calculer les rangs sans récursion."""
-    return calculer_bulletin_eleve(classe, eleve_nom, periode, calculer_rang=False)
+    return calculer_bulletin_eleve(
+        classe, eleve_nom, periode, calculer_rang=False
+    )
 
 
 def calculer_bulletin_eleve(classe, eleve_nom, periode, calculer_rang=True):
@@ -1401,85 +1492,167 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode, calculer_rang=True):
     elementaire = est_cycle_elementaire(cycle)
     notes_df = st.session_state.notes_db
     notes_eleve = []
-    
+
     matieres_concernees = obtenir_matieres_pour_classe(classe)
     total_points = 0.0
     total_points_possibles = 0.0
     total_coeffs = 0.0
-    
+
+    # Photo éventuelle enregistrée avec l'élève.
+    photo_eleve = ""
+    try:
+        df_el = st.session_state.eleves_db
+        match_el = df_el[
+            df_el["Nom Complet"].astype(str).map(normaliser_texte)
+            == normaliser_texte(eleve_nom)
+        ]
+        if not match_el.empty:
+            photo_eleve = str(match_el.iloc[0].get("Photo", "") or "")
+    except Exception:
+        photo_eleve = ""
+
     for mat in matieres_concernees:
         coef, bareme = obtenir_parametres_matiere(cycle, mat)
         match_note = pd.DataFrame()
+
         if not notes_df.empty:
             match_note = notes_df[
-                (notes_df["Classe"] == classe) & 
-                (notes_df["Matière"] == mat) & 
-                ((notes_df["Periode"] == periode) | (notes_df["Période"] == periode)) & 
-                (notes_df["Eleve"] == eleve_nom)
+                (notes_df["Classe"].astype(str) == str(classe)) &
+                (
+                    notes_df["Matière"].astype(str).map(normaliser_texte)
+                    == normaliser_texte(mat)
+                ) &
+                (
+                    (notes_df["Periode"].astype(str) == str(periode)) |
+                    (notes_df["Période"].astype(str) == str(periode))
+                ) &
+                (
+                    notes_df["Eleve"].astype(str).map(normaliser_texte)
+                    == normaliser_texte(eleve_nom)
+                )
             ]
-        
-        if elementaire:
-            # Élémentaire : on conserve la note/moyenne de chaque matière telle qu'elle existe.
-            # Seule la MOYENNE GÉNÉRALE est normalisée sur 10.
-            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 35.0
-            moy_mat = (comp / bareme) * 20.0 if bareme > 0 else 14.0
-            notes_eleve.append({
-                "matiere": mat, "devoir1": "-", "devoir2": "-", "composition": f"{comp}/{bareme}",
-                "moyenne": round(moy_mat, 2), "coefficient": 1.0
-            })
-            total_points += float(comp)
-            total_points_possibles += float(bareme)
-            total_coeffs += 1.0
-        else:
-            d1 = float(match_note.iloc[0]["Devoir1"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir1")) else 12.0
-            d2 = float(match_note.iloc[0]["Devoir2"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Devoir2")) else 13.0
-            comp = float(match_note.iloc[0]["Composition"]) if not match_note.empty and pd.notna(match_note.iloc[0].get("Composition")) else 14.0
-            moy_mat = (d1 + d2 + (comp * 2)) / 4.0
-            notes_eleve.append({
-                "matiere": mat, "devoir1": d1, "devoir2": d2, "composition": comp,
-                "moyenne": round(moy_mat, 2), "coefficient": coef
-            })
-            total_points += float(moy_mat / 20.0 * bareme * coef)
-            total_points_possibles += float(bareme * coef)
-            total_coeffs += coef
 
-    moy_gen = round(total_points / total_coeffs, 2) if total_coeffs > 0 else 13.5
+        # IMPORTANT : une matière sans note saisie n'apparaît PAS au bulletin.
+        if match_note.empty:
+            continue
+
+        if elementaire:
+            comp = _extraire_note_float(match_note, "Composition")
+            if comp is None or bareme <= 0:
+                continue
+
+            # Note de matière conservée sur son barème d'origine.
+            moy_mat = (comp / float(bareme)) * 20.0
+            moy_mat = max(0.0, min(20.0, moy_mat))
+
+            notes_eleve.append({
+                "matiere": mat,
+                "devoir1": "-",
+                "devoir2": "-",
+                "composition": f"{comp:g}/{bareme:g}",
+                "moyenne": round(moy_mat, 2),
+                "coefficient": "",
+                "appreciation_matiere": _appreciation_matiere(moy_mat),
+            })
+
+            # Moyenne générale correcte : moyenne pondérée des moyennes /20,
+            # puis conversion finale sur 10.
+            total_points += moy_mat
+            total_points_possibles += 20.0
+            total_coeffs += 1.0
+
+        else:
+            d1 = _extraire_note_float(match_note, "Devoir1")
+            d2 = _extraire_note_float(match_note, "Devoir2")
+            comp = _extraire_note_float(match_note, "Composition")
+
+            # Aucun faux 12/13/14 : seules les notes réellement saisies entrent
+            # dans le calcul.
+            composants = []
+            if d1 is not None:
+                composants.append((d1, 1.0))
+            if d2 is not None:
+                composants.append((d2, 1.0))
+            if comp is not None:
+                composants.append((comp, 2.0))
+
+            if not composants:
+                continue
+
+            denom = sum(poids for _, poids in composants)
+            moy_mat = sum(note * poids for note, poids in composants) / denom
+            moy_mat = max(0.0, min(20.0, moy_mat))
+
+            notes_eleve.append({
+                "matiere": mat,
+                "devoir1": d1 if d1 is not None else "-",
+                "devoir2": d2 if d2 is not None else "-",
+                "composition": comp if comp is not None else "-",
+                "moyenne": round(moy_mat, 2),
+                "coefficient": coef,
+                "appreciation_matiere": _appreciation_matiere(moy_mat),
+            })
+
+            total_points += moy_mat * float(coef)
+            total_points_possibles += 20.0 * float(coef)
+            total_coeffs += float(coef)
+
+    # Plus de moyenne fictive si aucune note.
+    moy_gen_sur_20 = (
+        round(total_points / total_coeffs, 2)
+        if total_coeffs > 0 else 0.0
+    )
+
     if elementaire:
-        # IMPORTANT : seule la moyenne générale Élémentaire est convertie sur 10.
-        # Les notes/moyennes par matière restent intactes.
-        moy_gen_affichage = round((moy_gen / 20.0) * 10.0, 2)
+        # L'élémentaire : moyenne générale UNIQUEMENT sur 10.
+        # Elle ne peut donc jamais dépasser 10.
+        moy_gen_affichage = round(
+            max(0.0, min(20.0, moy_gen_sur_20)) / 2.0, 2
+        )
         appreciation = obtenir_appreciation_elementaire(moy_gen_affichage)
         total_bareme = 10
     else:
-        # Collège : logique et échelle existantes conservées intactes.
-        moy_gen_affichage = moy_gen
+        # Le collège reste sur 20.
+        moy_gen_affichage = round(
+            max(0.0, min(20.0, moy_gen_sur_20)), 2
+        )
         appreciation = ""
         total_bareme = 20
 
     vie = obtenir_vie_scolaire_eleve(classe, eleve_nom, periode)
-    rang = "Calcul..."
-    if calculer_rang:
+
+    rang = "N/A"
+    if calculer_rang and notes_eleve:
         rang = calculer_rang_classe(classe, periode, eleve_nom)
+
     points_obtenus = round(total_points, 2)
     points_possibles = round(total_points_possibles, 2)
-    taux_points = round((points_obtenus / points_possibles) * 100, 2) if points_possibles else 0.0
+
     if not appreciation:
         appreciation = vie.get("appreciation", "")
+
     return {
-        "eleve": eleve_nom, "classe": classe, "periode": periode,
-        "moyenne_generale": moy_gen_affichage, "total_bareme": total_bareme,
-        "points_obtenus": points_obtenus, "points_possibles": points_possibles,
+        "eleve": eleve_nom,
+        "classe": classe,
+        "periode": periode,
+        "annee_scolaire": st.session_state.get("annee_scolaire", "2026/2027"),
+        "moyenne_generale": moy_gen_affichage,
+        "total_bareme": total_bareme,
+        "points_obtenus": points_obtenus,
+        "points_possibles": points_possibles,
         "points_affichage": f"{points_obtenus:g} / {points_possibles:g}",
-        "taux_points": taux_points,
+        "taux_points": 0,
         "rang": rang,
-        "decision": vie.get("decision", "À examiner par le conseil de classe"),
+        "decision": "",
         "appreciation": appreciation,
         "conduite": vie.get("conduite", ""),
         "absences": vie.get("absences", 0),
         "retards": vie.get("retards", 0),
         "presents": vie.get("presents", 0),
         "observations_vie_scolaire": vie.get("observations", ""),
-        "details_notes": notes_eleve, "is_elementaire": elementaire
+        "details_notes": notes_eleve,
+        "is_elementaire": elementaire,
+        "photo": photo_eleve,
     }
 
 # ==========================================
@@ -1681,99 +1854,217 @@ def _cell(pdf, w, h, text="", border=1, ln=0, align="L", fill=False):
     pdf.cell(w, h, _pdf_text(text), border, ln, align, fill=fill)
 
 
+def _ajouter_photo_eleve_pdf(pdf, photo_value, x=174, y=29, taille=20):
+    """Ajoute proprement une photo élève si elle est stockée en fichier/base64."""
+    if not photo_value:
+        return
+
+    import tempfile
+    import base64 as _base64
+
+    path = None
+    try:
+        valeur = str(photo_value).strip()
+
+        if valeur.startswith("data:image/"):
+            _, encoded = valeur.split(",", 1)
+            raw = _base64.b64decode(encoded)
+            suffix = ".jpg"
+            if "png" in valeur[:40].lower():
+                suffix = ".png"
+            path = os.path.join(
+                tempfile.gettempdir(),
+                f"yam_photo_{abs(hash(valeur))}{suffix}"
+            )
+            with open(path, "wb") as f:
+                f.write(raw)
+
+        elif os.path.isfile(valeur):
+            path = valeur
+
+        elif valeur.startswith("base64:"):
+            raw = _base64.b64decode(valeur.split(":", 1)[1])
+            path = os.path.join(
+                tempfile.gettempdir(),
+                f"yam_photo_{abs(hash(valeur))}.jpg"
+            )
+            with open(path, "wb") as f:
+                f.write(raw)
+
+        if path and os.path.isfile(path):
+            # Cadre discret et photo harmonisée.
+            pdf.set_draw_color(148, 163, 184)
+            pdf.set_fill_color(248, 250, 252)
+            pdf.rect(x - 1, y - 1, taille + 2, taille + 2, "FD")
+            pdf.image(path, x, y, taille, taille)
+    except Exception:
+        # Une photo défectueuse ne doit jamais empêcher le bulletin.
+        pass
+
+
 def generer_pdf_bulletin(bul):
-    """Bulletin officiel moderne, Unicode, lisible et complet."""
+    """Bulletin officiel moderne, compact, Unicode et adapté aux deux cycles."""
     pdf = YAMPDF("P", "mm", "A4")
-    pdf.set_auto_page_break(True, 18)
+    pdf.set_auto_page_break(True, 15)
     pdf.add_page()
     ajouter_en_tete_officiel_pdf(pdf, "BULLETIN SCOLAIRE OFFICIEL")
 
     eleve = _pdf_text(bul.get("eleve", ""))
     classe = _pdf_text(bul.get("classe", ""))
     periode = _pdf_text(bul.get("periode", ""))
-    echelle = 10 if bul.get("is_elementaire", False) else 20
+    annee = _pdf_text(
+        bul.get("annee_scolaire")
+        or st.session_state.get("annee_scolaire", "2026/2027")
+    )
+    elementaire = bool(bul.get("is_elementaire", False))
+    echelle = 10 if elementaire else 20
 
-    # Bloc identité
+    # Bloc identité : zone texte à gauche + photo élève harmonisée à droite.
     y = pdf.get_y()
     pdf.set_draw_color(2, 132, 199)
     pdf.set_fill_color(240, 249, 255)
-    pdf.rect(12, y, 186, 18, "FD")
+    pdf.rect(12, y, 186, 24, "FD")
     pdf.set_y(y + 3)
-    pdf.set_font("Arial", "B", 9)
-    _cell(pdf, 93, 5, f"Élève : {eleve}", 0, 0, "L")
-    _cell(pdf, 93, 5, f"Classe : {classe}", 0, 1, "R")
-    _cell(pdf, 93, 5, f"Période : {periode}", 0, 0, "L")
-    _cell(pdf, 93, 5, "Année scolaire : document officiel", 0, 1, "R")
-    pdf.set_y(y + 22)
 
-    # Tableau des notes
+    pdf.set_font("Arial", "B", 8.5)
+    _cell(pdf, 155, 5, f"Élève : {eleve}", 0, 1, "L")
+    _cell(pdf, 155, 5, f"Classe : {classe}", 0, 1, "L")
+    _cell(pdf, 155, 5, f"Période : {periode}", 0, 1, "L")
+    _cell(pdf, 155, 5, f"Année scolaire : {annee}", 0, 1, "L")
+
+    _ajouter_photo_eleve_pdf(
+        pdf, bul.get("photo", ""), x=175, y=y + 2, taille=18
+    )
+    pdf.set_y(y + 28)
+
+    # Tableau des notes.
     pdf.set_font("Arial", "B", 8)
     pdf.set_fill_color(15, 118, 168)
     pdf.set_text_color(255, 255, 255)
-    if bul.get("is_elementaire", False):
-        cols = [(58, "Matière"), (48, "Note / Barème"), (42, "Moyenne /20"), (32, "Coeff.")]
+
+    if elementaire:
+        # Élémentaire : PAS de moyenne /20 et PAS de coefficient.
+        cols = [
+            (57, "Matière"),
+            (43, "Note / Barème"),
+            (90, "Appréciation"),
+        ]
     else:
-        cols = [(45, "Matière"), (27, "Devoir 1"), (27, "Devoir 2"), (27, "Composition"), (22, "Coeff."), (42, "Moyenne /20")]
+        # Collège : moyenne /20 + coefficient conservés.
+        cols = [
+            (39, "Matière"),
+            (24, "Devoir 1"),
+            (24, "Devoir 2"),
+            (25, "Composition"),
+            (23, "Coeff."),
+            (35, "Moyenne /20"),
+            (20, "Appréciation"),
+        ]
+
     for i, (w, label) in enumerate(cols):
-        _cell(pdf, w, 7, label, 1, 1 if i == len(cols)-1 else 0, "C", True)
+        _cell(pdf, w, 7, label, 1, 1 if i == len(cols) - 1 else 0, "C", True)
+
     pdf.set_text_color(15, 23, 42)
-    pdf.set_font("Arial", "", 7.7)
+    pdf.set_font("Arial", "", 7.1)
 
     lignes = bul.get("details_notes", [])
     if not lignes:
-        _cell(pdf, 190, 8, "Aucune note enregistrée pour cette période.", 1, 1, "C")
+        _cell(
+            pdf, 190, 8,
+            "Aucune note enregistrée pour cette période.",
+            1, 1, "C"
+        )
     else:
         for d in lignes:
-            if bul.get("is_elementaire", False):
+            appreciation_mat = _pdf_text(
+                d.get("appreciation_matiere", "")
+            )
+            if elementaire:
                 vals = [
-                    (_pdf_text(d.get("matiere", ""))[:30], 58, "L"),
-                    (_pdf_text(d.get("composition", "")), 48, "C"),
-                    (_pdf_text(d.get("moyenne", "")), 42, "C"),
-                    (_pdf_text(d.get("coefficient", "1")), 32, "C"),
+                    (_pdf_text(d.get("matiere", ""))[:34], 57, "L"),
+                    (_pdf_text(d.get("composition", "")), 43, "C"),
+                    (appreciation_mat[:48], 90, "L"),
                 ]
             else:
                 vals = [
-                    (_pdf_text(d.get("matiere", ""))[:24], 45, "L"),
-                    (_pdf_text(d.get("devoir1", "")), 27, "C"),
-                    (_pdf_text(d.get("devoir2", "")), 27, "C"),
-                    (_pdf_text(d.get("composition", "")), 27, "C"),
-                    (_pdf_text(d.get("coefficient", "1")), 22, "C"),
-                    (_pdf_text(d.get("moyenne", "")), 42, "C"),
+                    (_pdf_text(d.get("matiere", ""))[:22], 39, "L"),
+                    (_pdf_text(d.get("devoir1", "")), 24, "C"),
+                    (_pdf_text(d.get("devoir2", "")), 24, "C"),
+                    (_pdf_text(d.get("composition", "")), 25, "C"),
+                    (_pdf_text(d.get("coefficient", "1")), 23, "C"),
+                    (_pdf_text(d.get("moyenne", "")), 35, "C"),
+                    (appreciation_mat[:18], 20, "C"),
                 ]
-            for i, (val, w, align) in enumerate(vals):
-                _cell(pdf, w, 6, val, 1, 1 if i == len(vals)-1 else 0, align)
 
-    # Cadre de synthèse
-    pdf.ln(6)
+            for i, (val, w, align) in enumerate(vals):
+                _cell(
+                    pdf, w, 6, val, 1,
+                    1 if i == len(vals) - 1 else 0,
+                    align
+                )
+
+    # Synthèse compacte.
+    pdf.ln(5)
     y = pdf.get_y()
     pdf.set_draw_color(2, 132, 199)
     pdf.set_fill_color(248, 250, 252)
-    pdf.rect(12, y, 186, 61, "FD")
+    pdf.rect(12, y, 186, 48, "FD")
     pdf.set_y(y + 4)
     pdf.set_font("Arial", "B", 9)
+
     moyenne = bul.get("moyenne_generale", 0)
+    try:
+        moyenne = float(moyenne)
+    except Exception:
+        moyenne = 0.0
+    moyenne = max(0.0, min(10.0 if elementaire else 20.0, moyenne))
+    moyenne_txt = f"{moyenne:g}"
+
     rang = bul.get("rang")
-    rang_aff = "Non classé" if rang in (None, "", "Calcul...", "None") else str(rang)
-    _cell(pdf, 93, 6, f"Moyenne générale : {moyenne} / {echelle}", 0, 0, "L")
+    rang_aff = (
+        "Non classé"
+        if rang in (None, "", "Calcul...", "None", "N/A")
+        else str(rang)
+    )
+
+    _cell(
+        pdf, 93, 6,
+        f"Moyenne générale : {moyenne_txt} / {echelle}",
+        0, 0, "L"
+    )
     _cell(pdf, 93, 6, f"Rang : {rang_aff}", 0, 1, "R")
-    _cell(pdf, 93, 6, f"Points obtenus / possibles : {bul.get('points_affichage', '0 / 0')}", 0, 0, "L")
-    _cell(pdf, 93, 6, f"Taux de réussite : {bul.get('taux_points', 0)} %", 0, 1, "R")
-    _cell(pdf, 93, 6, f"Présences : {bul.get('presents', 0)}", 0, 0, "L")
-    _cell(pdf, 93, 6, f"Absences : {bul.get('absences', 0)}   •   Retards : {bul.get('retards', 0)}", 0, 1, "R")
+    _cell(
+        pdf, 93, 6,
+        f"Points obtenus / possibles : {bul.get('points_affichage', '0 / 0')}",
+        0, 0, "L"
+    )
+    _cell(
+        pdf, 93, 6,
+        f"Absences : {bul.get('absences', 0)}   •   Retards : {bul.get('retards', 0)}",
+        0, 1, "R"
+    )
 
     pdf.set_font("Arial", "B", 8.5)
-    appreciation = _pdf_text(bul.get("appreciation", "")) or "Aucune appréciation renseignée."
-    conduite = _pdf_text(bul.get("conduite", "")) or "À renseigner"
-    decision = _pdf_text(bul.get("decision", "")) or "À examiner par le conseil de classe"
-    observation = _pdf_text(bul.get("observations_vie_scolaire", ""))
-    _cell(pdf, 190, 6, f"Appréciation : {appreciation}", 0, 1, "L")
-    _cell(pdf, 190, 6, f"Conduite : {conduite}", 0, 1, "L")
-    _cell(pdf, 190, 6, f"Décision : {decision}", 0, 1, "L")
-    if observation:
-        pdf.set_font("Arial", "", 8)
-        _cell(pdf, 190, 6, f"Observation : {observation}", 0, 1, "L")
+    appreciation = _pdf_text(
+        bul.get("appreciation", "")
+    ) or "Aucune appréciation renseignée."
+    conduite = _pdf_text(
+        bul.get("conduite", "")
+    ) or "À renseigner"
 
-    pdf.set_y(y + 65)
+    _cell(
+        pdf, 190, 6,
+        f"Appréciation générale : {appreciation}",
+        0, 1, "L"
+    )
+    _cell(
+        pdf, 190, 6,
+        f"Conduite : {conduite}",
+        0, 1, "L"
+    )
+
+    # Décision volontairement vide, conformément à la demande.
+    pdf.set_y(y + 52)
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
 
@@ -2586,7 +2877,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             "📅 EDT Global",
             "📈 Progression Professeurs",
             "🕘 Présences • Absences • Retards",
-            "📥 Téléchargements XXL & Bulletins",
+            "📥 Téléchargements & Bulletins",
             "💬 Messages Professeurs"
         ])
 
@@ -2600,6 +2891,15 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     st.error("❌ Reconnexion échouée. Aucune donnée n'a été modifiée.")
             if st.session_state.get("supabase_counts"):
                 st.caption(" | ".join(f"{k}: {v}" for k,v in st.session_state["supabase_counts"].items()))
+
+            st.markdown("### 📅 Paramètres de l'année scolaire")
+            st.session_state.annee_scolaire = st.text_input(
+                "Année scolaire utilisée sur les bulletins et documents officiels",
+                value=st.session_state.get("annee_scolaire", "2026/2027"),
+                key="annee_scolaire_admin"
+            ).strip() or "2026/2027"
+            st.caption("Exemple : 2026/2027. Cette valeur est reprise automatiquement dans les PDF.")
+
             st.markdown(f"### 🛡️ Gestion de la Liste Blanche des Administrateurs")
             edited_admin_wl = st.data_editor(
                 st.session_state.admin_white_list,
@@ -2628,23 +2928,41 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                     st.error("Erreur lors de la sauvegarde des élèves.")
 
             st.markdown("### 📥 Document de l’onglet Élèves")
-            st.caption("La fiche des élèves est maintenant téléchargeable directement ici.")
-            try:
-                _fiche_eleves_tab = generer_pdf_liste_eleves_classe(
-                    str(st.session_state.eleves_db.iloc[0]["Classe"])
-                ) if not st.session_state.eleves_db.empty else None
-            except Exception as _e_fiche:
-                _fiche_eleves_tab = None
-                st.warning(f"Fiche élèves indisponible : {_e_fiche}")
-            if _fiche_eleves_tab:
-                st.download_button(
-                    "📋 Télécharger la fiche des élèves — PDF",
-                    _fiche_eleves_tab,
-                    "Fiche_Eleves_Classe.pdf",
-                    "application/pdf",
-                    key="dl_fiche_eleves_onglet_eleves",
-                    use_container_width=True
+            st.caption("Choisissez la classe puis téléchargez sa fiche officielle.")
+            _classes_eleves_download = (
+                st.session_state.classes_db["Classe"].dropna().astype(str).tolist()
+                if not st.session_state.classes_db.empty
+                else []
+            )
+            if not _classes_eleves_download and not st.session_state.eleves_db.empty:
+                _classes_eleves_download = (
+                    st.session_state.eleves_db["Classe"]
+                    .dropna().astype(str).drop_duplicates().tolist()
                 )
+            if _classes_eleves_download:
+                _classe_fiche_eleves = st.selectbox(
+                    "🏫 Classe de la fiche des élèves",
+                    list(dict.fromkeys(_classes_eleves_download)),
+                    key="classe_fiche_eleves_onglet"
+                )
+                try:
+                    _fiche_eleves_tab = generer_pdf_liste_eleves_classe(
+                        _classe_fiche_eleves
+                    )
+                except Exception as _e_fiche:
+                    _fiche_eleves_tab = None
+                    st.warning(f"Fiche élèves indisponible : {_e_fiche}")
+                if _fiche_eleves_tab:
+                    st.download_button(
+                        "📋 Télécharger la fiche des élèves — PDF",
+                        _fiche_eleves_tab,
+                        f"Fiche_Eleves_{nettoyer_nom_fichier(_classe_fiche_eleves)}.pdf",
+                        "application/pdf",
+                        key="dl_fiche_eleves_onglet_eleves",
+                        use_container_width=True
+                    )
+            else:
+                st.info("Aucune classe disponible pour générer une fiche.")
 
         with adm_tab2:
             st.markdown("""
@@ -2949,16 +3267,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             st.markdown("### 📥 Télécharger l’emploi du temps de la classe")
             try:
                 _edt_tab = generer_pdf_edt(
-                    classe_edt_global if "classe_edt_global" in locals() else (
-                        st.session_state.classes_db["Classe"].dropna().astype(str).iloc[0]
-                        if not st.session_state.classes_db.empty else "CP"
-                    ),
-                    get_or_create_edt(
-                        classe_edt_global if "classe_edt_global" in locals() else (
-                            st.session_state.classes_db["Classe"].dropna().astype(str).iloc[0]
-                            if not st.session_state.classes_db.empty else "CP"
-                        )
-                    )
+                    classe_edt_admin,
+                    edited_edt
                 )
             except Exception as _e_edt_tab:
                 _edt_tab = None
@@ -2967,7 +3277,7 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.download_button(
                     "📅 Télécharger l’emploi du temps — PDF",
                     _edt_tab,
-                    "Emploi_du_temps.pdf",
+                    f"Emploi_du_temps_{nettoyer_nom_fichier(classe_edt_admin)}.pdf",
                     "application/pdf",
                     key="dl_edt_onglet_edt",
                     use_container_width=True
@@ -3174,6 +3484,8 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 st.info("Aucun fichier n'est actuellement disponible pour cette classe.")
 
             st.success(
-                "✅ Centre Téléchargements XXL : bulletins, ZIP, emploi du temps, "
-                "fiche élèves, cahier de texte, registres, vie scolaire et progression."
+                "✅ Centre Téléchargements : bulletins et dossier/fichiers regroupés. "
+                "Les autres documents restent dans leurs onglets respectifs."
             )
+
+
