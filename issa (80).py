@@ -16,27 +16,59 @@ from psycopg2.extras import RealDictCursor
 # ==========================================
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
 # ==========================================
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+DB_LAST_ERROR = ""
+DB_READ_FAILED = False
+DB_CONNECTED = False
 
-def get_db_connection():
-    """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
+def _secret(section, key, default=""):
     try:
-        if "postgres" in st.secrets:
-            conn = psycopg2.connect(
-                host=st.secrets["postgres"]["host"],
-                database=st.secrets["postgres"]["database"],
-                user=st.secrets["postgres"]["user"],
-                password=st.secrets["postgres"]["password"],
-                port=st.secrets["postgres"]["port"],
-                connect_timeout=5
-            )
-        else:
-            if not DATABASE_URL:
-                return None
-            conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
-        return conn
-    except Exception as e:
-        return None
+        if section in st.secrets:
+            value = st.secrets[section].get(key, default)
+            return "" if value is None else str(value).strip()
+    except Exception:
+        pass
+    return ""
+
+def _database_configs():
+    configs=[]
+    for value in (DATABASE_URL, os.environ.get("SUPABASE_DB_URL", "").strip(), os.environ.get("POSTGRES_URL", "").strip()):
+        if value and value not in configs:
+            configs.append(value)
+    for section in ("postgres", "supabase"):
+        host=_secret(section,"host")
+        database=_secret(section,"database") or _secret(section,"dbname")
+        user=_secret(section,"user") or _secret(section,"username")
+        password=_secret(section,"password")
+        port=_secret(section,"port") or "5432"
+        sslmode=_secret(section,"sslmode") or "require"
+        if host and database and user and password:
+            try: port=int(port)
+            except Exception: port=5432
+            configs.append({"host":host,"database":database,"user":user,"password":password,"port":port,"sslmode":sslmode})
+    return configs
+
+def get_db_connection(show_error=False):
+    global DB_LAST_ERROR, DB_CONNECTED
+    DB_CONNECTED=False; DB_LAST_ERROR=""; errors=[]
+    for cfg in _database_configs():
+        try:
+            if isinstance(cfg,str):
+                conn=psycopg2.connect(cfg,connect_timeout=12,sslmode="require",application_name="YAM_Ecole")
+            else:
+                conn=psycopg2.connect(**cfg,connect_timeout=12,application_name="YAM_Ecole")
+            with conn.cursor() as cur:
+                cur.execute("SELECT current_database(), current_user;"); cur.fetchone()
+            DB_CONNECTED=True
+            return conn
+        except Exception as e:
+            errors.append(f"{type(e).__name__}: {e}")
+    DB_LAST_ERROR=" | ".join(errors) if errors else "Aucune configuration Supabase/PostgreSQL valide dans les secrets."
+    if show_error:
+        st.error("❌ Supabase inaccessible. Aucune donnée n'a été supprimée ni remplacée.")
+        with st.expander("Diagnostic technique sécurisé"):
+            st.code(DB_LAST_ERROR)
+    return None
 
 def init_db():
     """Initialise toutes les tables dans Supabase / PostgreSQL avec toutes les colonnes requises."""
@@ -239,23 +271,25 @@ def nettoyer_date(val):
     return val_str
 
 def load_table_from_db(query, columns):
-    """Charge une table avec vérification dynamique et gestion propre des reconnexions."""
-    conn = get_db_connection()
+    global DB_READ_FAILED, DB_LAST_ERROR
+    conn=get_db_connection()
     if conn is None:
+        DB_READ_FAILED=True
         return pd.DataFrame(columns=columns)
     try:
-        df = pd.read_sql(query, conn)
-        if df.empty:
-            return pd.DataFrame(columns=columns)
-        return df
-    except Exception:
+        df=pd.read_sql(query,conn)
+        return df if not df.empty else pd.DataFrame(columns=columns)
+    except Exception as e:
+        DB_READ_FAILED=True
+        DB_LAST_ERROR=f"Lecture SQL : {type(e).__name__}: {e}"
+        print(f"[YAM][SUPABASE] {DB_LAST_ERROR}")
         return pd.DataFrame(columns=columns)
     finally:
-        if conn:
-            conn.close()
+        try: conn.close()
+        except Exception: pass
 
 def save_df_to_db(df: pd.DataFrame, table_name: str):
-    conn = get_db_connection()
+    conn = get_db_connection(show_error=True)
     if conn is None:
         st.error("Impossible d'établir la connexion à la base de données Supabase.")
         return False
@@ -382,6 +416,33 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
     finally:
         if conn:
             conn.close()
+
+def verifier_et_recharger_supabase():
+    global DB_READ_FAILED, DB_LAST_ERROR
+    DB_READ_FAILED=False; DB_LAST_ERROR=""
+    conn=get_db_connection(show_error=True)
+    if conn is None: return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT current_database(), current_user, NOW();")
+            db_name,db_user,db_now=cur.fetchone()
+            tables=["eleves","classes","prof_white_list","admin_white_list","matieres","notes","vie_scolaire","absences","edt_grid","cahier_textes","admin_prof_messages","admin_assignations_travail","fiches_progression_classe"]
+            counts={}
+            for table in tables:
+                cur.execute(f'SELECT COUNT(*) FROM "{table}";'); counts[table]=cur.fetchone()[0]
+        st.session_state["supabase_db_name"]=db_name
+        st.session_state["supabase_db_user"]=db_user
+        st.session_state["supabase_db_now"]=str(db_now)
+        st.session_state["supabase_counts"]=counts
+    except Exception as e:
+        DB_LAST_ERROR=f"Diagnostic Supabase : {type(e).__name__}: {e}"
+        st.error(DB_LAST_ERROR); return False
+    finally:
+        try: conn.close()
+        except Exception: pass
+    recharger_toutes_les_donnees()
+    synchroniser_edt_global()
+    return not DB_READ_FAILED
 
 # ==========================================
 # 0. BIS. SÉCURITÉ & AUTHENTIFICATION
@@ -610,6 +671,16 @@ st.markdown("<style>[data-testid=\"stToolbar\"] { display: none; } footer { visi
 # ==========================================
 # 2. INITIALISATION DES ÉTATS & RECHARGEMENT DYNAMIQUE
 # ==========================================
+_conn_start=get_db_connection()
+if _conn_start is None:
+    st.error("🔴 SUPABASE NON CONNECTÉ")
+    st.warning("Les données enregistrées dans Supabase ne sont pas considérées comme perdues. Reconnectez la même base avant toute sauvegarde.")
+    st.info("Streamlit Cloud → Settings → Secrets : vérifiez [postgres] ou [supabase], ou DATABASE_URL, puis faites Reboot.")
+    with st.expander("Diagnostic technique sécurisé", expanded=True):
+        st.code(DB_LAST_ERROR or "Configuration Supabase absente.")
+    st.stop()
+try: _conn_start.close()
+except Exception: pass
 if "espace_actif" not in st.session_state:
     st.session_state.espace_actif = "🏠 Accueil"
 
@@ -619,6 +690,8 @@ if "current_admin_email" not in st.session_state:
     st.session_state.current_admin_email = ""
 
 def recharger_toutes_les_donnees():
+    global DB_READ_FAILED
+    DB_READ_FAILED=False
     df_eleves_db = load_table_from_db(
         'SELECT nom_complet AS "Nom Complet", prenom AS "Prénom", nom AS "Nom", date_de_naissance AS "Date de Naissance", classe AS "Classe", photo AS "Photo" FROM eleves',
         ["Nom Complet", "Prénom", "Nom", "Date de Naissance", "Classe", "Photo"]
@@ -638,25 +711,25 @@ def recharger_toutes_les_donnees():
         st.session_state.classes_db = df_classes
 
     df_prof = load_table_from_db('SELECT nom AS "Nom", prenom AS "Prénom", email AS "Email", matiere_principale AS "Matière Principale", classe_attribuee AS "Classe Attribuée", password AS "Mot de passe" FROM prof_white_list', ["Nom", "Prénom", "Email", "Matière Principale", "Classe Attribuée", "Mot de passe"])
-    if df_prof.empty:
+    if df_prof.empty and not DB_READ_FAILED:
         st.session_state.prof_white_list = pd.DataFrame([{
             "Nom": "Prof", "Prénom": "Élémentaire", "Email": "prof.elem@cpnm.sn",
             "Matière Principale": "Toutes les matières", "Classe Attribuée": "CP", "Mot de passe": hacher_mot_de_passe("cpnm2026")
         }])
-    else:
+    elif not df_prof.empty:
         st.session_state.prof_white_list = df_prof
 
     df_admin_wl = load_table_from_db('SELECT email AS "Email", nom AS "Nom", prenom AS "Prénom", password AS "Mot de passe", niveau_acces AS "Niveau d\'accès" FROM admin_white_list', ["Email", "Nom", "Prénom", "Mot de passe", "Niveau d'accès"])
-    if df_admin_wl.empty:
+    if df_admin_wl.empty and not DB_READ_FAILED:
         st.session_state.admin_white_list = pd.DataFrame([{
             "Email": ADMIN_EMAIL_MAITRE, "Nom": "Nelson", "Prénom": "Admin Principal",
             "Mot de passe": hacher_mot_de_passe("cpnmn2026"), "Niveau d'accès": "Total (Super Admin)"
         }])
-    else:
+    elif not df_admin_wl.empty:
         st.session_state.admin_white_list = df_admin_wl
 
     df_mat = load_table_from_db('SELECT matiere AS "Matière", cycle AS "Cycle", coefficient AS "Coefficient", bareme AS "Barème" FROM matieres', ["Matière", "Cycle", "Coefficient", "Barème"])
-    if df_mat.empty:
+    if df_mat.empty and not DB_READ_FAILED:
         st.session_state.matieres_def = pd.DataFrame([
             {"Matière": "Mathématiques", "Cycle": "Collège", "Coefficient": 4.0, "Barème": 20.0},
             {"Matière": "Français", "Cycle": "Collège", "Coefficient": 5.0, "Barème": 20.0},
@@ -666,7 +739,7 @@ def recharger_toutes_les_donnees():
             {"Matière": "Éveil / Sciences", "Cycle": "Élémentaire", "Coefficient": 1.0, "Barème": 50.0},
             {"Matière": "Éducation Artistique & Morale", "Cycle": "Élémentaire", "Coefficient": 1.0, "Barème": 50.0},
         ])
-    else:
+    elif not df_mat.empty:
         st.session_state.matieres_def = preparer_matieres_dataframe(df_mat)
 
     st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
@@ -680,6 +753,11 @@ def recharger_toutes_les_donnees():
 
 if "eleves_db" not in st.session_state or st.session_state.eleves_db.empty:
     recharger_toutes_les_donnees()
+
+if DB_READ_FAILED:
+    st.error("⚠️ Lecture Supabase échouée : aucune donnée par défaut ne remplace vos données existantes.")
+    with st.expander("Erreur de lecture Supabase"):
+        st.code(DB_LAST_ERROR or "Erreur inconnue")
 
 JOURS_LIST = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 HEURES_LIST = ["08h-09h", "09h-10h", "10h-11h", "11h00-11h30", "11h30-12h", "12h-13h", "13h-14h", "14h-15h", "15h-16h", "16h-17h","17h-18h","18h-19h"]
@@ -1071,159 +1149,48 @@ def _trouver_police(*noms):
 
 
 class YAMPDF(FPDF):
-    """Moteur PDF YAM robuste et compatible FPDF 1.x / 2.x.
+    """FPDF avec police Unicode DejaVu.
 
-    Stratégie définitive :
-    1) utilise DejaVu Sans Unicode lorsqu'elle est disponible ;
-    2) sinon bascule automatiquement sur une police intégrée FPDF ;
-    3) dans ce mode de secours, tous les textes sont convertis sans provoquer
-       d'UnicodeEncodeError (les caractères non représentables sont remplacés).
+    Le problème historique venait de la police core Arial/Helvetica de FPDF
+    qui encode les pages en Latin-1. Les documents YAM utilisent maintenant
+    une vraie police Unicode : les accents, apostrophes, symboles et caractères
+    français ne deviennent plus des points d'interrogation.
     """
-
+    _unicode_fonts_ready = False
     _font_paths = {}
 
     def __init__(self, *args, **kwargs):
-        self._yam_unicode_ready = False
         super().__init__(*args, **kwargs)
         self._prepare_unicode_fonts()
 
-    @classmethod
-    def _get_font_paths(cls):
-        if not cls._font_paths:
-            cls._font_paths = {
-                "": _trouver_police(
-                    "DejaVuSans.ttf",
-                    "DejaVuSansCondensed.ttf",
-                ),
-                "B": _trouver_police(
-                    "DejaVuSans-Bold.ttf",
-                    "DejaVuSansCondensed-Bold.ttf",
-                ),
-                "I": _trouver_police(
-                    "DejaVuSans-Oblique.ttf",
-                    "DejaVuSansCondensed-Oblique.ttf",
-                ),
-                "BI": _trouver_police(
-                    "DejaVuSans-BoldOblique.ttf",
-                    "DejaVuSansCondensed-BoldOblique.ttf",
-                ),
-            }
-        return cls._font_paths
-
     def _prepare_unicode_fonts(self):
-        paths = self._get_font_paths()
-        regular = paths.get("")
-
-        if not regular:
-            self._yam_unicode_ready = False
-            return
-
+        if not YAMPDF._font_paths:
+            YAMPDF._font_paths = {
+                "": _trouver_police("DejaVuSans.ttf"),
+                "B": _trouver_police("DejaVuSans-Bold.ttf"),
+                "I": _trouver_police("DejaVuSans-Oblique.ttf"),
+                "BI": _trouver_police("DejaVuSans-BoldOblique.ttf"),
+            }
         try:
-            # Compatible FPDF 1.7.x et FPDF 2.x.
-            self.add_font("YAMUnicode", "", regular, uni=True)
-
-            for style in ("B", "I", "BI"):
-                path = paths.get(style)
-                if path:
-                    try:
-                        self.add_font("YAMUnicode", style, path, uni=True)
-                    except Exception:
-                        # Le style manquant sera remplacé par le style normal.
-                        pass
-
-            self._yam_unicode_ready = True
+            if YAMPDF._font_paths.get(""):
+                self.add_font("YAMUnicode", "", YAMPDF._font_paths[""], uni=True)
+                if YAMPDF._font_paths.get("B"):
+                    self.add_font("YAMUnicode", "B", YAMPDF._font_paths["B"], uni=True)
+                if YAMPDF._font_paths.get("I"):
+                    self.add_font("YAMUnicode", "I", YAMPDF._font_paths["I"], uni=True)
+                if YAMPDF._font_paths.get("BI"):
+                    self.add_font("YAMUnicode", "BI", YAMPDF._font_paths["BI"], uni=True)
+                YAMPDF._unicode_fonts_ready = True
         except Exception:
-            self._yam_unicode_ready = False
-
-    @staticmethod
-    def _latin1_safe(value):
-        """Fallback obligatoire si aucune police Unicode n'est disponible."""
-        if value is None:
-            return ""
-        value = str(value).replace("\x00", "").replace("\r", " ")
-        replacements = {
-            "’": "'",
-            "‘": "'",
-            "“": '"',
-            "”": '"',
-            "–": "-",
-            "—": "-",
-            "‑": "-",
-            "•": "-",
-            "…": "...",
-            "œ": "oe",
-            "Œ": "OE",
-            "æ": "ae",
-            "Æ": "AE",
-            "→": "->",
-            "←": "<-",
-            "≥": ">=",
-            "≤": "<=",
-            "≠": "!=",
-            "×": "x",
-            "÷": "/",
-            "°": " deg",
-            "✓": "OK",
-            "✗": "X",
-            "🇸🇳": "SN",
-        }
-        for src, dst in replacements.items():
-            value = value.replace(src, dst)
-        value = unicodedata.normalize("NFKD", value)
-        return value.encode("latin-1", errors="replace").decode("latin-1")
-
-    def _pdf_arg(self, value):
-        if self._yam_unicode_ready:
-            return "" if value is None else str(value).replace("\x00", "").replace("\r", " ")
-        return self._latin1_safe(value)
+            YAMPDF._unicode_fonts_ready = False
 
     def set_font(self, family, style="", size=0):
-        family_lower = str(family).lower()
-
-        if self._yam_unicode_ready and family_lower in {
-            "arial", "helvetica", "times", "courier", "yamunicode"
+        if YAMPDF._unicode_fonts_ready and str(family).lower() in {
+            "arial", "helvetica", "times", "courier"
         }:
-            requested_style = str(style or "").upper()
-            if requested_style and not self._yam_style_available(requested_style):
-                requested_style = ""
             family = "YAMUnicode"
-            style = requested_style
-        elif not self._yam_unicode_ready and family_lower == "yamunicode":
-            family = "Arial"
-            style = style or ""
-
         return super().set_font(family, style, size)
 
-    def _yam_style_available(self, style):
-        try:
-            key = "yamunicode" + (style.upper() if style else "")
-            return key.lower() in {str(k).lower() for k in self.fonts.keys()}
-        except Exception:
-            return style in ("", "B", "I", "BI")
-
-    def cell(self, w, h=0, txt="", border=0, ln=0, align="", fill=False, link=""):
-        txt = self._pdf_arg(txt)
-        try:
-            return super().cell(w, h, txt, border, ln, align, fill, link)
-        except TypeError:
-            return super().cell(w, h, txt, border, ln, align, fill, link)
-
-    def multi_cell(self, w, h, txt="", border=0, align="J", fill=False, split_only=False):
-        txt = self._pdf_arg(txt)
-        try:
-            return super().multi_cell(w, h, txt, border, align, fill, split_only)
-        except TypeError:
-            return super().multi_cell(w, h, txt, border, 0, align, fill)
-
-    def text(self, x, y, txt=""):
-        return super().text(x, y, self._pdf_arg(txt))
-
-    def write(self, h, txt="", link=""):
-        txt = self._pdf_arg(txt)
-        try:
-            return super().write(h, txt, link)
-        except TypeError:
-            return super().write(h, txt)
 
 def _pdf_text(valeur):
     """Texte sûr : conserve l'Unicode quand la police Unicode est active."""
@@ -1294,30 +1261,21 @@ def ajouter_signature_pdf(pdf):
 
 
 def convertir_pdf_en_bytes(pdf):
-    """Convertit un document FPDF en bytes, compatible FPDF 1.x et 2.x.
-
-    IMPORTANT : cette fonction ne fait aucune conversion du contenu textuel.
-    La gestion Unicode est réalisée par YAMPDF avant la sérialisation.
-    """
+    """Sortie PDF robuste sans reconversion Latin-1 destructrice."""
     try:
         data = pdf.output(dest="S")
     except TypeError:
         data = pdf.output()
-
     if isinstance(data, bytes):
         return data
     if isinstance(data, bytearray):
         return bytes(data)
-    if isinstance(data, memoryview):
-        return data.tobytes()
     if isinstance(data, str):
-        # FPDF 1.x peut renvoyer une chaîne déjà sérialisée.
-        # Le texte a déjà été sécurisé par YAMPDF si le mode fallback est actif.
+        # Les versions anciennes de FPDF peuvent renvoyer une chaîne ASCII
+        # contenant le flux PDF. On ne remplace JAMAIS les caractères Unicode
+        # du contenu lorsqu'une police Unicode est utilisée.
         return data.encode("latin-1", errors="replace")
-    try:
-        return bytes(data)
-    except Exception as exc:
-        raise RuntimeError("Impossible de convertir le PDF généré en bytes.") from exc
+    return bytes(data)
 
 
 def _cell(pdf, w, h, text="", border=1, ln=0, align="L", fill=False):
@@ -2234,6 +2192,15 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
         ])
 
         with adm_tab0:
+            st.markdown("### 🟢 Synchronisation Supabase")
+            if st.button("🔄 RECONNECTER & RECHARGER TOUTES LES DONNÉES", key="btn_reconnect_supabase", use_container_width=True):
+                if verifier_et_recharger_supabase():
+                    st.success("✅ Supabase reconnecté : données rechargées sans suppression.")
+                    st.rerun()
+                else:
+                    st.error("❌ Reconnexion échouée. Aucune donnée n'a été modifiée.")
+            if st.session_state.get("supabase_counts"):
+                st.caption(" | ".join(f"{k}: {v}" for k,v in st.session_state["supabase_counts"].items()))
             st.markdown(f"### 🛡️ Gestion de la Liste Blanche des Administrateurs")
             edited_admin_wl = st.data_editor(
                 st.session_state.admin_white_list,
