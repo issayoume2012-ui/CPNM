@@ -2273,45 +2273,58 @@ def generer_zip_bulletins_classe(classe, periode):
 
 
 def generer_zip_documents_classe(classe, periode):
-    """Archive administrative COMPLETE d'une classe.
+    """Crée le ZIP complet d'une classe directement en mémoire.
 
-    Contenu :
-      - tous les bulletins individuels de la classe ;
-      - emploi du temps ;
-      - cahier de texte / registre ;
-      - fiche élèves ;
-      - registre absences ;
-      - suivi présences / absences / retards ;
-      - fiche de progression.
-    Une erreur sur un document isolé ne bloque jamais la création du ZIP.
+    Aucun fichier temporaire et aucun ZIP imbriqué : chaque document est
+    placé directement dans l'archive finale. Les documents sont construits
+    uniquement lorsque l'utilisateur demande le ZIP.
     """
+    import io
+    import zipfile
+
+    classe = str(classe or "").strip()
+    periode = str(periode or "").strip()
+
+    if not classe:
+        return b""
+
     fichiers = []
 
-    def ajouter(nom, donnees):
+    def ajouter(nom, contenu):
+        if contenu is None:
+            return
         try:
-            if donnees is None:
-                return
-            contenu = bytes(donnees)
-            if contenu:
-                fichiers.append((nettoyer_nom_fichier(str(nom)), contenu))
+            contenu = bytes(contenu)
         except Exception:
             return
+        if contenu:
+            fichiers.append((str(nom), contenu))
 
-    # 1) TOUS les bulletins de la classe, pas seulement un bulletin de référence.
+    # Bulletins individuels
     try:
         df_cls = st.session_state.eleves_db.copy()
         if "Classe" in df_cls.columns:
-            df_cls = df_cls[df_cls["Classe"].astype(str) == str(classe)]
+            df_cls = df_cls[
+                df_cls["Classe"].astype(str) == classe
+            ]
         df_cls = trier_eleves_par_nom(df_cls)
+
         for index, (_, row) in enumerate(df_cls.iterrows(), start=1):
             eleve = str(row.get("Nom Complet", "")).strip()
             if not eleve:
                 continue
+
             try:
-                bulletin = calculer_bulletin_eleve(classe, eleve, periode)
+                bulletin = calculer_bulletin_eleve(
+                    classe, eleve, periode
+                )
                 pdf = generer_pdf_bulletin(bulletin)
                 ajouter(
-                    f"Bulletins/{index:02d}_{eleve}_{periode}.pdf",
+                    (
+                        f"Bulletins/{index:02d}_"
+                        f"{nettoyer_nom_fichier(eleve)}_"
+                        f"{nettoyer_nom_fichier(periode)}.pdf"
+                    ),
                     pdf
                 )
             except Exception:
@@ -2319,36 +2332,52 @@ def generer_zip_documents_classe(classe, periode):
     except Exception:
         pass
 
-    # 2) Documents administratifs de la classe.
-    generateurs = [
-        (f"Documents/Emploi_du_temps_{classe}.pdf",
-         lambda: generer_pdf_edt(classe, get_or_create_edt(classe))),
-        (f"Documents/Cahier_de_texte_{classe}.pdf",
-         lambda: generer_pdf_cahier_texte(classe)),
-        (f"Documents/Fiche_Eleves_{classe}.pdf",
-         lambda: generer_pdf_liste_eleves_classe(classe)),
-        (f"Vie_scolaire/Registre_Absences_{classe}.pdf",
-         lambda: generer_pdf_registre_absences(classe)),
-        (f"Vie_scolaire/Suivi_Presences_Absences_Retards_{classe}.pdf",
-         lambda: generer_pdf_suivi_absences(classe)),
-        (f"Progression/Progression_{classe}.pdf",
-         lambda: generer_pdf_fiche_progression_classe(classe)),
+    # Documents de classe
+    documents = [
+        (
+            f"Fiche_Eleves_{nettoyer_nom_fichier(classe)}.pdf",
+            lambda: generer_pdf_liste_eleves_classe(classe)
+        ),
+        (
+            f"Emploi_du_Temps_{nettoyer_nom_fichier(classe)}.pdf",
+            lambda: generer_pdf_edt(
+                classe,
+                get_or_create_edt(classe)
+            )
+        ),
+        (
+            f"Cahier_de_Texte_{nettoyer_nom_fichier(classe)}.pdf",
+            lambda: generer_pdf_cahier_texte(classe)
+        ),
+        (
+            f"Registre_Absences_{nettoyer_nom_fichier(classe)}.pdf",
+            lambda: generer_pdf_registre_absences(classe)
+        ),
+        (
+            f"Suivi_Vie_Scolaire_{nettoyer_nom_fichier(classe)}.pdf",
+            lambda: generer_pdf_suivi_absences(classe)
+        ),
     ]
 
-    for nom, fonction in generateurs:
+    for nom, generateur in documents:
         try:
-            ajouter(nom, fonction())
+            ajouter(nom, generateur())
         except Exception:
-            # Un document défaillant ne doit pas supprimer les autres téléchargements.
             continue
 
     if not fichiers:
         return b""
 
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(
+        buffer,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        compresslevel=6
+    ) as zf:
         for nom, contenu in fichiers:
             zf.writestr(nom, contenu)
+
     return buffer.getvalue()
 
 
@@ -3368,33 +3397,46 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             st.markdown("""
             <div class="tab-xxl-title">
                 <span class="tab-xxl-badge">CENTRE DOCUMENTAIRE OFFICIEL</span>
-                <h2>📥 TOUT TÉLÉCHARGER AU MÊME ENDROIT</h2>
+                <h2>📥 TÉLÉCHARGEMENTS PAR CLASSE</h2>
                 <p>
-                Bulletins individuels • ZIP bulletins • emploi du temps • fiche élèves
-                • cahier de texte • registres • vie scolaire • progression • ZIP complet.
+                Sélectionnez une classe et une période. Les documents lourds
+                sont préparés uniquement après clic : l'ouverture de l'onglet
+                ne lance plus automatiquement les générations longues.
                 </p>
             </div>
             """, unsafe_allow_html=True)
 
             classes_disponibles = (
                 st.session_state.classes_db["Classe"].dropna().astype(str).tolist()
-                if not st.session_state.classes_db.empty and "Classe" in st.session_state.classes_db.columns
+                if not st.session_state.classes_db.empty
+                and "Classe" in st.session_state.classes_db.columns
                 else ["CP"]
             )
             classes_disponibles = list(dict.fromkeys(classes_disponibles)) or ["CP"]
 
-            classe_bul_sel = st.selectbox(
-                "🏫 Classe à télécharger",
-                classes_disponibles,
-                key="cls_bul_admin_xxl_definitif"
-            )
-            periodes_bul = obtenir_periodes_pour_classe(classe_bul_sel) or ["Semestre 1"]
-            periode_bul_sel = st.selectbox(
-                "📅 Période des bulletins",
-                periodes_bul,
-                key="per_bul_admin_xxl_definitif"
-            )
+            col_dl_1, col_dl_2 = st.columns([1.25, 1])
 
+            with col_dl_1:
+                classe_bul_sel = st.selectbox(
+                    "🏫 Classe",
+                    classes_disponibles,
+                    key="cls_bul_admin_xxl_definitif"
+                )
+
+            with col_dl_2:
+                periodes_bul = (
+                    obtenir_periodes_pour_classe(classe_bul_sel)
+                    or ["Semestre 1"]
+                )
+                periode_bul_sel = st.selectbox(
+                    "📅 Période",
+                    periodes_bul,
+                    key="per_bul_admin_xxl_definitif"
+                )
+
+            # ==========================================================
+            # 1. BULLETINS
+            # ==========================================================
             st.markdown("---")
             st.markdown("## 🎓 1. BULLETINS")
 
@@ -3408,7 +3450,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             if df_el_bul.empty:
                 st.warning("Aucun élève enregistré dans cette classe.")
             else:
-                noms_eleves_xxl = df_el_bul["Nom Complet"].astype(str).tolist()
+                noms_eleves_xxl = (
+                    df_el_bul["Nom Complet"].astype(str).tolist()
+                )
+
                 eleve_sel_bul = st.selectbox(
                     "👤 Élève pour le bulletin individuel",
                     noms_eleves_xxl,
@@ -3416,76 +3461,220 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 )
 
                 b1, b2 = st.columns(2)
+
                 with b1:
-                    try:
-                        _pdf_bul = generer_pdf_bulletin(
-                            calculer_bulletin_eleve(
-                                classe_bul_sel, eleve_sel_bul, periode_bul_sel
+                    st.markdown("#### 📄 Bulletin individuel")
+
+                    if st.button(
+                        "⚡ Préparer le bulletin",
+                        key="btn_prepare_bulletin_individuel_rapide",
+                        use_container_width=True
+                    ):
+                        try:
+                            _pdf_bul = generer_pdf_bulletin(
+                                calculer_bulletin_eleve(
+                                    classe_bul_sel,
+                                    eleve_sel_bul,
+                                    periode_bul_sel
+                                )
                             )
-                        )
-                    except Exception as _e:
-                        _pdf_bul = None
-                        st.warning(f"Bulletin individuel indisponible : {_e}")
-                    if _pdf_bul:
+                            st.session_state["_pdf_bulletin_ready"] = _pdf_bul
+                            st.session_state["_pdf_bulletin_name"] = (
+                                f"Bulletin_"
+                                f"{nettoyer_nom_fichier(eleve_sel_bul)}_"
+                                f"{nettoyer_nom_fichier(periode_bul_sel)}.pdf"
+                            )
+                        except Exception as _e:
+                            st.session_state["_pdf_bulletin_ready"] = None
+                            st.error(f"Bulletin individuel indisponible : {_e}")
+
+                    _pdf_bul_ready = st.session_state.get("_pdf_bulletin_ready")
+                    if _pdf_bul_ready:
                         st.download_button(
-                            "📄 BULLETIN INDIVIDUEL — PDF",
-                            _pdf_bul,
-                            f"Bulletin_{nettoyer_nom_fichier(eleve_sel_bul)}_{nettoyer_nom_fichier(periode_bul_sel)}.pdf",
+                            "⬇️ Télécharger le bulletin individuel — PDF",
+                            _pdf_bul_ready,
+                            st.session_state.get(
+                                "_pdf_bulletin_name",
+                                "Bulletin.pdf"
+                            ),
                             "application/pdf",
-                            key="dl_bulletin_individuel_xxl_definitif"
+                            key="dl_bulletin_individuel_xxl_definitif",
+                            use_container_width=True
                         )
 
                 with b2:
-                    try:
-                        _zip_bul = generer_zip_bulletins_classe(
-                            classe_bul_sel, periode_bul_sel
-                        )
-                    except Exception as _e:
-                        _zip_bul = None
-                        st.warning(f"ZIP bulletins indisponible : {_e}")
-                    if _zip_bul:
+                    st.markdown("#### 📦 Bulletins de toute la classe")
+
+                    if st.button(
+                        "⚡ Préparer le ZIP des bulletins",
+                        key="btn_prepare_zip_bulletins_rapide",
+                        use_container_width=True
+                    ):
+                        try:
+                            _zip_bul = generer_zip_bulletins_classe(
+                                classe_bul_sel,
+                                periode_bul_sel
+                            )
+                            st.session_state["_zip_bulletins_ready"] = _zip_bul
+                        except Exception as _e:
+                            st.session_state["_zip_bulletins_ready"] = None
+                            st.error(f"ZIP bulletins indisponible : {_e}")
+
+                    _zip_bul_ready = st.session_state.get("_zip_bulletins_ready")
+                    if _zip_bul_ready:
                         st.download_button(
-                            "📦 TOUS LES BULLETINS DE LA CLASSE — ZIP",
-                            _zip_bul,
-                            f"Bulletins_{nettoyer_nom_fichier(classe_bul_sel)}_{nettoyer_nom_fichier(periode_bul_sel)}.zip",
+                            "⬇️ Télécharger TOUS les bulletins — ZIP",
+                            _zip_bul_ready,
+                            (
+                                f"Bulletins_"
+                                f"{nettoyer_nom_fichier(classe_bul_sel)}_"
+                                f"{nettoyer_nom_fichier(periode_bul_sel)}.zip"
+                            ),
                             "application/zip",
-                            key="dl_bulletins_classe_xxl_definitif"
+                            key="dl_bulletins_classe_xxl_definitif",
+                            use_container_width=True
                         )
                     else:
-                        st.info("Aucun bulletin PDF disponible pour cette classe/période.")
+                        st.info(
+                            "Cliquez sur « Préparer le ZIP des bulletins » "
+                            "pour générer l'archive."
+                        )
 
+            # ==========================================================
+            # 2. FICHIERS DE LA CLASSE
+            # ==========================================================
             st.markdown("---")
-            st.markdown("## 📦 2. FICHIERS À TÉLÉCHARGER")
+            st.markdown("## 📦 2. FICHIERS DE LA CLASSE")
+
             st.markdown("""
             <div class="download-card-yam">
                 <h4>📦 Dossier complet de la classe</h4>
-                <p>Les bulletins et les fichiers regroupés restent centralisés dans cet onglet.</p>
+                <p>
+                    Le ZIP regroupe les documents disponibles pour la classe
+                    sélectionnée. Il est généré uniquement sur demande.
+                </p>
             </div>
             """, unsafe_allow_html=True)
 
-            try:
-                _zip_complet = generer_zip_documents_classe(
-                    classe_bul_sel, periode_bul_sel
-                )
-            except Exception as _e:
-                _zip_complet = None
-                st.warning(f"Archive complète indisponible : {_e}")
+            z1, z2 = st.columns(2)
 
-            if _zip_complet:
-                st.download_button(
-                    "📦 Télécharger les fichiers de la classe — ZIP",
-                    _zip_complet,
-                    f"Dossier_Complet_{nettoyer_nom_fichier(classe_bul_sel)}_{nettoyer_nom_fichier(periode_bul_sel)}.zip",
-                    "application/zip",
-                    key="dl_dossier_complet_xxl_definitif",
+            with z1:
+                st.markdown("#### 📦 ZIP COMPLET DE LA CLASSE")
+
+                if st.button(
+                    "⚡ Préparer le ZIP complet",
+                    key="btn_prepare_zip_classe_rapide",
                     use_container_width=True
-                )
-            else:
-                st.info("Aucun fichier n'est actuellement disponible pour cette classe.")
+                ):
+                    with st.spinner(
+                        "Préparation du ZIP de la classe… "
+                        "Cette opération n'est lancée que maintenant."
+                    ):
+                        try:
+                            _zip_complet = generer_zip_documents_classe(
+                                classe_bul_sel,
+                                periode_bul_sel
+                            )
+                            st.session_state["_zip_classe_ready"] = _zip_complet
+                        except Exception as _e:
+                            st.session_state["_zip_classe_ready"] = None
+                            st.error(f"ZIP de la classe indisponible : {_e}")
 
-            st.success(
-                "✅ Centre Téléchargements : bulletins et dossier/fichiers regroupés. "
-                "Les autres documents restent dans leurs onglets respectifs."
+                _zip_classe_ready = st.session_state.get("_zip_classe_ready")
+                if _zip_classe_ready:
+                    st.download_button(
+                        "⬇️ Télécharger le ZIP complet de la classe",
+                        _zip_classe_ready,
+                        (
+                            f"Dossier_Complet_"
+                            f"{nettoyer_nom_fichier(classe_bul_sel)}_"
+                            f"{nettoyer_nom_fichier(periode_bul_sel)}.zip"
+                        ),
+                        "application/zip",
+                        key="dl_dossier_complet_xxl_definitif",
+                        use_container_width=True
+                    )
+                else:
+                    st.caption(
+                        "Aucun ZIP n'est généré automatiquement. "
+                        "Cliquez sur le bouton ci-dessus."
+                    )
+
+            with z2:
+                st.markdown("#### 📅 EMPLOI DU TEMPS")
+
+                if st.button(
+                    "⚡ Préparer l'emploi du temps",
+                    key="btn_prepare_edt_rapide",
+                    use_container_width=True
+                ):
+                    try:
+                        _edt_pdf_dl = generer_pdf_edt(
+                            classe_bul_sel,
+                            get_or_create_edt(classe_bul_sel)
+                        )
+                        st.session_state["_edt_pdf_ready"] = _edt_pdf_dl
+                    except Exception as _e:
+                        st.session_state["_edt_pdf_ready"] = None
+                        st.error(f"Emploi du temps indisponible : {_e}")
+
+                _edt_pdf_ready = st.session_state.get("_edt_pdf_ready")
+                if _edt_pdf_ready:
+                    st.download_button(
+                        "⬇️ Télécharger l'emploi du temps — PDF",
+                        _edt_pdf_ready,
+                        (
+                            f"Emploi_du_Temps_"
+                            f"{nettoyer_nom_fichier(classe_bul_sel)}.pdf"
+                        ),
+                        "application/pdf",
+                        key="dl_edt_pdf_definitif",
+                        use_container_width=True
+                    )
+                else:
+                    st.caption(
+                        "L'emploi du temps n'est pas généré à l'ouverture "
+                        "de l'onglet."
+                    )
+
+            # Fiche élèves par classe
+            st.markdown("#### 👥 FICHE DES ÉLÈVES PAR CLASSE")
+            st.caption(
+                "Cette fiche correspond exactement à la classe sélectionnée."
             )
 
+            if st.button(
+                "⚡ Préparer la fiche des élèves",
+                key="btn_prepare_fiche_eleves_rapide",
+                use_container_width=True
+            ):
+                try:
+                    _fiche_eleves_dl = generer_pdf_liste_eleves_classe(
+                        classe_bul_sel
+                    )
+                    st.session_state["_fiche_eleves_ready"] = _fiche_eleves_dl
+                except Exception as _e:
+                    st.session_state["_fiche_eleves_ready"] = None
+                    st.error(f"Fiche élèves indisponible : {_e}")
+
+            _fiche_eleves_ready = st.session_state.get("_fiche_eleves_ready")
+            if _fiche_eleves_ready:
+                st.download_button(
+                    "⬇️ Télécharger la fiche des élèves — PDF",
+                    _fiche_eleves_ready,
+                    (
+                        f"Fiche_Eleves_"
+                        f"{nettoyer_nom_fichier(classe_bul_sel)}.pdf"
+                    ),
+                    "application/pdf",
+                    key="dl_fiche_eleves_definitif",
+                    use_container_width=True
+                )
+
+            st.markdown("---")
+            st.success(
+                "✅ Les ZIP et PDF lourds ne sont plus générés automatiquement "
+                "à l'ouverture de l'onglet. Vous choisissez le document, puis "
+                "vous le préparez et le téléchargez."
+            )
 
