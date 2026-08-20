@@ -16,7 +16,7 @@ from psycopg2.extras import RealDictCursor
 # ==========================================
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
 # ==========================================
-DATABASE_URL = "postgresql://postgres.dzxotavktglasrcpyrwx:xTS1vLLFnlGWJXrr@aws-1-eu-west-1.pooler.supabase.com:5432/postgres"
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
 
 def get_db_connection():
     """Établit la connexion à la base de données Supabase / PostgreSQL de manière ultra-rapide."""
@@ -31,6 +31,8 @@ def get_db_connection():
                 connect_timeout=5
             )
         else:
+            if not DATABASE_URL:
+                return None
             conn = psycopg2.connect(DATABASE_URL, connect_timeout=5)
         return conn
     except Exception as e:
@@ -1048,335 +1050,414 @@ def calculer_bulletin_eleve(classe, eleve_nom, periode, calculer_rang=True):
         "details_notes": notes_eleve, "is_elementaire": elementaire
     }
 
+# ==========================================
+# 3B. MOTEUR PDF OFFICIEL UNICODE — VERSION ULTIME
+# ==========================================
+
+_FONT_DIRS = [
+    "/usr/share/fonts/truetype/dejavu",
+    "/usr/share/fonts/dejavu",
+    os.path.join(os.path.dirname(__file__), "fonts"),
+]
+
+
+def _trouver_police(*noms):
+    for dossier in _FONT_DIRS:
+        for nom in noms:
+            chemin = os.path.join(dossier, nom)
+            if os.path.exists(chemin):
+                return chemin
+    return None
+
+
+class YAMPDF(FPDF):
+    """FPDF avec police Unicode DejaVu.
+
+    Le problème historique venait de la police core Arial/Helvetica de FPDF
+    qui encode les pages en Latin-1. Les documents YAM utilisent maintenant
+    une vraie police Unicode : les accents, apostrophes, symboles et caractères
+    français ne deviennent plus des points d'interrogation.
+    """
+    _unicode_fonts_ready = False
+    _font_paths = {}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._prepare_unicode_fonts()
+
+    def _prepare_unicode_fonts(self):
+        if not YAMPDF._font_paths:
+            YAMPDF._font_paths = {
+                "": _trouver_police("DejaVuSans.ttf"),
+                "B": _trouver_police("DejaVuSans-Bold.ttf"),
+                "I": _trouver_police("DejaVuSans-Oblique.ttf"),
+                "BI": _trouver_police("DejaVuSans-BoldOblique.ttf"),
+            }
+        try:
+            if YAMPDF._font_paths.get(""):
+                self.add_font("YAMUnicode", "", YAMPDF._font_paths[""], uni=True)
+                if YAMPDF._font_paths.get("B"):
+                    self.add_font("YAMUnicode", "B", YAMPDF._font_paths["B"], uni=True)
+                if YAMPDF._font_paths.get("I"):
+                    self.add_font("YAMUnicode", "I", YAMPDF._font_paths["I"], uni=True)
+                if YAMPDF._font_paths.get("BI"):
+                    self.add_font("YAMUnicode", "BI", YAMPDF._font_paths["BI"], uni=True)
+                YAMPDF._unicode_fonts_ready = True
+        except Exception:
+            YAMPDF._unicode_fonts_ready = False
+
+    def set_font(self, family, style="", size=0):
+        if YAMPDF._unicode_fonts_ready and str(family).lower() in {
+            "arial", "helvetica", "times", "courier"
+        }:
+            family = "YAMUnicode"
+        return super().set_font(family, style, size)
+
+
+def _pdf_text(valeur):
+    """Texte sûr : conserve l'Unicode quand la police Unicode est active."""
+    if valeur is None:
+        return ""
+    return str(valeur).replace("\x00", "").replace("\r", " ").strip()
+
+
+def _pdf_ligne(pdf, x1=15, x2=195, y=None):
+    if y is None:
+        y = pdf.get_y()
+    pdf.set_draw_color(14, 116, 144)
+    pdf.set_line_width(0.45)
+    pdf.line(x1, y, x2, y)
+
+
 def ajouter_en_tete_officiel_pdf(pdf, titre_doc):
+    """En-tête institutionnel propre et réellement Unicode."""
     if os.path.exists("nm.jpg"):
         try:
-            pdf.image("nm.jpg", 15, 12, 18)
+            pdf.image("nm.jpg", 14, 11, 20)
         except Exception:
             pass
 
-    pdf.set_fill_color(30, 64, 175)
-    pdf.rect(10, 10, 190, 2.5, 'F')
-    
+    pdf.set_fill_color(15, 75, 130)
+    pdf.rect(10, 8, 190, 2.5, "F")
     pdf.set_y(12)
-    pdf.set_font("Arial", 'B', 10)
+
+    pdf.set_font("Arial", "B", 11)
     pdf.set_text_color(15, 23, 42)
-    pdf.cell(200, 4, txt="REPUBLIQUE DU SENEGAL", ln=1, align="C")
-    
-    pdf.set_font("Arial", '', 8)
+    pdf.cell(200, 5, "RÉPUBLIQUE DU SÉNÉGAL", ln=1, align="C")
+
+    pdf.set_font("Arial", "", 8)
     pdf.set_text_color(71, 85, 105)
-    pdf.cell(200, 3.5, txt="Un Peuple - Un But - Une Foi", ln=1, align="C")
-    pdf.cell(200, 3.5, txt="Ministere de l'Education Nationale", ln=1, align="C")
-    
-    pdf.set_font("Arial", 'B', 8)
+    pdf.cell(200, 4, "Un Peuple - Un But - Une Foi", ln=1, align="C")
+    pdf.cell(200, 4, "Ministère de l'Éducation Nationale", ln=1, align="C")
+
+    pdf.set_font("Arial", "B", 8.5)
     pdf.set_text_color(2, 132, 199)
-    pdf.cell(200, 3.5, txt="Inspection d'Academie de Saint-Louis - IEF de Saint-Louis", ln=1, align="C")
-    
-    pdf.set_font("Arial", 'B', 11)
-    pdf.set_text_color(30, 64, 175)
-    pdf.cell(200, 5, txt="ECOLE PRESIDENT NELSON MANDELA", ln=1, align="C")
-    
-    pdf.set_font("Arial", 'I', 7)
+    pdf.cell(200, 4, "Inspection d'Académie de Saint-Louis • IEF de Saint-Louis", ln=1, align="C")
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.set_text_color(15, 75, 130)
+    pdf.cell(200, 5.5, "ÉCOLE PRÉSIDENT NELSON MANDELA", ln=1, align="C")
+
+    pdf.set_font("Arial", "I", 7)
     pdf.set_text_color(100, 116, 139)
-    pdf.cell(200, 3.5, txt="[ Document Authentifié par Logo Officiel & Sceau Sécurisé ]", ln=1, align="C")
+    pdf.cell(200, 3.5, "Document scolaire officiel • Généré par la plateforme YAM", ln=1, align="C")
+    _pdf_ligne(pdf, 15, 195, pdf.get_y() + 1)
+    pdf.ln(5)
+
+    pdf.set_font("Arial", "B", 12)
+    pdf.set_text_color(15, 23, 42)
+    pdf.cell(200, 7, _pdf_text(titre_doc), ln=1, align="C")
     pdf.set_text_color(0, 0, 0)
     pdf.ln(2)
-    
-    pdf.set_draw_color(2, 132, 199)
-    pdf.set_line_width(0.6)
-    pdf.line(15, pdf.get_y(), 195, pdf.get_y())
-    pdf.ln(4)
-    
-    pdf.set_font("Arial", 'B', 12)
-    pdf.set_text_color(15, 23, 42)
-    pdf.cell(200, 7, txt=titre_doc, ln=1, align="C")
-    pdf.set_text_color(0, 0, 0)
-    pdf.ln(3)
+
 
 def ajouter_signature_pdf(pdf):
-    pdf.ln(6)
-    pdf.set_font("Arial", 'B', 8)
+    pdf.ln(7)
+    pdf.set_font("Arial", "B", 8)
     pdf.cell(115, 4, "", 0, 0)
-    pdf.cell(75, 4, "Le Directeur / Chef d'Etablissement", 0, 1, "C")
+    pdf.cell(75, 4, "Le Directeur / Chef d'Établissement", 0, 1, "C")
     pdf.ln(10)
     pdf.cell(115, 4, "", 0, 0)
-    pdf.set_font("Arial", 'I', 7)
-    pdf.cell(75, 4, "( Signature, Cachet & Sceau Officiel )", 0, 1, "C")
-
-def _texte_pdf_latin1(valeur):
-    """Normalise le texte avant l'encodage Latin-1 de FPDF classique."""
-    if valeur is None:
-        return ""
-    texte = str(valeur)
-    remplacements = {
-        "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
-        "\u2013": "-", "\u2014": "-", "\u2212": "-", "\u2026": "...",
-        "\u2022": "-", "\u25cf": "-", "\u25a0": "-", "\u2192": "->",
-        "\u2190": "<-", "\u2194": "<->", "\u2265": ">=", "\u2264": "<=",
-        "\u00a0": " ", "\u2009": " ", "\u200b": "", "\ufeff": "",
-    }
-    for ancien, nouveau in remplacements.items():
-        texte = texte.replace(ancien, nouveau)
-    texte = unicodedata.normalize("NFKD", texte)
-    return texte.encode("latin1", errors="replace").decode("latin1")
-
-
-def _securiser_pdf_avant_sortie(pdf):
-    """Nettoie les pages internes AVANT FPDF._putpages()."""
-    try:
-        pages = getattr(pdf, "pages", None)
-        if isinstance(pages, dict):
-            for numero, contenu in list(pages.items()):
-                pages[numero] = _texte_pdf_latin1(contenu)
-        elif isinstance(pages, list):
-            for i, contenu in enumerate(pages):
-                pages[i] = _texte_pdf_latin1(contenu)
-    except Exception:
-        pass
-    return pdf
+    pdf.set_font("Arial", "I", 7)
+    pdf.cell(75, 4, "(Signature, Cachet & Sceau Officiel)", 0, 1, "C")
 
 
 def convertir_pdf_en_bytes(pdf):
-    """Convertit FPDF en octets et empêche tout Unicode incompatible d'atteindre _putpages()."""
-    _securiser_pdf_avant_sortie(pdf)
+    """Sortie PDF robuste sans reconversion Latin-1 destructrice."""
     try:
         data = pdf.output(dest="S")
-    except UnicodeEncodeError:
-        _securiser_pdf_avant_sortie(pdf)
-        data = pdf.output(dest="S")
+    except TypeError:
+        data = pdf.output()
     if isinstance(data, bytes):
         return data
     if isinstance(data, bytearray):
         return bytes(data)
     if isinstance(data, str):
-        return data.encode("latin1", errors="replace")
+        # Les versions anciennes de FPDF peuvent renvoyer une chaîne ASCII
+        # contenant le flux PDF. On ne remplace JAMAIS les caractères Unicode
+        # du contenu lorsqu'une police Unicode est utilisée.
+        return data.encode("latin1", errors="strict")
     return bytes(data)
 
-def generer_pdf_bulletin(bul):
-    """Bulletin officiel enrichi : points, moyenne, rang, conduite et vie scolaire."""
-    pdf = FPDF()
-    pdf.add_page()
-    ajouter_en_tete_officiel_pdf(pdf, "BULLETIN SCOLAIRE OFFICIEL - CADRE CERTIFIÉ")
 
-    # Identité
+def _cell(pdf, w, h, text="", border=1, ln=0, align="L", fill=False):
+    pdf.cell(w, h, _pdf_text(text), border, ln, align, fill=fill)
+
+
+def generer_pdf_bulletin(bul):
+    """Bulletin officiel moderne, Unicode, lisible et complet."""
+    pdf = YAMPDF("P", "mm", "A4")
+    pdf.set_auto_page_break(True, 18)
+    pdf.add_page()
+    ajouter_en_tete_officiel_pdf(pdf, "BULLETIN SCOLAIRE OFFICIEL")
+
+    eleve = _pdf_text(bul.get("eleve", ""))
+    classe = _pdf_text(bul.get("classe", ""))
+    periode = _pdf_text(bul.get("periode", ""))
+    echelle = 10 if bul.get("is_elementaire", False) else 20
+
+    # Bloc identité
+    y = pdf.get_y()
     pdf.set_draw_color(2, 132, 199)
     pdf.set_fill_color(240, 249, 255)
-    pdf.rect(10, pdf.get_y(), 190, 15, 'FD')
-    pdf.set_font("Arial", 'B', 9)
-    pdf.set_y(pdf.get_y() + 2.5)
-    pdf.cell(200, 5, txt=f"Élève : {bul.get('eleve', '')}   |   Classe : {bul.get('classe', '')}", ln=1, align="C")
-    pdf.cell(200, 5, txt=f"Période : {bul.get('periode', '')}", ln=1, align="C")
-    pdf.ln(5)
+    pdf.rect(12, y, 186, 18, "FD")
+    pdf.set_y(y + 3)
+    pdf.set_font("Arial", "B", 9)
+    _cell(pdf, 93, 5, f"Élève : {eleve}", 0, 0, "L")
+    _cell(pdf, 93, 5, f"Classe : {classe}", 0, 1, "R")
+    _cell(pdf, 93, 5, f"Période : {periode}", 0, 0, "L")
+    _cell(pdf, 93, 5, "Année scolaire : document officiel", 0, 1, "R")
+    pdf.set_y(y + 22)
 
-    # Notes
-    pdf.set_fill_color(224, 242, 254)
-    pdf.set_font("Arial", 'B', 8.5)
+    # Tableau des notes
+    pdf.set_font("Arial", "B", 8)
+    pdf.set_fill_color(15, 118, 168)
+    pdf.set_text_color(255, 255, 255)
     if bul.get("is_elementaire", False):
-        pdf.cell(82, 6, "Matière", 1, 0, "C", fill=True)
-        pdf.cell(48, 6, "Note / Barème", 1, 0, "C", fill=True)
-        pdf.cell(30, 6, "Moyenne /20", 1, 0, "C", fill=True)
-        pdf.cell(30, 6, "Coeff.", 1, 1, "C", fill=True)
-        pdf.set_font("Arial", size=8)
-        for d in bul.get("details_notes", []):
-            pdf.cell(82, 5.5, str(d.get("matiere", ""))[:34], 1, 0, "L")
-            pdf.cell(48, 5.5, str(d.get("composition", 0)), 1, 0, "C")
-            pdf.cell(30, 5.5, str(d.get("moyenne", 0)), 1, 0, "C")
-            pdf.cell(30, 5.5, str(d.get("coefficient", 1)), 1, 1, "C")
+        cols = [(58, "Matière"), (48, "Note / Barème"), (42, "Moyenne /20"), (32, "Coeff.")]
     else:
-        pdf.cell(52, 6, "Matière", 1, 0, "C", fill=True)
-        pdf.cell(25, 6, "Devoir 1", 1, 0, "C", fill=True)
-        pdf.cell(25, 6, "Devoir 2", 1, 0, "C", fill=True)
-        pdf.cell(25, 6, "Compo", 1, 0, "C", fill=True)
-        pdf.cell(22, 6, "Coeff.", 1, 0, "C", fill=True)
-        pdf.cell(41, 6, "Moyenne /20", 1, 1, "C", fill=True)
-        pdf.set_font("Arial", size=8)
-        for d in bul.get("details_notes", []):
-            pdf.cell(52, 5.5, str(d.get("matiere", ""))[:23], 1, 0, "L")
-            pdf.cell(25, 5.5, str(d.get("devoir1", 0)), 1, 0, "C")
-            pdf.cell(25, 5.5, str(d.get("devoir2", 0)), 1, 0, "C")
-            pdf.cell(25, 5.5, str(d.get("composition", 0)), 1, 0, "C")
-            pdf.cell(22, 5.5, str(d.get("coefficient", 1)), 1, 0, "C")
-            pdf.cell(41, 5.5, str(d.get("moyenne", 0)), 1, 1, "C")
+        cols = [(45, "Matière"), (27, "Devoir 1"), (27, "Devoir 2"), (27, "Composition"), (22, "Coeff."), (42, "Moyenne /20")]
+    for i, (w, label) in enumerate(cols):
+        _cell(pdf, w, 7, label, 1, 1 if i == len(cols)-1 else 0, "C", True)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Arial", "", 7.7)
 
-    # Synthèse dans un cadre unique
-    pdf.ln(5)
+    lignes = bul.get("details_notes", [])
+    if not lignes:
+        _cell(pdf, 190, 8, "Aucune note enregistrée pour cette période.", 1, 1, "C")
+    else:
+        for d in lignes:
+            if bul.get("is_elementaire", False):
+                vals = [
+                    (_pdf_text(d.get("matiere", ""))[:30], 58, "L"),
+                    (_pdf_text(d.get("composition", "")), 48, "C"),
+                    (_pdf_text(d.get("moyenne", "")), 42, "C"),
+                    (_pdf_text(d.get("coefficient", "1")), 32, "C"),
+                ]
+            else:
+                vals = [
+                    (_pdf_text(d.get("matiere", ""))[:24], 45, "L"),
+                    (_pdf_text(d.get("devoir1", "")), 27, "C"),
+                    (_pdf_text(d.get("devoir2", "")), 27, "C"),
+                    (_pdf_text(d.get("composition", "")), 27, "C"),
+                    (_pdf_text(d.get("coefficient", "1")), 22, "C"),
+                    (_pdf_text(d.get("moyenne", "")), 42, "C"),
+                ]
+            for i, (val, w, align) in enumerate(vals):
+                _cell(pdf, w, 6, val, 1, 1 if i == len(vals)-1 else 0, align)
+
+    # Cadre de synthèse
+    pdf.ln(6)
     y = pdf.get_y()
     pdf.set_draw_color(2, 132, 199)
     pdf.set_fill_color(248, 250, 252)
-    pdf.rect(10, y, 190, 47, 'FD')
-    pdf.set_y(y + 3)
-    pdf.set_font("Arial", 'B', 9)
-    echelle_generale = 10 if bul.get("is_elementaire", False) else 20
-    pdf.cell(95, 6, f"Moyenne générale : {bul.get('moyenne_generale', 0)} / {echelle_generale}", 0, 0, "L")
-    pdf.cell(95, 6, f"Rang : {bul.get('rang', 'N/A')}", 0, 1, "R")
-    pdf.cell(95, 6, f"Points : {bul.get('points_affichage', '0 / 0')}", 0, 0, "L")
-    pdf.cell(95, 6, f"Taux : {bul.get('taux_points', 0)} %", 0, 1, "R")
-    pdf.cell(95, 6, f"Absences : {bul.get('absences', 0)}", 0, 0, "L")
-    pdf.cell(95, 6, f"Retards : {bul.get('retards', 0)}", 0, 1, "R")
-    pdf.cell(95, 6, f"Présences enregistrées : {bul.get('presents', 0)}", 0, 0, "L")
-    pdf.cell(95, 6, f"Conduite : {bul.get('conduite', '')[:35]}", 0, 1, "R")
-    appreciation = bul.get("appreciation", "") or "Aucune appréciation renseignée."
-    decision = bul.get("decision", "") or "À examiner par le conseil de classe"
-    pdf.set_font("Arial", 'B', 8.5)
-    pdf.cell(190, 5.5, f"Appréciation : {appreciation[:90]}", 0, 1, "L")
-    pdf.cell(190, 5.5, f"Décision : {decision[:90]}", 0, 1, "L")
-    pdf.set_font("Arial", 'I', 7.5)
-    obs = bul.get("observations_vie_scolaire", "")
-    if obs:
-        pdf.cell(190, 5, f"Observation vie scolaire : {obs[:105]}", 0, 1, "L")
+    pdf.rect(12, y, 186, 61, "FD")
+    pdf.set_y(y + 4)
+    pdf.set_font("Arial", "B", 9)
+    moyenne = bul.get("moyenne_generale", 0)
+    rang = bul.get("rang")
+    rang_aff = "Non classé" if rang in (None, "", "Calcul...", "None") else str(rang)
+    _cell(pdf, 93, 6, f"Moyenne générale : {moyenne} / {echelle}", 0, 0, "L")
+    _cell(pdf, 93, 6, f"Rang : {rang_aff}", 0, 1, "R")
+    _cell(pdf, 93, 6, f"Points obtenus / possibles : {bul.get('points_affichage', '0 / 0')}", 0, 0, "L")
+    _cell(pdf, 93, 6, f"Taux de réussite : {bul.get('taux_points', 0)} %", 0, 1, "R")
+    _cell(pdf, 93, 6, f"Présences : {bul.get('presents', 0)}", 0, 0, "L")
+    _cell(pdf, 93, 6, f"Absences : {bul.get('absences', 0)}   •   Retards : {bul.get('retards', 0)}", 0, 1, "R")
 
+    pdf.set_font("Arial", "B", 8.5)
+    appreciation = _pdf_text(bul.get("appreciation", "")) or "Aucune appréciation renseignée."
+    conduite = _pdf_text(bul.get("conduite", "")) or "À renseigner"
+    decision = _pdf_text(bul.get("decision", "")) or "À examiner par le conseil de classe"
+    observation = _pdf_text(bul.get("observations_vie_scolaire", ""))
+    _cell(pdf, 190, 6, f"Appréciation : {appreciation}", 0, 1, "L")
+    _cell(pdf, 190, 6, f"Conduite : {conduite}", 0, 1, "L")
+    _cell(pdf, 190, 6, f"Décision : {decision}", 0, 1, "L")
+    if observation:
+        pdf.set_font("Arial", "", 8)
+        _cell(pdf, 190, 6, f"Observation : {observation}", 0, 1, "L")
+
+    pdf.set_y(y + 65)
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
 
 
 def generer_pdf_edt(classe, edt_g):
-    pdf = FPDF()
+    pdf = YAMPDF("L", "mm", "A4")
+    pdf.set_auto_page_break(True, 15)
     pdf.add_page()
-    ajouter_en_tete_officiel_pdf(pdf, f"EMPLOI DU TEMPS OFFICIEL - {classe}")
-    pdf.set_font("Arial", size=7.5)
-    pdf.set_fill_color(224, 242, 254)
-    pdf.cell(22, 5.5, "Jour", 1, 0, "C", fill=True)
-    for h in HEURES_LIST[:5]:
-        pdf.cell(32, 5.5, h, 1, 0, "C", fill=True)
-    pdf.cell(32, 5.5, "", 0, 1, "C")
+    ajouter_en_tete_officiel_pdf(pdf, f"EMPLOI DU TEMPS OFFICIEL — {classe}")
+    heures = list(HEURES_LIST)
+    col_jour = 24
+    col_h = (272 - col_jour) / max(len(heures), 1)
+    pdf.set_font("Arial", "B", 6.8)
+    pdf.set_fill_color(15, 118, 168)
+    pdf.set_text_color(255, 255, 255)
+    _cell(pdf, col_jour, 8, "Jour", 1, 0, "C", True)
+    for i, h in enumerate(heures):
+        _cell(pdf, col_h, 8, h, 1, 1 if i == len(heures)-1 else 0, "C", True)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Arial", "", 6.5)
     for jour in JOURS_LIST:
-        pdf.cell(22, 5.5, jour, 1, 0, "C")
-        for h in HEURES_LIST[:5]:
-            val = str(edt_g.loc[jour, h] if h in edt_g.columns else "")[:12]
-            pdf.cell(32, 5.5, val, 1, 0, "C")
-        pdf.cell(32, 5.5, "", 0, 1, "C")
+        _cell(pdf, col_jour, 11, jour, 1, 0, "C")
+        for i, h in enumerate(heures):
+            val = ""
+            try:
+                if h in edt_g.columns:
+                    val = edt_g.loc[jour, h]
+            except Exception:
+                pass
+            _cell(pdf, col_h, 11, _pdf_text(val)[:18], 1, 1 if i == len(heures)-1 else 0, "C")
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
+
 
 def generer_pdf_cahier_texte(classe_filtre):
-    pdf = FPDF()
+    pdf = YAMPDF("L", "mm", "A4")
     pdf.add_page()
-    ajouter_en_tete_officiel_pdf(pdf, f"CAHIER DE TEXTE OFFICIEL - {classe_filtre}")
-    pdf.set_font("Arial", 'B', 8)
-    pdf.set_fill_color(224, 242, 254)
-    pdf.cell(20, 5.5, "Date", 1, 0, "C", fill=True)
-    pdf.cell(35, 5.5, "Professeur", 1, 0, "C", fill=True)
-    pdf.cell(30, 5.5, "Matière", 1, 0, "C", fill=True)
-    pdf.cell(55, 5.5, "Contenu du Cours", 1, 0, "C", fill=True)
-    pdf.cell(50, 5.5, "Travail à faire", 1, 1, "C", fill=True)
-    pdf.set_font("Arial", size=7.5)
-    df_ct = st.session_state.cahier_textes
-    if classe_filtre != "Toutes":
-        df_ct = df_ct[df_ct["Classe"] == classe_filtre]
+    ajouter_en_tete_officiel_pdf(pdf, f"CAHIER DE TEXTE OFFICIEL — {classe_filtre}")
+    pdf.set_font("Arial", "B", 7.5)
+    pdf.set_fill_color(15, 118, 168)
+    pdf.set_text_color(255, 255, 255)
+    cols = [(20, "Date"), (38, "Professeur"), (32, "Matière"), (88, "Contenu du cours"), (94, "Travail à faire")]
+    for i, (w, label) in enumerate(cols):
+        _cell(pdf, w, 7, label, 1, 1 if i == len(cols)-1 else 0, "C", True)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Arial", "", 7)
+    df_ct = st.session_state.cahier_textes.copy()
+    if classe_filtre != "Toutes" and "Classe" in df_ct.columns:
+        df_ct = df_ct[df_ct["Classe"].astype(str) == str(classe_filtre)]
     for _, r in df_ct.iterrows():
-        pdf.cell(20, 5.5, str(r.get("Date", ""))[:10], 1, 0, "C")
-        pdf.cell(35, 5.5, str(r.get("Professeur", ""))[:20], 1, 0, "L")
-        pdf.cell(30, 5.5, str(r.get("Matière", ""))[:18], 1, 0, "L")
-        pdf.cell(55, 5.5, str(r.get("Contenu", ""))[:35], 1, 0, "L")
-        pdf.cell(50, 5.5, str(r.get("Travail à faire", ""))[:30], 1, 1, "L")
+        vals = [
+            (str(r.get("Date", ""))[:10], 20, "C"),
+            (str(r.get("Professeur", ""))[:24], 38, "L"),
+            (str(r.get("Matière", ""))[:20], 32, "L"),
+            (str(r.get("Contenu", ""))[:55], 88, "L"),
+            (str(r.get("Travail à faire", ""))[:58], 94, "L"),
+        ]
+        for i, (val, w, align) in enumerate(vals):
+            _cell(pdf, w, 6, val, 1, 1 if i == len(vals)-1 else 0, align)
+    if df_ct.empty:
+        _cell(pdf, 272, 8, "Aucune entrée de cahier de texte enregistrée.", 1, 1, "C")
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
+
 
 def generer_pdf_liste_eleves_classe(classe):
-    pdf = FPDF()
+    pdf = YAMPDF("P", "mm", "A4")
     pdf.add_page()
-    ajouter_en_tete_officiel_pdf(pdf, f"LISTE OFFICIELLE DES ÉLÈVES - {classe}")
-    pdf.set_font("Arial", 'B', 8.5)
-    pdf.set_fill_color(224, 242, 254)
-    pdf.cell(15, 6, "N°", 1, 0, "C", fill=True)
-    pdf.cell(110, 6, "Nom Complet", 1, 0, "C", fill=True)
-    pdf.cell(65, 6, "Date de Naissance", 1, 1, "C", fill=True)
-    pdf.set_font("Arial", size=8.5)
-    df_cls = st.session_state.eleves_db[st.session_state.eleves_db["Classe"] == classe]
+    ajouter_en_tete_officiel_pdf(pdf, f"LISTE OFFICIELLE DES ÉLÈVES — {classe}")
+    pdf.set_font("Arial", "B", 8.5)
+    pdf.set_fill_color(15, 118, 168)
+    pdf.set_text_color(255, 255, 255)
+    for i, (w, label) in enumerate([(15, "N°"), (110, "Nom complet"), (65, "Date de naissance")]):
+        _cell(pdf, w, 7, label, 1, 1 if i == 2 else 0, "C", True)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Arial", "", 8.5)
+    df_cls = st.session_state.eleves_db[st.session_state.eleves_db["Classe"].astype(str) == str(classe)]
     df_cls = trier_eleves_par_nom(df_cls)
     for idx, (_, r) in enumerate(df_cls.iterrows(), 1):
-        pdf.cell(15, 5.5, str(idx), 1, 0, "C")
-        pdf.cell(110, 5.5, str(r.get("Nom Complet", "")), 1, 0, "L")
-        pdf.cell(65, 5.5, str(r.get("Date de Naissance", "")), 1, 1, "C")
+        _cell(pdf, 15, 6, str(idx), 1, 0, "C")
+        _cell(pdf, 110, 6, r.get("Nom Complet", ""), 1, 0, "L")
+        _cell(pdf, 65, 6, r.get("Date de Naissance", ""), 1, 1, "C")
+    if df_cls.empty:
+        _cell(pdf, 190, 8, "Aucun élève enregistré dans cette classe.", 1, 1, "C")
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
 
+
 def generer_pdf_registre_absences(classe):
-    pdf = FPDF()
+    pdf = YAMPDF("L", "mm", "A4")
     pdf.add_page()
-    ajouter_en_tete_officiel_pdf(pdf, f"REGISTRE D'ABSENCE ET DE PRÉSENCE - {classe}")
-    pdf.set_font("Arial", 'B', 8.5)
-    pdf.set_fill_color(224, 242, 254)
-    pdf.cell(30, 6, "Date", 1, 0, "C", fill=True)
-    pdf.cell(90, 6, "Élève", 1, 0, "C", fill=True)
-    pdf.cell(35, 6, "Statut", 1, 0, "C", fill=True)
-    pdf.cell(35, 6, "Motif", 1, 1, "C", fill=True)
-    pdf.set_font("Arial", size=8)
+    ajouter_en_tete_officiel_pdf(pdf, f"REGISTRE D'ABSENCE ET DE PRÉSENCE — {classe}")
+    pdf.set_font("Arial", "B", 8)
+    pdf.set_fill_color(15, 118, 168)
+    pdf.set_text_color(255, 255, 255)
+    cols = [(30, "Date"), (90, "Élève"), (40, "Statut"), (42, "Motif")]
+    for i, (w, label) in enumerate(cols):
+        _cell(pdf, w, 7, label, 1, 1 if i == len(cols)-1 else 0, "C", True)
+    pdf.set_text_color(15, 23, 42)
+    pdf.set_font("Arial", "", 7.8)
     df_abs = st.session_state.absences_db
     if not df_abs.empty:
-        df_abs_cls = df_abs[df_abs["Classe"] == classe]
+        df_abs_cls = df_abs[df_abs["Classe"].astype(str) == str(classe)]
         for _, r in df_abs_cls.iterrows():
-            pdf.cell(30, 5.5, str(r.get("Date", ""))[:10], 1, 0, "C")
-            pdf.cell(90, 5.5, str(r.get("Élève", ""))[:30], 1, 0, "L")
-            pdf.cell(35, 5.5, str(r.get("Statut", ""))[:15], 1, 0, "C")
-            pdf.cell(35, 5.5, str(r.get("Motif", ""))[:15], 1, 1, "L")
+            vals = [(str(r.get("Date", ""))[:10],30,"C"),(r.get("Élève", ""),90,"L"),(r.get("Statut", ""),40,"C"),(r.get("Motif", ""),42,"L")]
+            for i,(val,w,a) in enumerate(vals):
+                _cell(pdf,w,6,val,1,1 if i==len(vals)-1 else 0,a)
+        if df_abs_cls.empty:
+            _cell(pdf,202,8,"Aucune absence ou présence enregistrée pour cette classe.",1,1,"C")
     else:
-        pdf.cell(190, 6, "Aucune absence enregistrée pour cette classe.", 1, 1, "C")
+        _cell(pdf,202,8,"Aucune absence ou présence enregistrée pour cette classe.",1,1,"C")
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
 
 
 def generer_pdf_fiche_progression_classe(classe, professeur=None):
-    """Génère la fiche de progression établie par les professeurs."""
-    pdf = FPDF()
+    pdf = YAMPDF("L", "mm", "A4")
     pdf.add_page()
-    titre = f"FICHE DE PROGRESSION PÉDAGOGIQUE - {classe}"
-    ajouter_en_tete_officiel_pdf(pdf, titre)
+    ajouter_en_tete_officiel_pdf(pdf, f"FICHE DE PROGRESSION PÉDAGOGIQUE — {classe}")
     df = st.session_state.fiches_progression_classe.copy()
     if not df.empty:
         df = df[df["Classe"].astype(str) == str(classe)]
         if professeur:
             df = df[df["Professeur"].astype(str) == str(professeur)]
-    pdf.set_font("Arial", 'B', 8)
-    pdf.set_fill_color(224, 242, 254)
-    for label, width in [("Date", 22), ("Professeur", 35), ("Progression", 43), ("Objectifs", 42), ("Avis / Analyse", 48)]:
-        pdf.cell(width, 6, label, 1, 0, "C", fill=True)
-    pdf.ln()
-    pdf.set_font("Arial", size=7)
+    cols = [(22,"Date"),(38,"Professeur"),(52,"Progression"),(52,"Objectifs du mois"),(38,"Avis / Analyse")]
+    pdf.set_font("Arial","B",7.5)
+    pdf.set_fill_color(15,118,168); pdf.set_text_color(255,255,255)
+    for i,(w,label) in enumerate(cols):
+        _cell(pdf,w,7,label,1,1 if i==len(cols)-1 else 0,"C",True)
+    pdf.set_text_color(15,23,42); pdf.set_font("Arial","",7)
     if df.empty:
-        pdf.cell(190, 7, "Aucune fiche de progression enregistrée pour cette classe.", 1, 1, "C")
+        _cell(pdf,202,8,"Aucune fiche de progression enregistrée pour cette classe.",1,1,"C")
     else:
-        for _, r in df.iterrows():
-            avis = f"{r.get('Avis Classe','')} {r.get('Régression Notes','')}".strip()
-            vals = [
-                str(r.get("Date",""))[:10],
-                str(r.get("Professeur",""))[:20],
-                str(r.get("Progression Niveau",""))[:25],
-                str(r.get("Objectifs Mois",""))[:25],
-                avis[:32]
-            ]
-            for val, width in zip(vals, [22,35,43,42,48]):
-                pdf.cell(width, 6, val, 1, 0, "L")
-            pdf.ln()
+        for _,r in df.iterrows():
+            avis=f"{r.get('Avis Classe','')} {r.get('Régression Notes','')}".strip()
+            vals=[(str(r.get('Date',''))[:10],22,"C"),(str(r.get('Professeur',''))[:24],38,"L"),(str(r.get('Progression Niveau',''))[:30],52,"L"),(str(r.get('Objectifs Mois',''))[:30],52,"L"),(avis[:28],38,"L")]
+            for i,(val,w,a) in enumerate(vals):
+                _cell(pdf,w,7,val,1,1 if i==len(vals)-1 else 0,a)
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
 
 
 def generer_pdf_suivi_absences(classe):
-    """Registre complet présence/absence/retard avec synthèse par élève."""
-    pdf = FPDF()
+    pdf = YAMPDF("P", "mm", "A4")
     pdf.add_page()
-    ajouter_en_tete_officiel_pdf(pdf, f"REGISTRE PRÉSENCES • ABSENCES • RETARDS - {classe}")
+    ajouter_en_tete_officiel_pdf(pdf, f"SUIVI PRÉSENCES • ABSENCES • RETARDS — {classe}")
     df_el = st.session_state.eleves_db[st.session_state.eleves_db["Classe"].astype(str) == str(classe)].copy()
     df_el = trier_eleves_par_nom(df_el)
-    pdf.set_font("Arial", 'B', 8)
-    pdf.set_fill_color(224, 242, 254)
-    for label, width in [("N°",10),("Élève",82),("Présences",25),("Absences",25),("Retards",23),("Conduite",25)]:
-        pdf.cell(width, 6, label, 1, 0, "C", fill=True)
-    pdf.ln()
-    pdf.set_font("Arial", size=7.5)
+    cols=[(10,"N°"),(82,"Élève"),(25,"Présences"),(25,"Absences"),(23,"Retards"),(25,"Conduite")]
+    pdf.set_font("Arial","B",8); pdf.set_fill_color(15,118,168); pdf.set_text_color(255,255,255)
+    for i,(w,label) in enumerate(cols):
+        _cell(pdf,w,7,label,1,1 if i==len(cols)-1 else 0,"C",True)
+    pdf.set_text_color(15,23,42); pdf.set_font("Arial","",7.5)
     if df_el.empty:
-        pdf.cell(190, 7, "Aucun élève dans cette classe.", 1, 1, "C")
+        _cell(pdf,190,8,"Aucun élève dans cette classe.",1,1,"C")
     else:
-        for idx, (_, r) in enumerate(df_el.iterrows(), 1):
-            nom = str(r.get("Nom Complet",""))
-            vie = obtenir_vie_scolaire_eleve(classe, nom)
-            pdf.cell(10, 5.5, str(idx), 1, 0, "C")
-            pdf.cell(82, 5.5, nom[:34], 1, 0, "L")
-            pdf.cell(25, 5.5, str(vie["presents"]), 1, 0, "C")
-            pdf.cell(25, 5.5, str(vie["absences"]), 1, 0, "C")
-            pdf.cell(23, 5.5, str(vie["retards"]), 1, 0, "C")
-            pdf.cell(25, 5.5, vie["conduite"][:13], 1, 1, "C")
+        for idx,(_,r) in enumerate(df_el.iterrows(),1):
+            nom=str(r.get("Nom Complet","")); vie=obtenir_vie_scolaire_eleve(classe,nom)
+            vals=[(idx,10,"C"),(nom[:34],82,"L"),(vie.get("presents",0),25,"C"),(vie.get("absences",0),25,"C"),(vie.get("retards",0),23,"C"),(vie.get("conduite","")[:13],25,"C")]
+            for i,(val,w,a) in enumerate(vals):
+                _cell(pdf,w,6,val,1,1 if i==len(vals)-1 else 0,a)
     ajouter_signature_pdf(pdf)
     return convertir_pdf_en_bytes(pdf)
 
