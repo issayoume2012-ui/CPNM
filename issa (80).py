@@ -505,6 +505,15 @@ def init_db():
                 );
             """)
             cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe TEXT;")
+            cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe_data BYTEA;")
+            cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe_mime TEXT;")
+            cur.execute("ALTER TABLE admin_prof_messages ADD COLUMN IF NOT EXISTS piece_jointe_taille BIGINT;")
+            cur.execute("ALTER TABLE admin_assignations_travail ADD COLUMN IF NOT EXISTS piece_jointe_data BYTEA;")
+            cur.execute("ALTER TABLE admin_assignations_travail ADD COLUMN IF NOT EXISTS piece_jointe_mime TEXT;")
+            cur.execute("ALTER TABLE admin_assignations_travail ADD COLUMN IF NOT EXISTS piece_jointe_taille BIGINT;")
+            cur.execute("ALTER TABLE fiches_progression_classe ADD COLUMN IF NOT EXISTS piece_jointe_data BYTEA;")
+            cur.execute("ALTER TABLE fiches_progression_classe ADD COLUMN IF NOT EXISTS piece_jointe_mime TEXT;")
+            cur.execute("ALTER TABLE fiches_progression_classe ADD COLUMN IF NOT EXISTS piece_jointe_taille BIGINT;")
             cur.execute("ALTER TABLE vie_scolaire ADD COLUMN IF NOT EXISTS conduite TEXT;")
             cur.execute("ALTER TABLE vie_scolaire ADD COLUMN IF NOT EXISTS appreciation TEXT;")
 
@@ -673,18 +682,39 @@ def save_df_to_db(df: pd.DataFrame, table_name: str):
                             cur.execute("INSERT INTO notes (classe, matiere, periode, eleve, devoir1, devoir2, composition, baremenote) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);",
                                         (r.get("Classe"), r.get("Matière"), r.get("Periode", r.get("Période")), r.get("Eleve"), r.get("Devoir1"), r.get("Devoir2"), r.get("Composition"), r.get("BaremeNote")))
                 elif table_name == "admin_prof_messages":
-                    query = "INSERT INTO admin_prof_messages (expediteur, destinataire, date, sujet, message, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s);"
-                    data_tuples = [(r.get("Expéditeur"), r.get("Destinataire"), str(r.get("Date", "")), r.get("Sujet"), r.get("Message"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
+                    query = "INSERT INTO admin_prof_messages (expediteur, destinataire, date, sujet, message, piece_jointe, piece_jointe_data, piece_jointe_mime, piece_jointe_taille) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);"
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        payload = r.get("Pièce jointe data")
+                        if payload is not None and not isinstance(payload, (bytes, bytearray, memoryview)):
+                            try: payload = bytes(payload)
+                            except Exception: payload = None
+                        if isinstance(payload, memoryview): payload = payload.tobytes()
+                        data_tuples.append((r.get("Expéditeur"), r.get("Destinataire"), str(r.get("Date", "")), r.get("Sujet"), r.get("Message"), r.get("Pièce jointe"), psycopg2.Binary(payload) if payload else None, r.get("Pièce jointe mime"), r.get("Pièce jointe taille")))
                     if data_tuples:
                         cur.executemany(query, data_tuples)
                 elif table_name == "admin_assignations_travail":
-                    query = "INSERT INTO admin_assignations_travail (titre, classe, professeur, date, description, piece_jointe) VALUES (%s, %s, %s, %s, %s, %s);"
-                    data_tuples = [(r.get("Titre"), r.get("Classe"), r.get("Professeur"), str(r.get("Date", "")), r.get("Description"), r.get("Pièce jointe")) for _, r in df_cleaned.iterrows()]
+                    query = "INSERT INTO admin_assignations_travail (titre, classe, professeur, date, description, piece_jointe, piece_jointe_data, piece_jointe_mime, piece_jointe_taille) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);"
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        payload = r.get("Pièce jointe data")
+                        if isinstance(payload, memoryview): payload = payload.tobytes()
+                        if payload is not None and not isinstance(payload, (bytes, bytearray)):
+                            try: payload = bytes(payload)
+                            except Exception: payload = None
+                        data_tuples.append((r.get("Titre"), r.get("Classe"), r.get("Professeur"), str(r.get("Date", "")), r.get("Description"), r.get("Pièce jointe"), psycopg2.Binary(payload) if payload else None, r.get("Pièce jointe mime"), r.get("Pièce jointe taille")))
                     if data_tuples:
                         cur.executemany(query, data_tuples)
                 elif table_name == "fiches_progression_classe":
-                    query = "INSERT INTO fiches_progression_classe (professeur, classe, date, progression_niveau, avis_classe, regression_notes, piece_jointe, objectifs_mois) VALUES (%s, %s, %s, %s, %s, %s, %s, %s);"
-                    data_tuples = [(r.get("Professeur"), r.get("Classe"), str(r.get("Date", "")), r.get("Progression Niveau"), r.get("Avis Classe"), r.get("Régression Notes"), r.get("Pièce jointe"), r.get("Objectifs Mois")) for _, r in df_cleaned.iterrows()]
+                    query = "INSERT INTO fiches_progression_classe (professeur, classe, date, progression_niveau, avis_classe, regression_notes, piece_jointe, objectifs_mois, piece_jointe_data, piece_jointe_mime, piece_jointe_taille) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);"
+                    data_tuples = []
+                    for _, r in df_cleaned.iterrows():
+                        payload = r.get("Pièce jointe data")
+                        if isinstance(payload, memoryview): payload = payload.tobytes()
+                        if payload is not None and not isinstance(payload, (bytes, bytearray)):
+                            try: payload = bytes(payload)
+                            except Exception: payload = None
+                        data_tuples.append((r.get("Professeur"), r.get("Classe"), str(r.get("Date", "")), r.get("Progression Niveau"), r.get("Avis Classe"), r.get("Régression Notes"), r.get("Pièce jointe"), r.get("Objectifs Mois"), psycopg2.Binary(payload) if payload else None, r.get("Pièce jointe mime"), r.get("Pièce jointe taille")))
                     if data_tuples:
                         cur.executemany(query, data_tuples)
                 else:
@@ -1106,9 +1136,9 @@ def recharger_toutes_les_donnees():
     st.session_state.notes_db = load_table_from_db('SELECT classe AS "Classe", matiere AS "Matière", periode AS "Periode", periode AS "Période", eleve AS "Eleve", devoir1 AS "Devoir1", devoir2 AS "Devoir2", composition AS "Composition", baremenote AS "BaremeNote" FROM notes', ["Classe", "Matière", "Periode", "Période", "Eleve", "Devoir1", "Devoir2", "Composition", "BaremeNote"])
     st.session_state.viescolaire_db = load_table_from_db('SELECT classe AS "Classe", periode AS "Periode", periode AS "Période", eleve AS "Eleve", absences_justifiees AS "AbsencesJustifiees", absences_non_justifiees AS "AbsencesNonJustifiees", retards AS "Retards", heures_perdues AS "HeuresPerdues", observations AS "Observations", decision_conseil AS "DecisionConseil", conduite AS "Conduite", appreciation AS "Appreciation" FROM vie_scolaire', ["Classe", "Periode", "Période", "Eleve", "AbsencesJustifiees", "AbsencesNonJustifiees", "Retards", "HeuresPerdues", "Observations", "DecisionConseil", "Conduite", "Appreciation"])
     st.session_state.audit_logs_db = load_table_from_db('SELECT horodatage AS "Horodatage", acteur AS "Acteur", action AS "Action", details AS "Détails" FROM audit_logs', ["Horodatage", "Acteur", "Action", "Détails"])
-    st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe"])
-    st.session_state.admin_assignations_travail = load_table_from_db('SELECT titre AS "Titre", classe AS "Classe", professeur AS "Professeur", date AS "Date", description AS "Description", piece_jointe AS "Pièce jointe" FROM admin_assignations_travail', ["Titre", "Classe", "Professeur", "Date", "Description", "Pièce jointe"])
-    st.session_state.fiches_progression_classe = load_table_from_db('SELECT professeur AS "Professeur", classe AS "Classe", date AS "Date", progression_niveau AS "Progression Niveau", avis_classe AS "Avis Classe", regression_notes AS "Régression Notes", piece_jointe AS "Pièce jointe", objectifs_mois AS "Objectifs Mois" FROM fiches_progression_classe ORDER BY id DESC', ["Professeur", "Classe", "Date", "Progression Niveau", "Avis Classe", "Régression Notes", "Pièce jointe", "Objectifs Mois"])
+    st.session_state.admin_prof_messages = load_table_from_db('SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe", piece_jointe_data AS "Pièce jointe data", piece_jointe_mime AS "Pièce jointe mime", piece_jointe_taille AS "Pièce jointe taille" FROM admin_prof_messages', ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe", "Pièce jointe data", "Pièce jointe mime", "Pièce jointe taille"])
+    st.session_state.admin_assignations_travail = load_table_from_db('SELECT titre AS "Titre", classe AS "Classe", professeur AS "Professeur", date AS "Date", description AS "Description", piece_jointe AS "Pièce jointe", piece_jointe_data AS "Pièce jointe data", piece_jointe_mime AS "Pièce jointe mime", piece_jointe_taille AS "Pièce jointe taille" FROM admin_assignations_travail', ["Titre", "Classe", "Professeur", "Date", "Description", "Pièce jointe", "Pièce jointe data", "Pièce jointe mime", "Pièce jointe taille"])
+    st.session_state.fiches_progression_classe = load_table_from_db('SELECT professeur AS "Professeur", classe AS "Classe", date AS "Date", progression_niveau AS "Progression Niveau", avis_classe AS "Avis Classe", regression_notes AS "Régression Notes", piece_jointe AS "Pièce jointe", objectifs_mois AS "Objectifs Mois", piece_jointe_data AS "Pièce jointe data", piece_jointe_mime AS "Pièce jointe mime", piece_jointe_taille AS "Pièce jointe taille" FROM fiches_progression_classe ORDER BY id DESC', ["Professeur", "Classe", "Date", "Progression Niveau", "Avis Classe", "Régression Notes", "Pièce jointe", "Objectifs Mois", "Pièce jointe data", "Pièce jointe mime", "Pièce jointe taille"])
     st.session_state.cahier_textes = load_table_from_db('SELECT professeur AS "Professeur", date AS "Date", classe AS "Classe", matiere AS "Matière", contenu AS "Contenu", travail_a_faire AS "Travail à faire" FROM cahier_textes', ["Professeur", "Date", "Classe", "Matière", "Contenu", "Travail à faire"])
     st.session_state.absences_db = load_table_from_db('SELECT date AS "Date", classe AS "Classe", eleve AS "Élève", statut AS "Statut", motif AS "Motif" FROM absences', ["Date", "Classe", "Élève", "Statut", "Motif"])
 
@@ -1244,10 +1274,103 @@ def professeur_a_acces_matiere(classe_nom, matiere_nom, matiere_affectee):
 def recharger_messages_depuis_db():
     """Recharge immédiatement la messagerie pour synchroniser Administration ↔ Professeurs."""
     st.session_state.admin_prof_messages = load_table_from_db(
-        'SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe" FROM admin_prof_messages ORDER BY id DESC',
-        ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe"]
+        'SELECT expediteur AS "Expéditeur", destinataire AS "Destinataire", date AS "Date", sujet AS "Sujet", message AS "Message", piece_jointe AS "Pièce jointe", piece_jointe_data AS "Pièce jointe data", piece_jointe_mime AS "Pièce jointe mime", piece_jointe_taille AS "Pièce jointe taille" FROM admin_prof_messages ORDER BY id DESC',
+        ["Expéditeur", "Destinataire", "Date", "Sujet", "Message", "Pièce jointe", "Pièce jointe data", "Pièce jointe mime", "Pièce jointe taille"]
     )
     return st.session_state.admin_prof_messages
+
+def _piece_jointe_bytes(row):
+    """Retourne les octets du fichier joint, y compris depuis PostgreSQL BYTEA."""
+    if row is None:
+        return None
+    data = row.get("Pièce jointe data") if hasattr(row, "get") else None
+    if data is None or (isinstance(data, float) and pd.isna(data)):
+        return None
+    try:
+        if isinstance(data, memoryview):
+            return data.tobytes()
+        if isinstance(data, bytearray):
+            return bytes(data)
+        if isinstance(data, bytes):
+            return data
+    except Exception:
+        return None
+    return None
+
+
+def _piece_jointe_mime(row):
+    try:
+        mime = str(row.get("Pièce jointe mime", "") or "").strip()
+        return mime if mime and mime.lower() != "nan" else "application/octet-stream"
+    except Exception:
+        return "application/octet-stream"
+
+
+def _afficher_piece_jointe(row, key_prefix, compact=False):
+    """Affiche consultation + téléchargement d'une pièce jointe stockée en base."""
+    data = _piece_jointe_bytes(row)
+    nom = str(row.get("Pièce jointe", "") or "Document_joint").strip()
+    mime = _piece_jointe_mime(row)
+    if not data:
+        if nom and nom.lower() not in {"nan", "none", "aucune", "aucune pièce jointe"}:
+            st.caption(f"📎 {nom} — ancien enregistrement : le contenu binaire n'est pas disponible dans la base.")
+        return False
+
+    taille = len(data)
+    if taille >= 1024 * 1024:
+        taille_label = f"{taille / (1024*1024):.1f} Mo"
+    elif taille >= 1024:
+        taille_label = f"{taille / 1024:.0f} Ko"
+    else:
+        taille_label = f"{taille} octets"
+
+    st.markdown(f"**📎 {nom}** · {taille_label}")
+    d1, d2 = st.columns(2 if not compact else 1)
+    with d1:
+        st.download_button(
+            "⬇️ Télécharger la pièce jointe",
+            data,
+            file_name=nom,
+            mime=mime,
+            key=f"download_piece_{key_prefix}_{hash((nom, taille))}",
+            use_container_width=True
+        )
+    if not compact:
+        with d2:
+            st.caption("Consultation ci-dessous selon le format.")
+
+    if mime.startswith("image/"):
+        st.image(data, caption=nom, use_container_width=True)
+    elif mime == "application/pdf" or nom.lower().endswith(".pdf"):
+        encoded = base64.b64encode(data).decode("ascii")
+        st.components.v1.html(
+            f'<iframe src="data:application/pdf;base64,{encoded}" width="100%" height="650" style="border:1px solid #cbd5e1;border-radius:12px;"></iframe>',
+            height=670,
+            scrolling=True
+        )
+    elif mime.startswith("video/"):
+        st.video(data, format=mime)
+    elif mime.startswith("audio/"):
+        st.audio(data, format=mime)
+    else:
+        st.info("Ce format ne peut pas être prévisualisé directement dans le navigateur. Utilisez le bouton de téléchargement pour l'ouvrir avec Word/Excel ou l'application correspondante.")
+    return True
+
+
+def _fichier_uploade_vers_champs(uploaded):
+    """Transforme un UploadedFile Streamlit en métadonnées + octets persistables."""
+    if uploaded is None:
+        return "", None, "", 0
+    try:
+        nom = str(uploaded.name or "Document_joint").strip()
+        mime = str(getattr(uploaded, "type", "") or "application/octet-stream")
+        data = uploaded.getvalue()
+        if not data:
+            return nom, None, mime, 0
+        return nom, bytes(data), mime, len(data)
+    except Exception:
+        return str(getattr(uploaded, "name", "Document_joint")), None, "application/octet-stream", 0
+
 
 def message_visible_pour_professeur(row, prof_connecte, classe_autorisee):
     """Détermine si un message est réellement destiné au professeur connecté."""
@@ -2679,23 +2802,47 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 doc_contenu = st.text_area("Description ou message explicatif")
                 
                 uploaded_files = st.file_uploader(
-                    "Joindre des fichiers, des photos ou des vidéos", 
-                    type=["pdf", "png", "jpg", "jpeg", "mp4", "mov", "docx", "xlsx"], 
-                    accept_multiple_files=True
+                    "Joindre des fichiers, des photos ou des vidéos",
+                    type=["pdf", "png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "avi", "webm", "mp3", "wav", "docx", "doc", "xlsx", "xls", "pptx", "txt", "csv"],
+                    accept_multiple_files=True,
+                    key="prof_exchange_files_real"
                 )
-                
+
                 if st.form_submit_button("Transmettre avec Fichiers Joints"):
-                    noms_fichiers = ", ".join([f.name for f in uploaded_files]) if uploaded_files else "Aucune pièce jointe"
-                    new_doc_msg = pd.DataFrame([{
-                        "Expéditeur": f"Prof. {prof_connecte}", "Destinataire": doc_destinataire,
-                        "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": f"[TRANSMISSION AVEC FICHIERS] {doc_titre}", 
-                        "Message": f"Description :\n{doc_contenu}",
-                        "Pièce jointe": noms_fichiers
-                    }])
-                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_doc_msg], ignore_index=True)
-                    save_df_to_db(new_doc_msg, "admin_prof_messages")
-                    st.success(f"Document transmis avec succès avec les fichiers joints : {noms_fichiers} !")
+                    if not doc_titre.strip() and not uploaded_files:
+                        st.warning("Indiquez un titre ou joignez au moins un fichier.")
+                    else:
+                        rows_to_save = []
+                        fichiers_ok = []
+                        fichiers_a_envoyer = uploaded_files or []
+                        # Un message par fichier permet à chaque pièce jointe d'être consultable/téléchargeable indépendamment.
+                        if not fichiers_a_envoyer:
+                            rows_to_save.append({
+                                "Expéditeur": f"Prof. {prof_connecte}", "Destinataire": doc_destinataire,
+                                "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                                "Sujet": f"[TRANSMISSION] {doc_titre}",
+                                "Message": f"Description :\n{doc_contenu}",
+                                "Pièce jointe": "", "Pièce jointe data": None, "Pièce jointe mime": "", "Pièce jointe taille": 0
+                            })
+                        else:
+                            for fichier in fichiers_a_envoyer:
+                                nom_f, data_f, mime_f, taille_f = _fichier_uploade_vers_champs(fichier)
+                                rows_to_save.append({
+                                    "Expéditeur": f"Prof. {prof_connecte}", "Destinataire": doc_destinataire,
+                                    "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                                    "Sujet": f"[TRANSMISSION AVEC FICHIERS] {doc_titre}",
+                                    "Message": f"Description :\n{doc_contenu}",
+                                    "Pièce jointe": nom_f, "Pièce jointe data": data_f,
+                                    "Pièce jointe mime": mime_f, "Pièce jointe taille": taille_f
+                                })
+                                fichiers_ok.append(nom_f)
+                        new_doc_msg = pd.DataFrame(rows_to_save)
+                        if save_df_to_db(new_doc_msg, "admin_prof_messages"):
+                            recharger_messages_depuis_db()
+                            st.success("Transmission enregistrée dans Supabase : " + (", ".join(fichiers_ok) if fichiers_ok else "message sans pièce jointe") + ".")
+                            st.rerun()
+                        else:
+                            st.error("Échec de sauvegarde de la transmission et des pièces jointes dans Supabase.")
 
             st.markdown("#### 📥 Documents & Bulletins envoyés par l'Administration dans votre Espace")
             df_shared = st.session_state.admin_prof_messages
@@ -2707,9 +2854,10 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                             <b>De :</b> {r.get('Expéditeur')} | <b>Date :</b> {r.get('Date')}<br>
                             <b>Sujet :</b> {r.get('Sujet')}<br>
                             <p style="margin: 5px 0 0 0; color: #475569;">{r.get('Message')}</p>
-                            <span style="font-size: 0.85rem; color: #1E3A8A; font-weight: 700;">Pièce jointe : {r.get('Pièce jointe')}</span>
+                            <span style="font-size: 0.85rem; color: #1E3A8A; font-weight: 700;">Pièce jointe : {r.get('Pièce jointe') or 'Aucune'}</span>
                         </div>
                     """, unsafe_allow_html=True)
+                    _afficher_piece_jointe(r, f"prof_shared_{idx}")
             else:
                 st.info("Aucun document partagé pour le moment.")
 
@@ -2717,7 +2865,16 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
             st.markdown("### 📥 Travaux à Faire Assignés par l'Administration")
             df_travaux_admin = st.session_state.admin_assignations_travail
             if not df_travaux_admin.empty:
-                st.dataframe(df_travaux_admin, use_container_width=True)
+                for idx_tr, r_tr in df_travaux_admin.iterrows():
+                    cible_tr = str(r_tr.get("Professeur", "") or "").strip()
+                    classe_tr = str(r_tr.get("Classe", "") or "").strip()
+                    cible_norm = normaliser_texte(cible_tr)
+                    prof_norm = normaliser_texte(prof_connecte)
+                    visible_tr = (not cible_tr or cible_norm in {"tous", "tous les professeurs", "tous les profs"} or prof_norm in cible_norm or cible_norm in prof_norm) and (not classe_tr or normaliser_texte(classe_tr) == normaliser_texte(classe_autorisee))
+                    if visible_tr:
+                        st.markdown(f"### 📌 {r_tr.get('Titre','')} · {r_tr.get('Date','')}")
+                        st.write(r_tr.get("Description", ""))
+                        _afficher_piece_jointe(r_tr, f"travail_prof_{idx_tr}")
             else:
                 st.info("Aucun travail assigné pour le moment.")
 
@@ -2733,14 +2890,15 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 pj_prog = st.file_uploader("Joindre la fiche détaillée", type=["pdf", "docx", "png", "jpg"], accept_multiple_files=False)
                 
                 if st.form_submit_button("Envoyer la Fiche de Progression"):
-                    nom_pj = pj_prog.name if pj_prog else "Fiche_Standard.pdf"
+                    nom_pj, data_pj, mime_pj, taille_pj = _fichier_uploade_vers_champs(pj_prog)
                     new_fiche = pd.DataFrame([{
                         "Professeur": prof_connecte, "Classe": classe_autorisee,
                         "Date": str(datetime.now().strftime("%Y-%m-%d")),
-                        "Progression Niveau": f"[{mois_objectif}] {prog_niveau}", 
+                        "Progression Niveau": f"[{mois_objectif}] {prog_niveau}",
                         "Avis Classe": avis_classe,
                         "Régression Notes": regression_notes, "Pièce jointe": nom_pj,
-                        "Objectifs Mois": objectifs_mois
+                        "Objectifs Mois": objectifs_mois, "Pièce jointe data": data_pj,
+                        "Pièce jointe mime": mime_pj, "Pièce jointe taille": taille_pj
                     }])
                     st.session_state.fiches_progression_classe = pd.concat([st.session_state.fiches_progression_classe, new_fiche], ignore_index=True)
                     save_df_to_db(new_fiche, "fiches_progression_classe")
@@ -2752,7 +2910,9 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
                 st.session_state.fiches_progression_classe["Professeur"].astype(str) == str(prof_connecte)
             ]
             if not df_prog_prof.empty:
-                st.dataframe(df_prog_prof, use_container_width=True, hide_index=True)
+                st.dataframe(df_prog_prof.drop(columns=["Pièce jointe data", "Pièce jointe mime", "Pièce jointe taille"], errors="ignore"), use_container_width=True, hide_index=True)
+                for idx_pg, row_pg in df_prog_prof.iterrows():
+                    _afficher_piece_jointe(row_pg, f"progression_prof_{idx_pg}", compact=True)
                 pdf_prog_prof = generer_pdf_fiche_progression_classe(classe_autorisee, prof_connecte)
                 st.download_button(
                     "📥 Télécharger mes fiches de progression (PDF)",
@@ -3056,17 +3216,38 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 sujet_doc = st.text_input("Titre du document partagé")
                 dest_doc = st.selectbox("Destinataires", ["Tous les Professeurs", "Classe Spécifique"])
                 desc_doc = st.text_area("Instructions ou description")
-                pj_admin = st.file_uploader("Fichier à partager", type=["pdf", "docx", "xlsx", "png", "jpg"], accept_multiple_files=False)
+                pj_admin = st.file_uploader(
+                    "Fichier à partager",
+                    type=["pdf", "docx", "doc", "xlsx", "xls", "pptx", "png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "avi", "webm", "mp3", "wav", "txt", "csv"],
+                    accept_multiple_files=True,
+                    key="admin_share_files_real"
+                )
                 if st.form_submit_button("Diffuser le Document"):
-                    nom_pj_admin = pj_admin.name if pj_admin else "Document_Officiel.pdf"
-                    new_share = pd.DataFrame([{
-                        "Expéditeur": "Administration", "Destinataire": dest_doc,
-                        "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
-                        "Sujet": sujet_doc, "Message": desc_doc, "Pièce jointe": nom_pj_admin
-                    }])
-                    st.session_state.admin_prof_messages = pd.concat([st.session_state.admin_prof_messages, new_share], ignore_index=True)
-                    save_df_to_db(new_share, "admin_prof_messages")
-                    st.success("Document diffusé avec succès !")
+                    rows_admin = []
+                    fichiers_admin = pj_admin or []
+                    if not fichiers_admin:
+                        rows_admin.append({
+                            "Expéditeur": "Administration", "Destinataire": dest_doc,
+                            "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                            "Sujet": sujet_doc, "Message": desc_doc, "Pièce jointe": "",
+                            "Pièce jointe data": None, "Pièce jointe mime": "", "Pièce jointe taille": 0
+                        })
+                    else:
+                        for fichier in fichiers_admin:
+                            nom_f, data_f, mime_f, taille_f = _fichier_uploade_vers_champs(fichier)
+                            rows_admin.append({
+                                "Expéditeur": "Administration", "Destinataire": dest_doc,
+                                "Date": str(datetime.now().strftime("%Y-%m-%d %H:%M")),
+                                "Sujet": sujet_doc, "Message": desc_doc, "Pièce jointe": nom_f,
+                                "Pièce jointe data": data_f, "Pièce jointe mime": mime_f, "Pièce jointe taille": taille_f
+                            })
+                    new_share = pd.DataFrame(rows_admin)
+                    if save_df_to_db(new_share, "admin_prof_messages"):
+                        recharger_messages_depuis_db()
+                        st.success("Document(s) diffusé(s) avec le fichier réellement stocké dans Supabase.")
+                        st.rerun()
+                    else:
+                        st.error("Le document n'a pas pu être enregistré dans Supabase.")
 
 
             st.markdown("### 📥 Télécharger le cahier de texte")
@@ -3101,16 +3282,28 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                 classe_travail = st.selectbox("Classe concernée", st.session_state.classes_db["Classe"].tolist() if not st.session_state.classes_db.empty else ["CP"])
                 prof_cible = st.text_input("Professeur concerné (ou Tous)")
                 desc_travail = st.text_area("Consignes détaillées")
-                pj_travail = st.file_uploader("Fichier joint (Consignes/Sujet)", type=["pdf", "docx"], accept_multiple_files=False)
+                pj_travail = st.file_uploader(
+                    "Fichier joint (Consignes/Sujet)",
+                    type=["pdf", "docx", "doc", "xlsx", "xls", "pptx", "png", "jpg", "jpeg", "txt"],
+                    accept_multiple_files=False,
+                    key="admin_assign_file_real"
+                )
                 if st.form_submit_button("Envoyer l'Assignation"):
-                    nom_pj_tr = pj_travail.name if pj_travail else "Consignes.pdf"
+                    nom_pj_tr, data_pj_tr, mime_pj_tr, taille_pj_tr = _fichier_uploade_vers_champs(pj_travail)
+                    if not nom_pj_tr:
+                        nom_pj_tr = ""
                     new_assign = pd.DataFrame([{
                         "Titre": titre_travail, "Classe": classe_travail, "Professeur": prof_cible,
-                        "Date": str(datetime.now().strftime("%Y-%m-%d")), "Description": desc_travail, "Pièce jointe": nom_pj_tr
+                        "Date": str(datetime.now().strftime("%Y-%m-%d")), "Description": desc_travail,
+                        "Pièce jointe": nom_pj_tr, "Pièce jointe data": data_pj_tr,
+                        "Pièce jointe mime": mime_pj_tr, "Pièce jointe taille": taille_pj_tr
                     }])
-                    st.session_state.admin_assignations_travail = pd.concat([st.session_state.admin_assignations_travail, new_assign], ignore_index=True)
-                    save_df_to_db(new_assign, "admin_assignations_travail")
-                    st.success("Travail assigné avec succès !")
+                    if save_df_to_db(new_assign, "admin_assignations_travail"):
+                        st.session_state.admin_assignations_travail = pd.concat([st.session_state.admin_assignations_travail, new_assign], ignore_index=True)
+                        st.success("Travail assigné avec fichier réellement stocké dans Supabase !")
+                        st.rerun()
+                    else:
+                        st.error("Impossible d'enregistrer le travail et sa pièce jointe.")
 
         with adm_tab7:
             st.markdown("### 📊 Simulation & Tableau de Bord Global")
@@ -3266,8 +3459,10 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
                         <h3 style="margin:4px 0;color:#0f172a;">{r.get('Sujet','')}</h3>
                         <div style="color:#64748b;font-weight:700;">De : {r.get('Expéditeur','')} &nbsp;|&nbsp; À : {r.get('Destinataire','')} &nbsp;|&nbsp; {r.get('Date','')}</div>
                         <p style="color:#334155;white-space:pre-wrap;line-height:1.6;">{r.get('Message','')}</p>
+                        <div style="color:#1d4ed8;font-weight:800;">Pièce jointe : {r.get('Pièce jointe') or 'Aucune'}</div>
                     </div>
                     """, unsafe_allow_html=True)
+                    _afficher_piece_jointe(r, f"admin_history_{idx}")
 
                 prof_messages_recus = df_messages_admin[~df_messages_admin["Expéditeur"].astype(str).str.lower().str.startswith("administration")]
                 if not prof_messages_recus.empty:
@@ -3336,7 +3531,9 @@ elif st.session_state.espace_actif == "🔒 Espace Administration & Rapports (S�
             if df_prog_admin.empty:
                 st.info("Aucune fiche de progression ne correspond aux filtres.")
             else:
-                st.dataframe(df_prog_admin, use_container_width=True, hide_index=True)
+                st.dataframe(df_prog_admin.drop(columns=["Pièce jointe data", "Pièce jointe mime", "Pièce jointe taille"], errors="ignore"), use_container_width=True, hide_index=True)
+                for idx_pg_ad, row_pg_ad in df_prog_admin.iterrows():
+                    _afficher_piece_jointe(row_pg_ad, f"progression_admin_{idx_pg_ad}", compact=True)
                 classe_pdf_prog = filtre_prog_classe if filtre_prog_classe != "Toutes" else str(df_prog_admin.iloc[0]["Classe"])
                 prof_pdf_prog = filtre_prog_prof if filtre_prog_prof != "Tous" else None
                 st.download_button(
