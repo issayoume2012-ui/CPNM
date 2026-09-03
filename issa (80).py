@@ -2942,17 +2942,17 @@ elif st.session_state.espace_actif == "👨‍🏫 Espace Professeurs / Maîtres
 
         with t_edt_prof:
             st.markdown("### Emploi du Temps de la Classe")
+
+            # Récupération de l'emploi du temps en lecture seule
             edt_grid_df = get_or_create_edt(classe_autorisee)
-            jour_sel = st.selectbox("Jour", JOURS_LIST, key="prof_edt_jour")
-            heure_sel = st.selectbox("Créneau", HEURES_LIST, key="prof_edt_heure")
-            matiere_saisie = st.text_input("Matière / Activité", value="Cours", key="prof_edt_val")
-            if st.button("Mettre à jour ce créneau"):
-                edt_grid_df.loc[jour_sel, heure_sel] = matiere_saisie
-                st.session_state.edt_grid_db[classe_autorisee] = edt_grid_df
-                df_to_save_edt = pd.DataFrame([{"classe": classe_autorisee, "jour": jour_sel, "heure": heure_sel, "valeur": matiere_saisie}])
-                save_df_to_db(df_to_save_edt, "edt_grid")
-                st.success("Créneau mis à jour !")
-            st.dataframe(edt_grid_df, use_container_width=True)
+
+            # Affichage uniquement — aucune modification possible
+            st.dataframe(
+                edt_grid_df,
+                use_container_width=True,
+                height=500
+            )
+    
 
         with t_msg:
             st.markdown("""
