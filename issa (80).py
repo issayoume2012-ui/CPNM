@@ -2538,10 +2538,15 @@ with col_top2:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+# Initialiser espace_actif s'il n'existe pas encore
+if "espace_actif" not in st.session_state:
+    st.session_state.espace_actif = "🏠 Accueil"
+
 if st.session_state.espace_actif != "🏠 Accueil":
     if st.button("⬅️ Retour Accueil Principal (Transition Instantanée)"):
         st.session_state.espace_actif = "🏠 Accueil"
         st.rerun()
+
     st.markdown("---")
 
 # ==========================================
