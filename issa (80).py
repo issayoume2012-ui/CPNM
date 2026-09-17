@@ -65,6 +65,172 @@ if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
 
 SUPABASE_STORAGE_BUCKET = "documents"
 
+# ============================================================
+# SUPABASE STORAGE — POINT 7
+# Fonctions d'envoi des fichiers lourds et des PDF
+# ============================================================
+
+def upload_fichier_storage(uploaded_file, dossier="documents"):
+    """
+    Envoie un fichier provenant de st.file_uploader()
+    vers le bucket privé Supabase Storage 'documents'.
+
+    Retourne le chemin du fichier dans Storage en cas de succès,
+    ou None en cas d'échec.
+    """
+    if uploaded_file is None:
+        return None
+
+    if supabase_storage is None:
+        st.error(
+            "❌ Supabase Storage n'est pas configuré. "
+            "Vérifiez SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY "
+            "dans les Secrets Streamlit."
+        )
+        return None
+
+    try:
+        nom_original = str(getattr(uploaded_file, "name", "fichier"))
+        contenu = uploaded_file.getvalue()
+
+        if not contenu:
+            st.error("❌ Le fichier sélectionné est vide.")
+            return None
+
+        mime_type = (
+            getattr(uploaded_file, "type", None)
+            or "application/octet-stream"
+        )
+
+        # Empêche qu'un nom de fichier puisse créer un chemin inattendu.
+        nom_propre = os.path.basename(nom_original)
+
+        # Nom unique : plusieurs utilisateurs peuvent envoyer
+        # des fichiers portant le même nom.
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        nom_unique = f"{timestamp}_{nom_propre}"
+
+        dossier_propre = str(dossier or "documents").strip("/ ")
+
+        chemin_storage = (
+            f"{dossier_propre}/{nom_unique}"
+            if dossier_propre
+            else nom_unique
+        )
+
+        supabase_storage.storage.from_(
+            SUPABASE_STORAGE_BUCKET
+        ).upload(
+            chemin_storage,
+            contenu,
+            {
+                "content-type": mime_type,
+                "upsert": "false"
+            }
+        )
+
+        return chemin_storage
+
+    except Exception as e:
+        st.error(
+            f"❌ Erreur lors de l'envoi vers Supabase Storage : {e}"
+        )
+        return None
+
+
+def upload_bytes_storage(
+    data,
+    chemin_storage,
+    mime_type="application/octet-stream"
+):
+    """
+    Envoie directement des bytes vers Supabase Storage.
+
+    Cette fonction est destinée notamment aux PDF générés
+    par FPDF ou à tout fichier déjà disponible en mémoire.
+    """
+    if data is None:
+        return None
+
+    if supabase_storage is None:
+        st.error(
+            "❌ Supabase Storage n'est pas configuré. "
+            "Vérifiez vos Secrets Streamlit."
+        )
+        return None
+
+    try:
+        if isinstance(data, bytearray):
+            data = bytes(data)
+        elif not isinstance(data, bytes):
+            data = bytes(data)
+
+        if not data:
+            st.error("❌ Les données du fichier sont vides.")
+            return None
+
+        chemin_propre = str(chemin_storage).strip("/ ")
+
+        if not chemin_propre:
+            st.error("❌ Le chemin Storage est vide.")
+            return None
+
+        supabase_storage.storage.from_(
+            SUPABASE_STORAGE_BUCKET
+        ).upload(
+            chemin_propre,
+            data,
+            {
+                "content-type": mime_type,
+                "upsert": "true"
+            }
+        )
+
+        return chemin_propre
+
+    except Exception as e:
+        st.error(
+            f"❌ Erreur d'envoi des données vers Supabase Storage : {e}"
+        )
+        return None
+
+
+def obtenir_url_fichier_storage(
+    chemin_storage,
+    duree_secondes=3600
+):
+    """
+    Génère une URL signée temporaire pour un fichier
+    stocké dans un bucket privé.
+    """
+    if not chemin_storage:
+        return None
+
+    if supabase_storage is None:
+        return None
+
+    try:
+        resultat = supabase_storage.storage.from_(
+            SUPABASE_STORAGE_BUCKET
+        ).create_signed_url(
+            str(chemin_storage).strip("/ "),
+            int(duree_secondes)
+        )
+
+        if isinstance(resultat, dict):
+            return (
+                resultat.get("signedURL")
+                or resultat.get("signedUrl")
+                or resultat.get("signed_url")
+            )
+
+        return None
+
+    except Exception as e:
+        print(f"Erreur génération URL Storage : {e}")
+        return None
+
+
 
 def _secret_flat(key, default=""):
     """Recherche d'une clé directement dans st.secrets."""
