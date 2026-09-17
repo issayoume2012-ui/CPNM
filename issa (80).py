@@ -12,6 +12,7 @@ import streamlit as st
 import bcrypt
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from supabase import create_client, Client
 
 # ==========================================
 # 0. CONFIGURATION & CONNEXION SUPABASE / POSTGRESQL
@@ -39,6 +40,31 @@ def _safe_get(container, key, default=""):
         return str(value).strip()
     except Exception:
         return default
+
+# ==========================================
+# SUPABASE STORAGE — CONNEXION
+# La connexion Supabase Database/PostgreSQL existante
+# reste inchangée. Storage sert aux PDF et fichiers lourds.
+# ==========================================
+SUPABASE_URL = _safe_get(st.secrets, "SUPABASE_URL", "")
+SUPABASE_SERVICE_ROLE_KEY = _safe_get(
+    st.secrets, "SUPABASE_SERVICE_ROLE_KEY", ""
+)
+
+supabase_storage = None
+
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    try:
+        supabase_storage = create_client(
+            SUPABASE_URL,
+            SUPABASE_SERVICE_ROLE_KEY
+        )
+    except Exception as e:
+        supabase_storage = None
+        print(f"Supabase Storage non initialisé : {e}")
+
+SUPABASE_STORAGE_BUCKET = "documents"
+
 
 def _secret_flat(key, default=""):
     """Recherche d'une clé directement dans st.secrets."""
